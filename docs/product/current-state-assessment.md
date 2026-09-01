@@ -1,30 +1,39 @@
 # Elsa Commercial Platform Current-State Assessment
 
-Date: 2026-08-29
+Date: 2026-09-01
 
 ## Executive Assessment
 
-Elsa Control is already a meaningful modular control-plane codebase, not a prototype shell. It contains package governance, organization/workspace identity, entitlement snapshots, immutable artifacts, desired-state revisions, promotion, runtime command synchronization, engine health, secret-store metadata, a production-oriented React console and current Azure hosting assets.
+Elsa Control is a meaningful modular control plane, not a prototype shell. Since the
+initial assessment it has gained a durable Elsa Instance lifecycle/API, a provider-
+neutral Azure reconciliation boundary, an executable Azure 3.8 Combined provider
+proof, strict admission of the producer's signed schema 2.0 release manifest, managed
+handoff/session behavior and a real local browser proof.
 
-The main gap is the shortest commercial promise: Elsa Control cannot yet select a governed Elsa release/topology/features and directly realize it as a working managed Elsa workload in Azure. Existing Azure assets deploy Elsa Control itself to App Service and Azure SQL. Existing deployment behavior primarily governs application artifacts delivered to pre-registered remote engines.
+The shortest remaining walking-skeleton gap is narrower: complete the same browser
+journey against the public-TLS Azure deployment, then package the runtime integration
+behind declared capability and immutable compatibility metadata for arbitrary
+supported release lines and applicable topologies. The production API still registers
+an unconfigured Azure runner by default, so proof-host success is not being presented
+as a production stamp service.
 
 ## Capability Matrix
 
 | Capability | Current evidence | Assessment |
 |------------|------------------|------------|
 | Package/feature metadata | NuGet source ingestion, manifests, generator contracts, approvals and compatibility services | strong reusable foundation |
-| Runtime images/topologies | signed/scanned `runtime-server`, `runtime-studio`, `runtime-combined` pipeline exists, but Control config still points at obsolete `elsa-pro-* : latest` identities | strong image pipeline; broken/stale control-plane catalog contract |
+| Runtime images/topologies | signed/scanned `runtime-server`, `runtime-studio`, `runtime-combined` images and schema 2.0 release evidence are published; legacy API configuration still contains obsolete `elsa-pro-* : latest` identities | immutable producer/admission path proven for 3.8 Combined; authoritative multi-release catalog remains incomplete |
 | Runtime Builder | saved configurations, package planning, bundles and template outputs | reusable; must feed instance/provider flow deliberately |
-| Desired state | immutable revisions, structured records, canonical hashes, validation/promotion | strong foundation; typed reconciliation migration remains |
+| Desired state | immutable revisions, structured records, canonical hashes, typed reconciliation, instance plan projection and durable operations | provider-neutral lifecycle foundation implemented |
 | Deployment execution | durable runs/commands, leases, outcomes, runtime pull/sync, webhook advisory path | strong for artifact delivery to registered runtimes |
-| Azure Elsa workload provider | none found | critical missing capability |
+| Azure Elsa workload provider | durable typed runner/process/secret boundaries, proof host and live 3.8 Combined deployment/health/workflow/cleanup evidence | executable vertical slice proven; production API composition, placement and stamp operations remain |
 | Identity/tenancy | OIDC/JWT/cookie identity, organizations, workspaces, memberships and permission grants | substantial; SaaS signup/invitations/federation lifecycle incomplete |
 | Entitlements | workspace/organization snapshots and limits used for feed/workspace policy | reusable primitive; subscription/billing lifecycle incomplete |
 | Secrets | secret-store and credential-reference APIs/UI; protected local values | useful engine-credential capability, not yet complete app configuration/secrets product |
-| Console | shared React shell with packages, builder, deployments, credentials and logs; router expects an absent artifact module | correct basis, but current frontend health is broken/stale; managed runtimes/operations/audit remain placeholders |
+| Console | shared React shell with packages, builder, deployments, credentials, logs, restored artifact routes and managed-instance open/retry UX | build health restored; complete signup/onboarding and final Azure browser proof remain |
 | Observability | health checks, OTel dependencies, engine verification and console logs | operational baseline, not customer/SRE product completeness |
-| Backups/DR | roadmap/spec language only for managed workloads | missing |
-| Commercial images | configured image identities and related repositories/pipelines under discovery | authority/version/provenance must be made explicit |
+| Backups/DR | restore-to-new consistency contract, ADR, fault-injection harness and live Azure proof are in PR #205 | evidence is in review; no production backup API/SLA claim |
+| Commercial images | signed immutable schema 2.0 release manifest, signature, SBOM, provenance and vulnerability evidence are admitted with safe retained locators/digests | 3.8 proof is real; lifecycle-aware arbitrary-release catalog and runtime integration generalization remain |
 
 ## Current Runtime and Deployment Flow
 
@@ -39,7 +48,10 @@ Studio or API producer
   -> safe outcome and health report
 ```
 
-This is well aligned with the Elsa Control Cloud customer-agent hypothesis. It is not yet an infrastructure provisioner: environments and engines are registered rather than created as managed Elsa compute/database/network resources.
+This remains aligned with the Elsa Control Cloud customer-agent hypothesis. A
+proof-only Azure provider can now create and reconcile a disposable managed workload,
+but the production API deliberately keeps the Azure runner unconfigured. Environment,
+stamp, capacity and customer-routing composition are therefore still product work.
 
 ## Reusable Assets
 
@@ -56,33 +68,53 @@ This is well aligned with the Elsa Control Cloud customer-agent hypothesis. It i
 
 ## Architectural Gaps
 
-1. No first-class Elsa Instance aggregate combines version, topology, features, region, isolation, capacity, release channel and provider placement.
-2. Version availability/lifecycle is not governed product data; configured images expose only `latest`.
-3. No Azure Elsa-workload provider or stamp placement/capacity model exists.
-4. No executable isolation profiles or published boundary guarantees exist.
-5. No subscription/billing lifecycle, trial/grace/retention policy or usage/cost attribution exists.
-6. Managed backup/restore, domain/TLS, release-ring upgrade and traffic-transition flows are missing.
-7. Customer-facing observability and SRE control across organizations/stamps are incomplete.
+1. Version availability/lifecycle and compatible feature selection are not yet served
+   as authoritative product data for an arbitrary catalog of release lines.
+2. Legacy API configuration still exposes obsolete `elsa-pro-* : latest` identities
+   outside the proven immutable release-admission path.
+3. The Azure provider vertical slice is not yet configured as the production API's
+   stamp/placement/capacity service.
+4. No executable isolation profiles or published boundary guarantees exist beyond the
+   completed threat model and proof-specific controls.
+5. No subscription/billing lifecycle, trial/grace/retention policy or usage/cost
+   attribution exists.
+6. The backup/restore-to-new proof is in review; production backup operations,
+   customer domains, release rings and traffic-transition flows remain incomplete.
+7. Customer-facing observability and SRE control across organizations/stamps are
+   incomplete.
 8. Arbitrary package provenance/build/isolation is not implemented.
-9. Existing frontend has the right shell but no complete SaaS instance onboarding journey.
-10. Cross-repository ownership for images, specifications, runtime integration and websites must be formalized.
-11. Nuplane is not integrated in production code; current references are presentation/configuration hints rather than package reconciliation.
-12. The console router currently imports an absent artifact feature module, so frontend build health must be restored before treating the shell as a reliable base.
-13. Current commercial image publishing uses `runtime-*` identities and signed immutable supply-chain evidence, while Elsa Control still advertises obsolete `elsaworkflows/elsa-pro-* : latest` images.
-14. Elsa 3.8 commercial images and Elsa 4 Foundation/Foundation Studio are parallel release ecosystems; no central compatibility/lifecycle matrix unifies them. The detailed evidence and proposed release-manifest boundary are recorded in `docs/product/commercial-image-release-audit.md`.
+9. The console has managed-instance lifecycle/open UX, but the public-TLS Azure browser
+   journey and full SaaS signup/onboarding journey are not yet accepted.
+10. Runtime handoff integration is proven for Elsa 3.8 Combined but is not yet packaged
+    for capability-driven selection across arbitrary supported release lines and
+    applicable Server/Combined topologies.
+11. Nuplane is not integrated in production code; current references are
+    presentation/configuration hints rather than package reconciliation.
 
 ## Intent-versus-Reality Divergences
 
 - Historical deployment strategy described an in-process/CLI apply engine; ADR-0004 and production code moved apply to remote runtime/provider consumers.
-- README and specs describe managed hosting and runtime operations as direction; console routes for managed runtimes, operations and audit are still placeholders.
-- Runtime image metadata recognizes Server/Studio/Combined, but the catalog is static configuration and does not implement multi-major lifecycle policy.
-- Azure deployment files demonstrate an Elsa Control host on App Service, not the mission's Azure deployment provider for Elsa workloads.
+- README and specs describe broader managed hosting and runtime operations as direction;
+  managed-instance lifecycle/open UX now exists, while the full operations and audit
+  product remains incomplete.
+- Runtime image evidence recognizes Server/Studio/Combined and Control strictly admits
+  the published schema 2.0 artifact, but the default catalog is still static and does
+  not implement arbitrary-release lifecycle policy.
+- Azure deployment now has a real provider/proof-host vertical slice; the production
+  API still fails closed with an unconfigured runner rather than silently presenting
+  proof composition as a managed stamp service.
 - Nearly all Spec Kit documents remain marked `Draft` even when their code is present, reducing confidence in specification status as program truth.
-- Historical documentation reports successful console validation, but the current router references a missing artifact module; reality must be revalidated.
+- The artifact console route/build failure was repaired in #115. Remaining console
+  evidence concerns the complete managed-instance onboarding and browser journey, not
+  that obsolete module gap.
 
 ## Immediate Recommendation
 
-Do not broaden SaaS UI or billing first. Establish the governed instance/version/topology contract and prove one real Azure provider path to a healthy Elsa endpoint. In parallel, complete the security/threat-model and commercial image provenance discovery that can invalidate the provider design.
+Complete #185's public-TLS Azure browser proof with the account owner's normal Entra/MFA
+interaction. Then unblock `valence-works/elsa-production-image#35` and generalize the
+proven runtime integration through declared capability and immutable compatibility
+metadata, without a finite Elsa-version switch. Keep #129's recovery proof as an
+independent review lane and do not infer a production backup service from it.
 
 ## Evidence
 
@@ -92,6 +124,10 @@ Do not broaden SaaS UI or billing first. Establish the governed instance/version
 - `src/Hosting/ElsaControl.AppHost/AppHost.cs`
 - `src/Hosting/ElsaControl.Console/src/app/routes.tsx`
 - `docs/adr/0004-deployment-engine-typed-reconciliation-hybrid.md`
+- `docs/adr/0013-elsa-instance-aggregate-boundary.md`
+- `docs/product/elsa-instance-aggregate.md`
+- `docs/deployment/azure-workload-proof.md`
+- `docs/spikes/127-managed-elsa-identity-handoff.md`
 - `specs/010-runtime-image-metadata-api/spec.md`
 - `specs/015-managed-hosting-control-plane/spec.md`
 - `specs/028-runtime-command-sync/spec.md`

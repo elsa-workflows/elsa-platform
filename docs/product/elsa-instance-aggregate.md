@@ -1,6 +1,6 @@
 # Elsa Instance Aggregate and Lifecycle Contract
 
-**Status:** Accepted architecture for implementation (issue [#114](https://github.com/valence-works/elsa-control/issues/114))
+**Status:** Accepted architecture; initial lifecycle, API and provider slices implemented (issue [#114](https://github.com/valence-works/elsa-control/issues/114))
 **Date:** 2026-08-29
 **Scope:** Provider-neutral domain, persistence/API migration and follow-up delivery slices
 
@@ -813,10 +813,12 @@ document remains the source of the boundary decisions.
 | 7 | [#143](https://github.com/valence-works/elsa-control/issues/143) / [#144](https://github.com/valence-works/elsa-control/issues/144) — console and managed handoff integration | 5, 6 | Instance lifecycle UX, progress/retry/error states, exact instance audience/callback lookup and browser-to-runtime proof across supported catalog data |
 | 8 | [#129](https://github.com/valence-works/elsa-control/issues/129), [#131](https://github.com/valence-works/elsa-control/issues/131), [#132](https://github.com/valence-works/elsa-control/issues/132) — recovery, upgrade and deletion acceptance | 6 | Backup/restore-to-new, staged upgrade/rollback, retention/tombstone, isolation and placement evidence; update launch runbooks and support controls |
 
-The existing #125 provider slice may proceed against the #114 contract once Tasks 1
-and 2 are accepted; it must not add Azure-shaped fields to the instance model. The
-existing #143/#144 handoff work consumes the instance authorization/audience adapter,
-while #129 consumes the stable revision/deployment/instance ownership mapping.
+Tasks 1–6 are closed and the Azure provider/Milestone B proof is accepted. #143 is
+closed; #144 remains active through the real Azure browser proof (#185) and the
+capability-based multi-release/topology integration
+(`valence-works/elsa-production-image#35`). #129 consumes the stable
+revision/deployment/instance ownership mapping and is in review with executable
+restore-to-new evidence; it is not yet a production recovery-service claim.
 
 ## Non-goals and deferred choices
 
