@@ -878,17 +878,17 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Action")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("AcrPullDeploymentId")
                         .HasMaxLength(512)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("AcrPullRoleAssignmentId")
                         .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
                     b.Property<int>("AttemptNumber")
@@ -1000,6 +1000,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("RegistryResourceId")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ReleaseLine")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -1019,10 +1023,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.Property<string>("ReleaseManifestSignatureReference")
                         .HasMaxLength(2048)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("RegistryResourceId")
-                        .HasMaxLength(1024)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RequestHash")
@@ -2962,6 +2962,417 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.ToTable("EngineCapabilities");
                 });
 
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogCapabilityEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Capability")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TopologyId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Capability", "TopologyId");
+
+                    b.HasIndex("TopologyId", "Capability")
+                        .IsUnique();
+
+                    b.ToTable("GovernedReleaseCatalogCapabilities", (string)null);
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogComponentCapabilityEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Capability")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ComponentId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Capability", "ComponentId");
+
+                    b.HasIndex("ComponentId", "Capability")
+                        .IsUnique();
+
+                    b.ToTable("GovernedReleaseCatalogComponentCapabilities", (string)null);
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogComponentEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CompanionComponentId")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ComponentId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ImageDigest")
+                        .IsRequired()
+                        .HasMaxLength(71)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ImageReference")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TopologyId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TopologyId", "ComponentId")
+                        .IsUnique();
+
+                    b.ToTable("GovernedReleaseCatalogComponents", (string)null);
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogComponentVersionEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ComponentId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TopologyId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Version")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TopologyId", "ComponentId")
+                        .IsUnique();
+
+                    b.ToTable("GovernedReleaseCatalogComponentVersions", (string)null);
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogEndpointEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ComponentId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Path")
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Port")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Protocol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("RequiresTls")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Visibility")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ComponentId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("GovernedReleaseCatalogEndpoints", (string)null);
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("AdmittedAtUtcTicks")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CatalogIdentityHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CatalogLifecycle")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DistributionId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Edition")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Generation")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ManifestDigest")
+                        .IsRequired()
+                        .HasMaxLength(71)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ManifestReference")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PayloadDigest")
+                        .IsRequired()
+                        .HasMaxLength(71)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProducerLifecycle")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProjectionFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RegistryClass")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReleaseLine")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReleaseVersion")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SchemaVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SignatureEvidenceDigest")
+                        .IsRequired()
+                        .HasMaxLength(71)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SignatureEvidenceReference")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceCommit")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceRepository")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceRunId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CatalogIdentityHash")
+                        .IsUnique();
+
+                    b.HasIndex("ManifestDigest", "RegistryClass")
+                        .IsUnique();
+
+                    b.HasIndex("DistributionId", "Generation", "ReleaseLine", "ReleaseVersion", "RegistryClass")
+                        .IsUnique();
+
+                    b.HasIndex("CatalogLifecycle", "Channel", "ProducerLifecycle", "ReleaseLine", "ReleaseVersion", "Id");
+
+                    b.ToTable("GovernedReleaseCatalog", (string)null);
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogEvidenceEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Digest")
+                        .IsRequired()
+                        .HasMaxLength(71)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TopologyId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TopologyId", "Kind")
+                        .IsUnique();
+
+                    b.ToTable("GovernedReleaseCatalogEvidence", (string)null);
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogPlatformDigestEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ComponentId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Digest")
+                        .IsRequired()
+                        .HasMaxLength(71)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Platform")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ComponentId", "Platform")
+                        .IsUnique();
+
+                    b.ToTable("GovernedReleaseCatalogPlatformDigests", (string)null);
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogRoleEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ComponentId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ComponentId", "Role")
+                        .IsUnique();
+
+                    b.ToTable("GovernedReleaseCatalogRoles", (string)null);
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogRuntimeKindEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RuntimeKind")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TopologyId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RuntimeKind", "TopologyId");
+
+                    b.HasIndex("TopologyId", "RuntimeKind")
+                        .IsUnique();
+
+                    b.ToTable("GovernedReleaseCatalogRuntimeKinds", (string)null);
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogTopologyEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PackageManifestSchema")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ReleaseId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TopologyId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReleaseId", "TopologyId")
+                        .IsUnique();
+
+                    b.HasIndex("TopologyId", "ReleaseId");
+
+                    b.ToTable("GovernedReleaseCatalogTopologies", (string)null);
+                });
+
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ManagedElsaHandoffAuditEventEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4618,6 +5029,116 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.Navigation("Engine");
                 });
 
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogCapabilityEntity", b =>
+                {
+                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogTopologyEntity", "Topology")
+                        .WithMany("Capabilities")
+                        .HasForeignKey("TopologyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Topology");
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogComponentCapabilityEntity", b =>
+                {
+                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogComponentEntity", "Component")
+                        .WithMany("Capabilities")
+                        .HasForeignKey("ComponentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Component");
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogComponentEntity", b =>
+                {
+                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogTopologyEntity", "Topology")
+                        .WithMany("Components")
+                        .HasForeignKey("TopologyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Topology");
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogComponentVersionEntity", b =>
+                {
+                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogTopologyEntity", "Topology")
+                        .WithMany("ComponentVersions")
+                        .HasForeignKey("TopologyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Topology");
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogEndpointEntity", b =>
+                {
+                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogComponentEntity", "Component")
+                        .WithMany("Endpoints")
+                        .HasForeignKey("ComponentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Component");
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogEvidenceEntity", b =>
+                {
+                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogTopologyEntity", "Topology")
+                        .WithMany("Evidence")
+                        .HasForeignKey("TopologyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Topology");
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogPlatformDigestEntity", b =>
+                {
+                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogComponentEntity", "Component")
+                        .WithMany("PlatformDigests")
+                        .HasForeignKey("ComponentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Component");
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogRoleEntity", b =>
+                {
+                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogComponentEntity", "Component")
+                        .WithMany("Roles")
+                        .HasForeignKey("ComponentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Component");
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogRuntimeKindEntity", b =>
+                {
+                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogTopologyEntity", "Topology")
+                        .WithMany("RuntimeKinds")
+                        .HasForeignKey("TopologyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Topology");
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogTopologyEntity", b =>
+                {
+                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogEntity", "Release")
+                        .WithMany("Topologies")
+                        .HasForeignKey("ReleaseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Release");
+                });
+
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ObservabilityBindingEntity", b =>
                 {
                     b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.DeploymentEnvironmentEntity", "Environment")
@@ -4903,6 +5424,35 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.Navigation("Migrations");
 
                     b.Navigation("Operations");
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogComponentEntity", b =>
+                {
+                    b.Navigation("Capabilities");
+
+                    b.Navigation("Endpoints");
+
+                    b.Navigation("PlatformDigests");
+
+                    b.Navigation("Roles");
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogEntity", b =>
+                {
+                    b.Navigation("Topologies");
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.GovernedReleaseCatalogTopologyEntity", b =>
+                {
+                    b.Navigation("Capabilities");
+
+                    b.Navigation("ComponentVersions");
+
+                    b.Navigation("Components");
+
+                    b.Navigation("Evidence");
+
+                    b.Navigation("RuntimeKinds");
                 });
 
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.WeaverPlanEntity", b =>

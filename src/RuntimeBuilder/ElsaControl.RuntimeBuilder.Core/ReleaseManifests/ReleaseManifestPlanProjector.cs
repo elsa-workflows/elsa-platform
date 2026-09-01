@@ -77,7 +77,7 @@ public static class ReleaseManifestPlanProjector
         return topology ?? throw new ReleaseManifestProjectionValidationException("The admitted manifest does not contain the selected topology.");
     }
 
-    private static IReadOnlyList<ResolvedElsaComponent> SelectComponents(ReleaseManifestTopology topology, string registryClass)
+    internal static IReadOnlyList<ResolvedElsaComponent> SelectComponents(ReleaseManifestTopology topology, string registryClass)
     {
         var groups = topology.Images
             .Where(x => x is not null)
@@ -118,7 +118,7 @@ public static class ReleaseManifestPlanProjector
         return components;
     }
 
-    private static IReadOnlyList<ResolvedPlanEvidence> ProjectEvidence(
+    internal static IReadOnlyList<ResolvedPlanEvidence> ProjectEvidence(
         ReleaseManifestAdmissionResult admission,
         ReleaseManifestTopology topology,
         IReadOnlyList<ResolvedPlanEvidence> existing)

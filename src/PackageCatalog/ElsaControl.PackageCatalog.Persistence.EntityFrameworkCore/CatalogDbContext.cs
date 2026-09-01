@@ -81,6 +81,17 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     internal DbSet<Models.WeaverPlanExecutionEntity> WeaverPlanExecutions => Set<Models.WeaverPlanExecutionEntity>();
     internal DbSet<Models.ManagedElsaHandoffReplayEntity> ManagedElsaHandoffReplays => Set<Models.ManagedElsaHandoffReplayEntity>();
     internal DbSet<Models.ManagedElsaHandoffAuditEventEntity> ManagedElsaHandoffAuditEvents => Set<Models.ManagedElsaHandoffAuditEventEntity>();
+    internal DbSet<Models.GovernedReleaseCatalogEntity> GovernedReleaseCatalog => Set<Models.GovernedReleaseCatalogEntity>();
+    internal DbSet<Models.GovernedReleaseCatalogTopologyEntity> GovernedReleaseCatalogTopologies => Set<Models.GovernedReleaseCatalogTopologyEntity>();
+    internal DbSet<Models.GovernedReleaseCatalogRuntimeKindEntity> GovernedReleaseCatalogRuntimeKinds => Set<Models.GovernedReleaseCatalogRuntimeKindEntity>();
+    internal DbSet<Models.GovernedReleaseCatalogCapabilityEntity> GovernedReleaseCatalogCapabilities => Set<Models.GovernedReleaseCatalogCapabilityEntity>();
+    internal DbSet<Models.GovernedReleaseCatalogComponentVersionEntity> GovernedReleaseCatalogComponentVersions => Set<Models.GovernedReleaseCatalogComponentVersionEntity>();
+    internal DbSet<Models.GovernedReleaseCatalogComponentEntity> GovernedReleaseCatalogComponents => Set<Models.GovernedReleaseCatalogComponentEntity>();
+    internal DbSet<Models.GovernedReleaseCatalogPlatformDigestEntity> GovernedReleaseCatalogPlatformDigests => Set<Models.GovernedReleaseCatalogPlatformDigestEntity>();
+    internal DbSet<Models.GovernedReleaseCatalogRoleEntity> GovernedReleaseCatalogRoles => Set<Models.GovernedReleaseCatalogRoleEntity>();
+    internal DbSet<Models.GovernedReleaseCatalogComponentCapabilityEntity> GovernedReleaseCatalogComponentCapabilities => Set<Models.GovernedReleaseCatalogComponentCapabilityEntity>();
+    internal DbSet<Models.GovernedReleaseCatalogEndpointEntity> GovernedReleaseCatalogEndpoints => Set<Models.GovernedReleaseCatalogEndpointEntity>();
+    internal DbSet<Models.GovernedReleaseCatalogEvidenceEntity> GovernedReleaseCatalogEvidence => Set<Models.GovernedReleaseCatalogEvidenceEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -148,6 +159,17 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.ApplyConfiguration(new Models.WeaverPlanExecutionConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ManagedElsaHandoffReplayConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ManagedElsaHandoffAuditEventConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.GovernedReleaseCatalogConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.GovernedReleaseCatalogTopologyConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.GovernedReleaseCatalogRuntimeKindConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.GovernedReleaseCatalogCapabilityConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.GovernedReleaseCatalogComponentVersionConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.GovernedReleaseCatalogComponentConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.GovernedReleaseCatalogPlatformDigestConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.GovernedReleaseCatalogRoleConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.GovernedReleaseCatalogComponentCapabilityConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.GovernedReleaseCatalogEndpointConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.GovernedReleaseCatalogEvidenceConfiguration());
     }
 
     public override int SaveChanges() => SaveChanges(acceptAllChangesOnSuccess: true);
@@ -180,9 +202,18 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         EnsureElsaInstanceResolvedPlansAreAppendOnly();
         EnsureElsaInstanceRecoveryRequestsAreAppendOnly();
         EnsureManagedElsaHandoffRowsAreAppendOnly();
+        EnsureGovernedReleaseCatalogIsImmutable();
         ValidateManagedElsaHandoffRows();
         ValidateElsaInstancePersistence();
         EnsureOrganizationsForNewWorkspaces();
+    }
+
+    private void EnsureGovernedReleaseCatalogIsImmutable()
+    {
+        if (ChangeTracker.Entries()
+            .Any(x => x.Entity is Models.IGovernedReleaseCatalogEntity
+                      && (x.State is EntityState.Modified or EntityState.Deleted)))
+            throw new InvalidOperationException("Governed release catalog records are immutable.");
     }
 
     private void EnsureWorkspacePermissionAuditIsAppendOnly()
