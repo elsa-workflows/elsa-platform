@@ -181,12 +181,14 @@ internal static class ProducerReleaseManifestMapper
         {
             var first = group.First();
             var images = group.SelectMany(x => x.Images.Values).ToArray();
-            var allEditions = group.SelectMany(x => x.Images.Keys).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-            foreach (var requiredEdition in new[] { "paid", "community" })
+            foreach (var builder in group)
             {
-                if (allEditions.Contains(requiredEdition, StringComparer.OrdinalIgnoreCase))
-                    continue;
-                Add(findings, "distribution.edition.missing", "Both governed image editions are required for each topology component.", "distributions");
+                foreach (var requiredEdition in new[] { "paid", "community" })
+                {
+                    if (builder.Images.ContainsKey(requiredEdition))
+                        continue;
+                    Add(findings, "distribution.edition.missing", "Both governed image editions are required for each topology component.", "distributions");
+                }
             }
 
             var selected = group.FirstOrDefault(x => x.Images.ContainsKey(options.RegistryClass));
@@ -660,8 +662,9 @@ internal static class ProducerReleaseManifestMapper
             var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var item in map.EnumerateObject())
             {
-                RequiredDigest(item.Value.ValueKind == JsonValueKind.String ? item.Value.GetString() : null, "image.platformDigest", findings);
-                if (!result.TryAdd(item.Name, item.Value.GetString() ?? string.Empty))
+                var digest = item.Value.ValueKind == JsonValueKind.String ? item.Value.GetString() : null;
+                RequiredDigest(digest, "image.platformDigest", findings);
+                if (digest is not null && !result.TryAdd(item.Name, digest))
                     Add(findings, "image.platform.duplicate", "Producer platform identities must be unique.", "image.platformDigests");
             }
 

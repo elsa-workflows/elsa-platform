@@ -131,6 +131,46 @@ public sealed class ReleaseManifestAdmissionTests
     }
 
     [Fact]
+    public async Task Producer_requires_both_editions_for_each_topology_component()
+    {
+        var producer = JsonNode.Parse(ProducerFixture())!;
+        var first = producer["distributions"]![0]!;
+        var second = producer["distributions"]![1]!;
+        first["topology"] = "split-topology";
+        second["topology"] = "split-topology";
+        first["images"]!.AsObject().Remove("community");
+        second["images"]!.AsObject().Remove("paid");
+        RefreshProducerCanonicalDigest(producer);
+        var artifact = ProducerArtifact(producer.ToJsonString());
+
+        var admission = await new ReleaseManifestAdmissionService(
+                new StubSignatureVerifier(ProducerVerification(artifact)))
+            .AdmitAsync(artifact, new(ProducerSigner, "paid", "split-topology"));
+
+        Assert.False(admission.Accepted);
+        Assert.Equal(2, admission.Findings.Count(x => x.Code == "distribution.edition.missing"));
+    }
+
+    [Fact]
+    public async Task Producer_non_string_platform_digest_is_rejected_without_throwing()
+    {
+        var producer = JsonNode.Parse(ProducerFixture())!;
+        producer["distributions"]![0]!["images"]!["paid"]!["platformDigests"] = new JsonObject
+        {
+            ["linux/amd64"] = 42
+        };
+        RefreshProducerCanonicalDigest(producer);
+        var artifact = ProducerArtifact(producer.ToJsonString());
+
+        var admission = await new ReleaseManifestAdmissionService(
+                new StubSignatureVerifier(ProducerVerification(artifact)))
+            .AdmitAsync(artifact, new(ProducerSigner, "paid", "combined"));
+
+        Assert.False(admission.Accepted);
+        Assert.Contains(admission.Findings, x => x.Code == "image.platformDigest.invalid");
+    }
+
+    [Fact]
     public async Task Producer_image_signature_subject_allows_the_optional_oci_scheme()
     {
         var producer = JsonNode.Parse(ProducerFixture())!;
@@ -315,6 +355,7 @@ public sealed class ReleaseManifestAdmissionTests
         Assert.Equal(
             "The release-manifest payload digest must be a sha256 digest matching the exact UTF-8 payload.",
             finding.Message);
+        Assert.Equal("artifact.payloadDigest", finding.Scope);
     }
 
     [Fact]
