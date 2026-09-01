@@ -625,7 +625,9 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         {
             Id = Guid.NewGuid(),
             WorkspaceId = instance.WorkspaceId,
-            Name = $"Managed {instance.Slug}",
+            // Application names are workspace-unique even when an old managed
+            // instance with the same reusable slug remains as a tombstone.
+            Name = $"Managed {instance.Slug} [{instance.Id:N}]",
             Description = "Control-owned managed Elsa instance target.",
             CreatedAt = createdAt.ToUniversalTime(),
             UpdatedAt = createdAt.ToUniversalTime()

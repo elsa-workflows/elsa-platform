@@ -1318,6 +1318,46 @@ public sealed class ElsaInstanceLifecycleStoreTests
     }
 
     [Fact]
+    public async Task Recreating_a_deleted_slug_creates_a_distinct_managed_application_shell()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = await CreateWorkspaceAsync(db, "Managed recreate workspace");
+        var actor = Guid.NewGuid();
+        var service = new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now));
+        var first = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            workspace.OrganizationId,
+            workspace.Id,
+            "Managed runtime",
+            "reusable-runtime",
+            WorkerIntent(),
+            "create-reusable-first",
+            ActorAccountId: actor));
+
+        var firstEntity = await db.ElsaInstances.SingleAsync(x => x.Id == first.Instance.Id);
+        firstEntity.DeletedAt = Now.AddMinutes(1);
+        firstEntity.DesiredLifecycle = ElsaDesiredLifecycle.Deleting;
+        firstEntity.ObservedLifecycle = ElsaObservedLifecycle.Deleted;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var second = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            workspace.OrganizationId,
+            workspace.Id,
+            "Managed runtime replacement",
+            "reusable-runtime",
+            WorkerIntent(),
+            "create-reusable-second",
+            ActorAccountId: actor));
+
+        Assert.NotEqual(first.Instance.Id, second.Instance.Id);
+        Assert.Equal(2, await db.DeploymentApplications.CountAsync(x => x.WorkspaceId == workspace.Id));
+        Assert.Equal(2, await db.DeploymentEnvironments.CountAsync(x => x.WorkspaceId == workspace.Id && x.ElsaInstanceId != null));
+    }
+
+    [Fact]
     public async Task Recovery_resume_requeues_the_managed_deployment_run()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
