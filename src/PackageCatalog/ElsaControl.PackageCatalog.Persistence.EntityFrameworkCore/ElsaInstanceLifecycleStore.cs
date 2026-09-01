@@ -1651,6 +1651,33 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             .Take(limit)
             .ToArrayAsync(cancellationToken);
 
+        var replayCandidates = operationEntities
+            .Where(operation => operation.State == ElsaInstanceOperationState.Queued ||
+                               operation.State == ElsaInstanceOperationState.RecoveryRequired &&
+                               string.Equals(operation.FailureCode, "provider.submission.uncertain", StringComparison.Ordinal))
+            .Where(operation => operation.InstanceId is not null && operation.DeploymentRunId is not null &&
+                                operation.ResolvedPlanId is not null)
+            .ToArray();
+        var instanceIds = replayCandidates.Select(operation => operation.InstanceId!.Value).Distinct().ToArray();
+        var runIds = replayCandidates.Select(operation => operation.DeploymentRunId!.Value).Distinct().ToArray();
+        var planIds = replayCandidates.Select(operation => operation.ResolvedPlanId!).Distinct(StringComparer.Ordinal).ToArray();
+        var instances = instanceIds.Length == 0
+            ? new Dictionary<Guid, ElsaInstanceEntity>()
+            : await dbContext.ElsaInstances.AsNoTracking()
+                .Where(instance => instanceIds.Contains(instance.Id))
+                .ToDictionaryAsync(instance => instance.Id, cancellationToken);
+        var runs = runIds.Length == 0
+            ? new Dictionary<Guid, DeploymentRunEntity>()
+            : await dbContext.DeploymentRuns.AsNoTracking()
+                .Where(run => runIds.Contains(run.Id))
+                .ToDictionaryAsync(run => run.Id, cancellationToken);
+        var plans = instanceIds.Length == 0 || planIds.Length == 0
+            ? new Dictionary<(Guid InstanceId, string PlanId), ElsaInstanceResolvedPlanEntity>()
+            : (await dbContext.ElsaInstanceResolvedPlans.AsNoTracking()
+                .Where(plan => instanceIds.Contains(plan.InstanceId) && planIds.Contains(plan.PlanId))
+                .ToArrayAsync(cancellationToken))
+                .ToDictionary(plan => (plan.InstanceId, plan.PlanId));
+
         var pending = new List<ElsaInstanceProviderPendingOperation>(operationEntities.Length);
         foreach (var operation in operationEntities)
         {
@@ -1674,19 +1701,13 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             // submitted but before the hand-off marker was committed. Rebuild
             // the typed submission from the immutable plan/run records so the
             // next poll can safely replay the same provider idempotency key.
-            var instance = await dbContext.ElsaInstances.AsNoTracking()
-                .SingleOrDefaultAsync(x => x.WorkspaceId == operation.WorkspaceId && x.Id == instanceId,
-                    cancellationToken);
-            var run = await dbContext.DeploymentRuns.AsNoTracking()
-                .SingleOrDefaultAsync(x => x.WorkspaceId == operation.WorkspaceId && x.Id == runId &&
-                                           x.ElsaInstanceId == instanceId,
-                    cancellationToken);
-            var plan = await dbContext.ElsaInstanceResolvedPlans.AsNoTracking()
-                .SingleOrDefaultAsync(x => x.WorkspaceId == operation.WorkspaceId &&
-                                           x.InstanceId == instanceId && x.PlanId == operation.ResolvedPlanId,
-                    cancellationToken);
+            instances.TryGetValue(instanceId, out var instance);
+            runs.TryGetValue(runId, out var run);
+            plans.TryGetValue((instanceId, operation.ResolvedPlanId), out var plan);
 
-            if (instance is null || run is null || plan is null ||
+            if (instance is null || instance.WorkspaceId != operation.WorkspaceId ||
+                run is null || run.WorkspaceId != operation.WorkspaceId || run.ElsaInstanceId != instanceId ||
+                plan is null || plan.WorkspaceId != operation.WorkspaceId ||
                 !TryRestoreResolvedPlan(plan, operation.ResolvedPlanId, out var resolvedPlan))
             {
                 pending.Add(new(operation.WorkspaceId, operation.Id));
