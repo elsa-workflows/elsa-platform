@@ -131,6 +131,26 @@ public sealed class ReleaseManifestAdmissionTests
     }
 
     [Fact]
+    public async Task Producer_evidence_reference_without_embedded_digest_is_accepted_when_digest_field_matches()
+    {
+        var producer = JsonNode.Parse(ProducerFixture())!;
+        var attestation = producer["distributions"]![0]!["images"]!["paid"]!["attestations"]![0]!;
+        var reference = attestation["reference"]!.GetValue<string>();
+        var repository = reference[..reference.IndexOf('@')];
+        repository = repository.Replace("oci://", string.Empty, StringComparison.Ordinal);
+        attestation["reference"] = $"oci://{repository}";
+        RefreshProducerCanonicalDigest(producer);
+        var artifact = ProducerArtifact(producer.ToJsonString());
+
+        var admission = await new ReleaseManifestAdmissionService(
+                new StubSignatureVerifier(ProducerVerification(artifact)))
+            .AdmitAsync(artifact, new(ProducerSigner, "paid", "combined"));
+
+        Assert.True(admission.Accepted, string.Join("; ", admission.Findings.Select(x => x.Code)));
+        Assert.DoesNotContain(admission.Findings, x => x.Code == "evidence.reference.invalid");
+    }
+
+    [Fact]
     public async Task Producer_image_signature_subject_allows_the_optional_oci_scheme()
     {
         var producer = JsonNode.Parse(ProducerFixture())!;

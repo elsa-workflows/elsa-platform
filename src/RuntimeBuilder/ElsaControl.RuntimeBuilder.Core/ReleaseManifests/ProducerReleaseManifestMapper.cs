@@ -587,8 +587,7 @@ internal static class ProducerReleaseManifestMapper
         RequiredDigest(payloadDigest, "evidence.payloadDigest", findings);
         if (!string.IsNullOrWhiteSpace(reference)
             && (normalizedReference is null
-                || !ReleaseManifestAdmissionService.IsSafeEvidenceReference(normalizedReference, digest)
-                || !string.Equals(ReleaseManifestAdmissionService.ExtractDigest(normalizedReference), digest, StringComparison.OrdinalIgnoreCase)))
+                || !ReleaseManifestAdmissionService.IsSafeEvidenceReference(normalizedReference, digest)))
             Add(findings, "evidence.reference.invalid", "Producer evidence references must be immutable safe locators bound to their digest.", "evidence.reference");
         if (!string.IsNullOrWhiteSpace(subject)
             && (!ReleaseManifestAdmissionService.IsSafeImageReference(subject)
