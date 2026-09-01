@@ -63,21 +63,31 @@ These are planning targets, not unconditional delivery promises. Native dependen
 ## Critical Path
 
 ```text
-image/version authority
+completed: image/version authority
   -> resolved Elsa application model
   -> typed reconciliation boundary
-  -> Azure provider/IaC spike
-  -> Azure provider vertical slice
+  -> Azure provider/IaC spike and vertical slice
   -> managed endpoint health/workflow proof
-  -> durable Elsa Instance lifecycle
-  -> SaaS onboarding walking skeleton
+  -> durable Elsa Instance lifecycle and API
+  -> managed handoff/session foundation
+
+active: real local/Azure browser proof (#185)
+  -> capability-based multi-release/topology runtime integration
+     (elsa-production-image#35, https://github.com/valence-works/elsa-production-image/issues/35)
+  -> Elsa Cloud walking-skeleton completion
 ```
 
-Security threat modeling and commercial image provenance run in parallel but gate the deployment proof. Frontend onboarding design may run in parallel after the Elsa Instance contract is stable. Billing, broad observability and later isolation profiles do not block the first Azure proof.
+Milestone B and the core lifecycle/recovery mechanisms needed by Milestone C have
+executable evidence; the still-open Feature rollups remain the authority for milestone
+acceptance. The current P0 gate is honest browser-to-runtime proof against the admitted
+immutable Elsa 3.8 Combined image, followed by capability-driven generalization without
+a finite Elsa version switch. Billing, broad observability and later isolation profiles
+do not block that walking-skeleton proof.
 
-## Earliest Agent Ready Tasks
+## Execution Progress and Live Queue
 
-The GitHub Project is authoritative for live IDs and status. The initial prerequisite queue produced these outcomes:
+The GitHub Project and native issue relationships are authoritative for live IDs,
+status and dependency order. The initial prerequisite queue produced these outcomes:
 
 - Completed the commercial image authority audit and producer manifest foundation (#105 and `elsa-production-image#27`).
 - Completed ADR-0004's typed desired-state reconciliation prerequisite (#107).
@@ -85,21 +95,30 @@ The GitHub Project is authoritative for live IDs and status. The initial prerequ
 - Completed the customer-package and isolation threat model (#110).
 - Defined the short-lived, signed one-time identity handoff contract (#127).
 - Restored the Artifact Console module and frontend build health (#115).
-- Identified the provider-neutral Elsa Instance lifecycle (#114) and Azure provider vertical slice (#125) as the next critical-path work once their remaining native blockers are clear.
+- Completed the provider-neutral Elsa Instance lifecycle and API slices (#114 and its
+  implementation Tasks).
+- Completed the durable Azure provider vertical slice and executable Milestone B proof
+  (#125 and #126).
+- Admitted the producer's signed schema 2.0 release manifest while retaining distinct
+  immutable OCI subject and payload identities (#158 and #202).
+- Passed the real local managed-browser proof; the equivalent Azure public-TLS proof
+  remains active under #185 and requires the account owner's normal Entra/MFA step.
 
 The identity handoff contract and threat model are captured in
 [`docs/spikes/127-managed-elsa-identity-handoff.md`](../spikes/127-managed-elsa-identity-handoff.md).
 
-The completed #108 proof removes the Azure-platform gate. Live dependency state in the Project and native issue relationships determines whether #114 or #125 is the next executable critical-path item.
+The only current successor leaf is [elsa-production-image#35](https://github.com/valence-works/elsa-production-image/issues/35), which is
+correctly Not Ready while #185 remains open. It generalizes the proven integration by
+declared capability and immutable artifact compatibility for arbitrary supported Elsa
+release lines and applicable Server/Combined topologies.
 
 ## Major Risks
 
 | Risk | Mitigation |
 |------|------------|
-| Elsa Control does not yet enforce the producer's signed release manifest at catalog/provider admission. | Implement admission from the completed #105/producer-manifest contract; require immutable digest, topology and provenance metadata. |
+| A proof centered on Elsa 3.8 could hard-code a finite version or topology switch. | Complete #185, then require [elsa-production-image#35](https://github.com/valence-works/elsa-production-image/issues/35) and #97 to select compatible immutable integration artifacts from declared capability metadata for arbitrary supported release lines. |
 | Shared isolation can dominate architecture and security. | Launch paid service with Dedicated only; require #110-derived executable evidence before adding Shared or Data-isolated. |
-| Existing deployment terminology covers application artifacts/environments while the mission adds infrastructure-backed Elsa instances. | Preserve existing boundaries and introduce the Elsa Instance aggregate only after #114's migration/API analysis. |
-| Azure provider work can leak infrastructure details upward or duplicate remote commands. | Enforce ADR-0007 and the completed #106/#107/#108 contracts while implementing #125. |
-| Seamless identity into managed Elsa expands the walking-skeleton critical path. | Treat the signed one-time handoff as required and time-box the trust-flow spike before implementation. |
-| Large deployment console/store files constrain safe parallel implementation. | Restore console build health in #115, then extract only stable capability seams as touched. |
+| The proven Azure provider could be mistaken for production stamp composition. | Keep the API default fail closed while the production runner/stamp boundary is configured; retain provider IDs and reconciliation metadata behind ADR-0007. |
+| Seamless identity can appear complete from API/session tests while Combined Studio still challenges the user. | Require #185's real public-TLS browser proof, replay/expiry/logout evidence and immutable release facts before accepting the walking skeleton. |
+| Backup/restore design can be mistaken for a production recovery service. | Keep #129 active until its restore-to-new proof, runbook and exact-head review are accepted; track production API, retention and operations slices separately. |
 | SRE, backup, security and cost can be postponed despite gating launch. | Treat Milestones E–G exit evidence as non-negotiable and keep those concerns as explicit Epics, not cleanup. |
