@@ -35,6 +35,7 @@ public sealed class DeploymentRecoveryProofHarnessTests
         Assert.Equal(1, provider.CleanupCalls);
         Assert.Equal("target-instance", provider.CleanedTargetIds.Single());
         Assert.DoesNotContain("cutover", provider.Calls.Where(call => call.Contains("mutat", StringComparison.OrdinalIgnoreCase)));
+        Assert.Contains("\"secretReferenceKeyCount\": \"3\"", report.ToJson(), StringComparison.Ordinal);
     }
 
     [Fact]

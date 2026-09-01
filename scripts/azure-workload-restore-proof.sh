@@ -52,7 +52,7 @@ subscription_id=""
 registry_subscription_id=""
 registry_name="valenceruntimeimages"
 image_repository="valenceruntimeimages.azurecr.io/runtime-combined"
-expiry_utc="2026-09-02"
+expiry_utc=""
 
 while (($#)); do
   case "$1" in
@@ -83,6 +83,7 @@ target_template="$proof_dir/recovery-target.bicep"
 probe_project="$repo_root/src/Deployment/ElsaControl.Deployment.WorkflowProbeHost/ElsaControl.WorkflowProbeHost.csproj"
 # shellcheck source=scripts/lib/azure-workload-proof.sh
 source "$script_dir/lib/azure-workload-proof.sh"
+expiry_utc="${expiry_utc:-$(default_expiry_utc)}"
 
 fail() { echo "$1" >&2; exit 2; }
 valid_name() { [[ "$1" =~ ^[a-z][a-z0-9-]{1,14}[a-z0-9]$ && "$1" != *--* ]]; }

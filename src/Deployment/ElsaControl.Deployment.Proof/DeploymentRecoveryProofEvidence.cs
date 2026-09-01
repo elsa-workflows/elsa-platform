@@ -63,9 +63,7 @@ public static class DeploymentRecoveryProofEvidence
                 Message = Safe(stage.Message),
                 stage.StartedAt,
                 stage.CompletedAt,
-                Evidence = stage.Evidence
-                    .Where(pair => !IsProviderIdentityOrSecret(pair.Key))
-                    .ToDictionary(pair => pair.Key, pair => Safe(pair.Value), StringComparer.Ordinal)
+                Evidence = SanitizeStageEvidence(stage.Evidence)
             }).ToArray()
         };
 
@@ -89,13 +87,31 @@ public static class DeploymentRecoveryProofEvidence
     private static string SafeReference(string? value) =>
         DeploymentRecoveryProofContract.IsSafeReference(value) ? Safe(value) : string.Empty;
 
-    private static bool IsProviderIdentityOrSecret(string key) =>
-        key.Contains("provider", StringComparison.OrdinalIgnoreCase)
-        || key.Contains("resource", StringComparison.OrdinalIgnoreCase)
-        || key.Contains("secret", StringComparison.OrdinalIgnoreCase)
-        || key.Contains("password", StringComparison.OrdinalIgnoreCase)
-        || key.Contains("token", StringComparison.OrdinalIgnoreCase)
-        || key.Contains("credential", StringComparison.OrdinalIgnoreCase)
-        || key.Contains("connectionstring", StringComparison.OrdinalIgnoreCase)
-        || key.Contains("authorization", StringComparison.OrdinalIgnoreCase);
+    internal static IReadOnlyDictionary<string, string> SanitizeStageEvidence(IReadOnlyDictionary<string, string> evidence)
+    {
+        var safe = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var pair in evidence)
+        {
+            var value = pair.Key switch
+            {
+                "sourceInstanceId" or "organizationId" or "workspaceId" or "recoveryPointId" or
+                    "sourceLifecycle" or "desiredRevisionId" or "targetInstanceId" => SafeIdentity(pair.Value),
+                "manifestDigest" or "desiredRevisionHash" or "resolvedPlanDigest" or
+                    "providerSnapshotDigest" => SafeDigest(pair.Value),
+                "resolvedPlanReference" or "providerSnapshotReference" => SafeReference(pair.Value),
+                "artifactCount" or "secretReferenceKeyCount" when
+                    int.TryParse(pair.Value, NumberStyles.None, CultureInfo.InvariantCulture, out var count) && count >= 0 =>
+                    count.ToString(CultureInfo.InvariantCulture),
+                "rpoAge" when TimeSpan.TryParseExact(pair.Value, "c", CultureInfo.InvariantCulture, out var duration) &&
+                    duration >= TimeSpan.Zero => duration.ToString("c", CultureInfo.InvariantCulture),
+                "valid" or "healthy" or "succeeded" or "eligible" when bool.TryParse(pair.Value, out var boolean) =>
+                    boolean.ToString().ToLowerInvariant(),
+                _ => string.Empty
+            };
+            if (value.Length > 0)
+                safe[pair.Key] = value;
+        }
+
+        return safe;
+    }
 }

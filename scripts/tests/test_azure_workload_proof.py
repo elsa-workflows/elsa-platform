@@ -119,6 +119,23 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertNotIn("set -x", source)
         self.assertNotRegex(source, r"--password(?:=|\s)")
 
+    def test_proof_expiry_default_is_derived_at_runtime(self) -> None:
+        library = RUNBOOK_LIB.read_text()
+        self.assertIn("default_expiry_utc()", library)
+        for runbook in (RUNBOOK, RESTORE_RUNBOOK):
+            source = runbook.read_text()
+            self.assertIn('expiry_utc=""', source)
+            self.assertIn('expiry_utc="${expiry_utc:-$(default_expiry_utc)}"', source)
+            self.assertNotIn('expiry_utc="2026-09-02"', source)
+
+        result = subprocess.run(
+            ["bash", "-c", 'source "$1"; default_expiry_utc', "bash", str(RUNBOOK_LIB)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertRegex(result.stdout.strip(), r"^\d{4}-\d{2}-\d{2}$")
+
     def test_managed_identity_roles_are_narrow(self) -> None:
         acr = ACR_ROLE.read_text()
         vault = VAULT.read_text()

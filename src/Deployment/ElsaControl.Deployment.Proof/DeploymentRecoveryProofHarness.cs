@@ -512,7 +512,7 @@ public sealed partial class DeploymentRecoveryProofHarness
             "Stage completed.",
             startedAt,
             completedAt,
-            DeploymentProofEvidence.Sanitize(evidence));
+            DeploymentRecoveryProofEvidence.SanitizeStageEvidence(evidence));
 
     private DeploymentRecoveryStageResult Failure(
         DeploymentRecoveryStage stage,
@@ -545,7 +545,7 @@ public sealed partial class DeploymentRecoveryProofHarness
         {
             Code = DeploymentProofEvidence.SanitizeMessage(stage.Code),
             Message = DeploymentProofEvidence.SanitizeMessage(stage.Message),
-            Evidence = DeploymentProofEvidence.Sanitize(stage.Evidence)
+            Evidence = DeploymentRecoveryProofEvidence.SanitizeStageEvidence(stage.Evidence)
         };
 
     private static string StageCode(DeploymentRecoveryStage stage) => stage switch

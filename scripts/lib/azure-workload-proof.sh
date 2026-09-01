@@ -3,6 +3,18 @@
 # Shared lifecycle helpers used by apply, what-if and offline behavioral tests.
 # Revision names are supplied as a JSON array so Azure pagination remains the
 # caller's responsibility and the decision itself stays deterministic.
+default_expiry_utc() {
+  local expiry
+  if expiry="$(date -u -v+1d '+%Y-%m-%d' 2>/dev/null)"; then
+    printf '%s\n' "$expiry"
+  elif expiry="$(date -u -d '+1 day' '+%Y-%m-%d' 2>/dev/null)"; then
+    printf '%s\n' "$expiry"
+  else
+    echo "A UTC expiry date could not be derived" >&2
+    return 1
+  fi
+}
+
 select_workload_revision_suffix() {
   local plan_fingerprint="$1"
   local current_revision_suffix="$2"

@@ -48,7 +48,7 @@ sql_bootstrap_login=""
 sql_bootstrap_ip=""
 subscription_id=""
 registry_subscription_id=""
-expiry_utc="2026-09-02"
+expiry_utc=""
 
 while (($#)); do
   case "$1" in
@@ -74,6 +74,7 @@ repo_root="$(cd -- "$script_dir/.." && pwd)"
 proof_dir="$repo_root/infra/azure-workload-proof"
 # shellcheck source=scripts/lib/azure-workload-proof.sh
 source "$script_dir/lib/azure-workload-proof.sh"
+expiry_utc="${expiry_utc:-$(default_expiry_utc)}"
 
 validate_name() {
   [[ "$1" =~ ^[a-z][a-z0-9-]{1,14}[a-z0-9]$ && "$1" != *--* ]] || {
