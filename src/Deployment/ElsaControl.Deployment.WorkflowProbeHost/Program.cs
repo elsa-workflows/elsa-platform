@@ -41,6 +41,13 @@ catch (DeploymentProofStageException exception)
     Console.WriteLine(DeploymentProofWorkflowProbeOutput.Failure(exception.Code, exception.Message));
     return failedExitCode;
 }
+catch (ArgumentException)
+{
+    Console.WriteLine(DeploymentProofWorkflowProbeOutput.Failure(
+        "workflow-probe.arguments.invalid",
+        "The workflow probe arguments are invalid."));
+    return failedExitCode;
+}
 catch (Exception)
 {
     Console.WriteLine(DeploymentProofWorkflowProbeOutput.Failure(

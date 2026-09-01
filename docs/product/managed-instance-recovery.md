@@ -37,11 +37,12 @@ The provider-neutral envelope has this logical shape:
 
 ```text
 RecoveryPoint
-  Id, OrganizationId, WorkspaceId, SourceInstanceId
-  CapturedAt, SourceQuiescedAt, SourceLifecycle
-  DesiredStateRevisionId, DesiredStateHash
+  RecoveryPointId, OrganizationId, WorkspaceId, SourceInstanceId
+  CapturedAt, SourceQuiescedAt, RestorePointAt, SourceLifecycle
+  DesiredRevisionId, DesiredRevisionHash
   ResolvedPlanReference, ResolvedPlanDigest
-  Artifacts[] { Kind, Reference, Digest }
+  ReleaseManifestReference, ReleaseManifestDigest
+  Artifacts[] { Reference, Digest }
   ProviderSnapshotReference, ProviderSnapshotDigest
   RequiredSecretReferenceKeys[]
   ManifestDigest
