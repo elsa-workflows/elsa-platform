@@ -39,20 +39,30 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
 
         CommercialReleaseManifest? manifest = null;
         if (!string.IsNullOrWhiteSpace(artifact.Payload))
-            manifest = ParseManifest(artifact.Payload, findings);
+            manifest = ParseManifest(artifact.Payload, options, findings);
 
         if (manifest is null || findings.Count > 0)
             return Rejected(artifact, options, findings);
 
-        ValidateManifest(manifest, findings);
+        ValidateManifest(
+            manifest,
+            options.AllowLegacySchema,
+            requireManifestSignatureEvidence: string.Equals(manifest.SchemaVersion, ReleaseManifestSchema.LegacyVersion, StringComparison.Ordinal),
+            findings);
         ValidateSelection(manifest, options, findings);
         if (findings.Count > 0)
             return Rejected(artifact, options, findings);
 
+        // The transport verifier receives the locally computed payload identity. It
+        // must return the same identity as a claim that the signed OCI subject really
+        // binds this exact payload; a caller-computed hash alone is not evidence of
+        // the subject-to-payload relationship.
+        var payloadDigest = ComputePayloadDigest(artifact.Payload);
+        var verifiedArtifact = artifact with { PayloadDigest = payloadDigest };
         ReleaseManifestSignatureVerification? signature = null;
         try
         {
-            signature = await signatureVerifier.VerifyAsync(artifact, cancellationToken);
+            signature = await signatureVerifier.VerifyAsync(verifiedArtifact, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -66,7 +76,7 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
         if (signature is null)
             findings.Add(new("signature.missing", "A signature verification result is required.", "signature"));
         else
-            ValidateSignature(signature, artifact, options, findings);
+            ValidateSignature(signature, verifiedArtifact, options, manifest.SchemaVersion, findings);
 
         if (findings.Count > 0 || signature is null)
             return Rejected(artifact, options, findings);
@@ -79,7 +89,8 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
             new(signature.EvidenceReference, signature.EvidenceDigest),
             options.RegistryClass,
             options.TopologyId,
-            findings);
+            findings,
+            payloadDigest);
     }
 
     private static ReleaseManifestAdmissionResult Rejected(
@@ -113,6 +124,7 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
 
     private static CommercialReleaseManifest? ParseManifest(
         string payload,
+        ReleaseManifestAdmissionOptions options,
         List<ReleaseManifestAdmissionFinding> findings)
     {
         try
@@ -130,12 +142,19 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
             {
                 findings.Add(new("manifest.schema.required", "A release-manifest schema version is required.", "manifest.schemaVersion"));
             }
+            else if (string.Equals(schemaVersion.GetString(), ReleaseManifestSchema.LegacyVersion, StringComparison.Ordinal)
+                && options.AllowLegacySchema)
+            {
+                return JsonSerializer.Deserialize<CommercialReleaseManifest>(document.RootElement.GetRawText(), JsonOptions)
+                    ?? AddAndReturnNull(new("manifest.empty", "The release manifest is empty.", "manifest"));
+            }
             else if (!string.Equals(schemaVersion.GetString(), ReleaseManifestSchema.CurrentVersion, StringComparison.Ordinal))
             {
                 findings.Add(new("manifest.schema.unsupported", "Release-manifest schema is not supported.", "manifest.schemaVersion"));
+                return null;
             }
 
-            return JsonSerializer.Deserialize<CommercialReleaseManifest>(document.RootElement.GetRawText(), JsonOptions)
+            return ProducerReleaseManifestMapper.TryMap(document.RootElement, options, findings)
                 ?? AddAndReturnNull(new("manifest.empty", "The release manifest is empty.", "manifest"));
         }
         catch (JsonException)
@@ -172,11 +191,13 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
         if (!IsDigest(artifact.Digest))
             findings.Add(new("manifest.digest.invalid", "The release-manifest artifact must use a sha256 digest.", "artifact.digest"));
 
-        if (!string.IsNullOrEmpty(artifact.Payload) && IsDigest(artifact.Digest))
+        if (!string.IsNullOrEmpty(artifact.Payload))
         {
-            var payloadDigest = $"sha256:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(artifact.Payload))).ToLowerInvariant()}";
-            if (!string.Equals(payloadDigest, artifact.Digest, StringComparison.OrdinalIgnoreCase))
-                findings.Add(new("manifest.payloadDigest.mismatch", "The artifact digest must match the exact UTF-8 release-manifest payload.", "artifact.payload"));
+            var payloadDigest = ComputePayloadDigest(artifact.Payload);
+            if (!string.IsNullOrWhiteSpace(artifact.PayloadDigest)
+                && (!IsDigest(artifact.PayloadDigest)
+                    || !string.Equals(payloadDigest, artifact.PayloadDigest, StringComparison.OrdinalIgnoreCase)))
+                findings.Add(new("manifest.payloadDigest.mismatch", "The release-manifest payload digest must be a sha256 digest matching the exact UTF-8 payload.", "artifact.payloadDigest"));
         }
     }
 
@@ -184,12 +205,15 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
     {
         Required(options.ExpectedSignatureSubject, "signature.subject.expected.required", "An expected signature subject is required.", "options.expectedSignatureSubject", findings);
         Required(options.RegistryClass, "image.registryClass.required", "A registry class is required for projection.", "options.registryClass", findings);
+        if (options.ExpectedOidcIssuer is not null && !IsSafeHttpsIssuer(options.ExpectedOidcIssuer))
+            findings.Add(new("signature.oidcIssuer.expected.invalid", "The expected OIDC issuer must be a safe HTTPS locator.", "options.expectedOidcIssuer"));
     }
 
     private static void ValidateSignature(
         ReleaseManifestSignatureVerification signature,
         ReleaseManifestArtifact artifact,
         ReleaseManifestAdmissionOptions options,
+        string schemaVersion,
         List<ReleaseManifestAdmissionFinding> findings)
     {
         if (!signature.IsValid)
@@ -198,6 +222,12 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
         Required(signature.SubjectDigest, "signature.subjectDigest.required", "The signed subject digest is required.", "signature.subjectDigest", findings);
         Required(signature.EvidenceReference, "signature.evidenceReference.required", "Retained signature evidence is required.", "signature.evidenceReference", findings);
         Required(signature.EvidenceDigest, "signature.evidenceDigest.required", "Retained signature evidence must have a digest.", "signature.evidenceDigest", findings);
+        var currentSchema = string.Equals(schemaVersion, ReleaseManifestSchema.CurrentVersion, StringComparison.Ordinal);
+        if (currentSchema)
+        {
+            Required(signature.OidcIssuer, "signature.oidcIssuer.required", "The verified signature OIDC issuer is required.", "signature.oidcIssuer", findings);
+            Required(signature.BoundPayloadDigest, "signature.boundPayloadDigest.required", "The verifier must prove the exact payload is bound to the signed OCI subject.", "signature.boundPayloadDigest", findings);
+        }
 
         if (!string.IsNullOrWhiteSpace(signature.Subject)
             && !string.Equals(signature.Subject, options.ExpectedSignatureSubject, StringComparison.Ordinal))
@@ -208,6 +238,16 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
         else if (!string.Equals(signature.SubjectDigest, artifact.Digest, StringComparison.OrdinalIgnoreCase))
             findings.Add(new("signature.subjectDigest.mismatch", "The signed subject digest must match the immutable release-manifest digest.", "signature.subjectDigest"));
 
+        var expectedIssuer = options.ExpectedOidcIssuer ?? ReleaseManifestSchema.DefaultOidcIssuer;
+        if (!string.IsNullOrWhiteSpace(signature.OidcIssuer)
+            && !string.Equals(signature.OidcIssuer, expectedIssuer, StringComparison.Ordinal))
+            findings.Add(new("signature.oidcIssuer.mismatch", "The signature OIDC issuer is not approved for release admission.", "signature.oidcIssuer"));
+
+        if (currentSchema && !IsDigest(signature.BoundPayloadDigest))
+            findings.Add(new("signature.boundPayloadDigest.invalid", "The verifier payload binding must use a sha256 digest.", "signature.boundPayloadDigest"));
+        else if (currentSchema && !string.Equals(signature.BoundPayloadDigest, artifact.PayloadDigest, StringComparison.OrdinalIgnoreCase))
+            findings.Add(new("signature.boundPayloadDigest.mismatch", "The signed OCI subject is not bound to the exact release-manifest payload.", "signature.boundPayloadDigest"));
+
         if (!IsDigest(signature.EvidenceDigest))
             findings.Add(new("signature.evidenceDigest.invalid", "Signature evidence must use a sha256 digest.", "signature.evidenceDigest"));
         if (!string.IsNullOrWhiteSpace(signature.EvidenceReference)
@@ -215,9 +255,14 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
             findings.Add(new("signature.evidenceReference.invalid", "Signature evidence must be an immutable safe locator.", "signature.evidenceReference"));
     }
 
-    private static void ValidateManifest(CommercialReleaseManifest manifest, List<ReleaseManifestAdmissionFinding> findings)
+    private static void ValidateManifest(
+        CommercialReleaseManifest manifest,
+        bool allowLegacySchema,
+        bool requireManifestSignatureEvidence,
+        List<ReleaseManifestAdmissionFinding> findings)
     {
-        if (!string.Equals(manifest.SchemaVersion, ReleaseManifestSchema.CurrentVersion, StringComparison.Ordinal))
+        if (!string.Equals(manifest.SchemaVersion, ReleaseManifestSchema.CurrentVersion, StringComparison.Ordinal)
+            && !(allowLegacySchema && string.Equals(manifest.SchemaVersion, ReleaseManifestSchema.LegacyVersion, StringComparison.Ordinal)))
             findings.Add(new("manifest.schema.unsupported", "Release-manifest schema is not supported.", "manifest.schemaVersion"));
 
         var distribution = manifest.Distribution;
@@ -233,6 +278,14 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
             Required(distribution.ReleaseVersion, "distribution.releaseVersion.required", "Exact release version is required.", "distribution.releaseVersion", findings);
             Required(distribution.Channel, "distribution.channel.required", "Release channel is required.", "distribution.channel", findings);
             Required(distribution.Lifecycle, "distribution.lifecycle.required", "Release lifecycle is required.", "distribution.lifecycle", findings);
+            if (string.Equals(manifest.SchemaVersion, ReleaseManifestSchema.CurrentVersion, StringComparison.Ordinal)
+                && !string.Equals(distribution.Edition, "commercial", StringComparison.OrdinalIgnoreCase))
+                findings.Add(new("distribution.edition.invalid", "The producer release edition is not governed.", "distribution.edition"));
+            else if (string.Equals(manifest.SchemaVersion, ReleaseManifestSchema.LegacyVersion, StringComparison.Ordinal)
+                && distribution.Edition is not null
+                && !distribution.Edition.Equals("paid", StringComparison.OrdinalIgnoreCase)
+                && !distribution.Edition.Equals("community", StringComparison.OrdinalIgnoreCase))
+                findings.Add(new("distribution.edition.invalid", "The legacy release edition is not governed.", "distribution.edition"));
             ValidateSource(distribution.Source, findings);
         }
 
@@ -252,7 +305,7 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
                 continue;
             }
 
-            ValidateTopology(topology, findings);
+            ValidateTopology(topology, requireManifestSignatureEvidence, findings);
         }
     }
 
@@ -279,7 +332,10 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
             findings.Add(new("source.commit.invalid", "Source commit must be a full hexadecimal Git commit identity.", "distribution.source.commit"));
     }
 
-    private static void ValidateTopology(ReleaseManifestTopology topology, List<ReleaseManifestAdmissionFinding> findings)
+    private static void ValidateTopology(
+        ReleaseManifestTopology topology,
+        bool requireManifestSignatureEvidence,
+        List<ReleaseManifestAdmissionFinding> findings)
     {
         Required(topology.Id, "topology.id.required", "Topology identity is required.", "topology.id", findings);
         if (topology.RuntimeKinds is null || topology.RuntimeKinds.Count == 0)
@@ -343,7 +399,7 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
             }
         }
 
-        ValidateSupplyChain(topology.SupplyChain, topology.Id, findings);
+        ValidateSupplyChain(topology.SupplyChain, topology.Id, requireManifestSignatureEvidence, findings);
     }
 
     private static void ValidateImage(ReleaseManifestImage image, string topologyId, List<ReleaseManifestAdmissionFinding> findings)
@@ -401,7 +457,11 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
         }
     }
 
-    private static void ValidateSupplyChain(ReleaseManifestSupplyChain? supplyChain, string topologyId, List<ReleaseManifestAdmissionFinding> findings)
+    private static void ValidateSupplyChain(
+        ReleaseManifestSupplyChain? supplyChain,
+        string topologyId,
+        bool requireManifestSignatureEvidence,
+        List<ReleaseManifestAdmissionFinding> findings)
     {
         if (supplyChain is null)
         {
@@ -411,9 +471,9 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
 
         ValidateAttestation(supplyChain.Sbom, "supplyChain.sbom.required", "supplyChain.sbom", topologyId, findings);
         ValidateAttestation(supplyChain.Provenance, "supplyChain.provenance.required", "supplyChain.provenance", topologyId, findings);
-        if (supplyChain.Signatures is null || supplyChain.Signatures.Count == 0)
+        if (supplyChain.Signatures is null || (supplyChain.Signatures.Count == 0 && requireManifestSignatureEvidence))
             findings.Add(new("supplyChain.signatures.required", "At least one retained signature evidence reference is required.", "supplyChain.signatures"));
-        else
+        else if (supplyChain.Signatures is not null)
         {
             foreach (var signature in supplyChain.Signatures)
             {
@@ -451,6 +511,8 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
                 "supplyChain.vulnerabilityScan.reference.invalid",
                 "supplyChain.vulnerabilityScan",
                 findings);
+            if (scan.PayloadDigest is not null && !IsDigest(scan.PayloadDigest))
+                findings.Add(new("supplyChain.vulnerabilityScan.payloadDigest.invalid", "Evidence payload digest must use a sha256 digest.", "supplyChain.vulnerabilityScan"));
         }
     }
 
@@ -474,6 +536,8 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
             $"{scope}.invalid",
             scope,
             findings);
+        if (attestation.PayloadDigest is not null && !IsDigest(attestation.PayloadDigest))
+            findings.Add(new($"{scope}.payloadDigest.invalid", "Evidence payload digest must use a sha256 digest.", scope));
     }
 
     private static void ValidateEvidenceReference(
@@ -512,7 +576,7 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
                 findings.Add(new("selection.registryClass.notFound", "A selected topology component has no image for the requested registry class.", "selection.registryClass"));
         }
 
-        if (topology.SupplyChain?.Signatures is not null
+        if (topology.SupplyChain?.Signatures is { Count: > 0 }
             && !topology.SupplyChain.Signatures.Any(x => x is not null && string.Equals(x.RegistryClass, options.RegistryClass, StringComparison.OrdinalIgnoreCase)))
             findings.Add(new("selection.signature.notFound", "The selected topology has no retained signature evidence for the requested registry class.", "selection.signature"));
     }
@@ -539,6 +603,9 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
         if (string.IsNullOrWhiteSpace(value))
             findings.Add(new(code, message, scope));
     }
+
+    internal static string ComputePayloadDigest(string payload) =>
+        $"sha256:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant()}";
 
     internal static bool IsDigest(string? value) =>
         !string.IsNullOrWhiteSpace(value)
@@ -574,6 +641,24 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
 
     internal static bool IsSafeRetainedReference(string? reference) =>
         !string.IsNullOrWhiteSpace(reference) && IsSafeLocator(reference, requireAbsolute: true);
+
+    private static bool IsSafeHttpsIssuer(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)
+            || value.Any(char.IsWhiteSpace)
+            || value.Any(char.IsControl)
+            || value.Contains('%', StringComparison.Ordinal)
+            || value.Contains('\\', StringComparison.Ordinal)
+            || value.Contains('?', StringComparison.Ordinal)
+            || value.Contains('#', StringComparison.Ordinal)
+            || !Uri.TryCreate(value, UriKind.Absolute, out var uri))
+            return false;
+
+        return uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(uri.Host)
+            && string.IsNullOrEmpty(uri.UserInfo)
+            && (uri.AbsolutePath is "/" or "");
+    }
 
     private static bool IsSafeLocator(string value, bool requireAbsolute)
     {

@@ -137,13 +137,18 @@ public static class ReleaseManifestPlanProjector
             .Where(x => x is not null && !string.IsNullOrWhiteSpace(x.Kind) && !kinds.Contains(x.Kind))
             .ToList();
         var supplyChain = topology.SupplyChain;
-        evidence.Add(new(ReleaseManifestEvidenceKinds.Manifest, admission.Reference!, admission.Digest, ReleaseManifestEvidenceContract.DescriptionFor(ReleaseManifestEvidenceKinds.Manifest)));
+        evidence.Add(new(
+            ReleaseManifestEvidenceKinds.Manifest,
+            admission.Reference!,
+            admission.Digest,
+            ReleaseManifestEvidenceContract.DescriptionFor(ReleaseManifestEvidenceKinds.Manifest),
+            EvidencePayloadDigest(admission.PayloadDigest)));
         evidence.Add(new(ReleaseManifestEvidenceKinds.Signature, admission.SignatureEvidence!.Reference, admission.SignatureEvidence.Digest, ReleaseManifestEvidenceContract.DescriptionFor(ReleaseManifestEvidenceKinds.Signature)));
-        evidence.Add(new(ReleaseManifestEvidenceKinds.Sbom, supplyChain.Sbom!.Uri, EvidenceDigest(supplyChain.Sbom.Digest, supplyChain.Sbom.Uri), ReleaseManifestEvidenceContract.DescriptionFor(ReleaseManifestEvidenceKinds.Sbom)));
-        evidence.Add(new(ReleaseManifestEvidenceKinds.Provenance, supplyChain.Provenance!.Uri, EvidenceDigest(supplyChain.Provenance.Digest, supplyChain.Provenance.Uri), ReleaseManifestEvidenceContract.DescriptionFor(ReleaseManifestEvidenceKinds.Provenance)));
+        evidence.Add(new(ReleaseManifestEvidenceKinds.Sbom, supplyChain.Sbom!.Uri, EvidenceDigest(supplyChain.Sbom.Digest, supplyChain.Sbom.Uri), ReleaseManifestEvidenceContract.DescriptionFor(ReleaseManifestEvidenceKinds.Sbom), EvidencePayloadDigest(supplyChain.Sbom.PayloadDigest)));
+        evidence.Add(new(ReleaseManifestEvidenceKinds.Provenance, supplyChain.Provenance!.Uri, EvidenceDigest(supplyChain.Provenance.Digest, supplyChain.Provenance.Uri), ReleaseManifestEvidenceContract.DescriptionFor(ReleaseManifestEvidenceKinds.Provenance), EvidencePayloadDigest(supplyChain.Provenance.PayloadDigest)));
 
         var scan = supplyChain.VulnerabilityScan!;
-        evidence.Add(new(ReleaseManifestEvidenceKinds.VulnerabilityScan, scan.Report, EvidenceDigest(scan.Digest, scan.Report), ReleaseManifestEvidenceContract.DescriptionFor(ReleaseManifestEvidenceKinds.VulnerabilityScan)));
+        evidence.Add(new(ReleaseManifestEvidenceKinds.VulnerabilityScan, scan.Report, EvidenceDigest(scan.Digest, scan.Report), ReleaseManifestEvidenceContract.DescriptionFor(ReleaseManifestEvidenceKinds.VulnerabilityScan), EvidencePayloadDigest(scan.PayloadDigest)));
         return evidence;
     }
 
@@ -152,6 +157,9 @@ public static class ReleaseManifestPlanProjector
             ? digest!
             : ReleaseManifestAdmissionService.ExtractDigest(reference)
               ?? throw new ReleaseManifestProjectionValidationException("Admitted evidence must retain a sha256 digest.");
+
+    private static string? EvidencePayloadDigest(string? digest) =>
+        ReleaseManifestAdmissionService.IsDigest(digest) ? digest : null;
 
     private static void ValidateExistingEvidence(IReadOnlyList<ResolvedPlanEvidence>? existing)
     {
@@ -167,6 +175,8 @@ public static class ReleaseManifestPlanProjector
 
             if (!ReleaseManifestEvidenceContract.IsSafe(evidence.Kind, evidence.Reference, evidence.Digest, evidence.Description))
                 throw new ReleaseManifestProjectionValidationException("Existing plan evidence must be a safe locator with a non-sensitive description.");
+            if (evidence.PayloadDigest is not null && !ReleaseManifestAdmissionService.IsDigest(evidence.PayloadDigest))
+                throw new ReleaseManifestProjectionValidationException("Existing plan evidence payload identities must use sha256 digests.");
         }
     }
 
