@@ -207,7 +207,8 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
         self.assertIn("az acr repository show-tags", no_manifest)
         self.assertIn('manifest-${recovery_id}-', no_manifest)
         self.assertIn('acr_assignment_description', no_manifest)
-        self.assertIn('az role assignment list --subscription "$registry_subscription_id" --all --scope "$registry_id"', no_manifest)
+        self.assertIn('az role assignment list --subscription "$registry_subscription_id" --scope "$registry_id"', no_manifest)
+        self.assertNotIn('--all --scope "$registry_id"', source)
         self.assertNotIn('select(startswith($prefix))] == [$expected]', no_manifest)
 
     def test_acr_assignment_has_a_durable_recovery_identity(self) -> None:

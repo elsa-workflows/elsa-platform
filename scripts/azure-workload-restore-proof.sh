@@ -1056,7 +1056,7 @@ lookup_owned_acr_assignment() {
       fail "ACR deployment record lookup is inconsistent"
   fi
   if [[ -z "$assignment_id" ]]; then
-    assignments_json="$(az role assignment list --subscription "$registry_subscription_id" --all --scope "$registry_id" \
+    assignments_json="$(az role assignment list --subscription "$registry_subscription_id" --scope "$registry_id" \
       --output json --only-show-errors 2>/dev/null)" || fail "target ACR assignment inventory could not be read"
     jq -e 'type == "array"' <<<"$assignments_json" >/dev/null || fail "target ACR assignment inventory is invalid"
     matching_json="$(jq -c --arg description "$acr_assignment_description" --arg scope "$registry_id" \
@@ -1124,7 +1124,7 @@ verify_no_target_state_without_manifest() {
   jq -e 'type == "array"' <<<"$deployments_json" >/dev/null || return 1
   jq -e --arg name "$acr_deployment" '[.[] | select(.name == $name)] | length == 0' \
     <<<"$deployments_json" >/dev/null || return 1
-  registry_assignments_json="$(az role assignment list --subscription "$registry_subscription_id" --all --scope "$registry_id" \
+  registry_assignments_json="$(az role assignment list --subscription "$registry_subscription_id" --scope "$registry_id" \
     --output json --only-show-errors)" || return 1
   jq -e 'type == "array"' <<<"$registry_assignments_json" >/dev/null || return 1
   jq -e --arg description "$acr_assignment_description" \
