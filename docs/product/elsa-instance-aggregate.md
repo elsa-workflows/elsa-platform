@@ -817,8 +817,9 @@ Tasks 1–6 are closed and the Azure provider/Milestone B proof is accepted. #14
 closed; #144 remains active through the real Azure browser proof (#185) and the
 capability-based multi-release/topology integration
 ([elsa-production-image#35](https://github.com/valence-works/elsa-production-image/issues/35)). #129 consumes the stable
-revision/deployment/instance ownership mapping and is in review with executable
-restore-to-new evidence; it is not yet a production recovery-service claim.
+revision/deployment/instance ownership mapping; its executable restore-to-new proof
+and review remediation are running in PR #205. It is not yet a production
+recovery-service claim.
 
 ## Non-goals and deferred choices
 
