@@ -22,7 +22,7 @@ as a production stamp service.
 | Capability | Current evidence | Assessment |
 |------------|------------------|------------|
 | Package/feature metadata | NuGet source ingestion, manifests, generator contracts, approvals and compatibility services | strong reusable foundation |
-| Runtime images/topologies | signed/scanned `runtime-server`, `runtime-studio`, `runtime-combined` images and schema 2.0 release evidence are published; legacy API configuration still contains obsolete `elsa-pro-* : latest` identities | immutable producer/admission path proven for 3.8 Combined; authoritative multi-release catalog remains incomplete |
+| Runtime images/topologies | signed/scanned `runtime-server`, `runtime-studio`, `runtime-combined` images and schema 2.0 release evidence are published; admitted manifests now project into a durable Control-owned catalog | immutable producer/admission/catalog path proven for 3.8 Combined; additional release lines require producer evidence and compatible runtime integration |
 | Runtime Builder | saved configurations, package planning, bundles and template outputs | reusable; must feed instance/provider flow deliberately |
 | Desired state | immutable revisions, structured records, canonical hashes, typed reconciliation, instance plan projection and durable operations | provider-neutral lifecycle foundation implemented |
 | Deployment execution | durable runs/commands, leases, outcomes, runtime pull/sync, webhook advisory path | strong for artifact delivery to registered runtimes |
@@ -33,7 +33,7 @@ as a production stamp service.
 | Console | shared React shell with packages, builder, deployments, credentials, logs, restored artifact routes and managed-instance open/retry UX | build health restored; complete signup/onboarding and final Azure browser proof remain |
 | Observability | health checks, OTel dependencies, engine verification and console logs | operational baseline, not customer/SRE product completeness |
 | Backups/DR | restore-to-new consistency contract, ADR, fault-injection harness and live Azure proof are in PR #205 | evidence is in review; no production backup API/SLA claim |
-| Commercial images | signed immutable schema 2.0 release manifest, signature, SBOM, provenance and vulnerability evidence are admitted with safe retained locators/digests | 3.8 proof is real; lifecycle-aware arbitrary-release catalog and runtime integration generalization remain |
+| Commercial images | signed immutable schema 2.0 release manifest, signature, SBOM, provenance and vulnerability evidence are admitted and persisted as safe catalog facts | arbitrary release-line cardinality is implemented; 3.8 is the proven producer release and runtime integration still needs capability-driven generalization |
 
 ## Current Runtime and Deployment Flow
 
@@ -68,10 +68,11 @@ stamp, capacity and customer-routing composition are therefore still product wor
 
 ## Architectural Gaps
 
-1. Version availability/lifecycle and compatible feature selection are not yet served
-   as authoritative product data for an arbitrary catalog of release lines.
-2. Legacy API configuration still exposes obsolete `elsa-pro-* : latest` identities
-   outside the proven immutable release-admission path.
+1. Governed catalog ingestion and queries are durable, but managed-instance selection
+   and runtime integration are not yet proven end to end across producer-published
+   release lines and applicable topologies beyond the 3.8 Combined proof.
+2. Legacy API configuration may remain as a compatibility surface, but it is no
+   longer authoritative release-selection data.
 3. The Azure provider vertical slice is not yet configured as the production API's
    stamp/placement/capacity service.
 4. No executable isolation profiles or published boundary guarantees exist beyond the
@@ -97,9 +98,10 @@ stamp, capacity and customer-routing composition are therefore still product wor
 - README and specs describe broader managed hosting and runtime operations as direction;
   managed-instance lifecycle/open UX now exists, while the full operations and audit
   product remains incomplete.
-- Runtime image evidence recognizes Server/Studio/Combined and Control strictly admits
-  the published schema 2.0 artifact, but the default catalog is still static and does
-  not implement arbitrary-release lifecycle policy.
+- Runtime image evidence recognizes Server/Studio/Combined; Control strictly admits
+  schema 2.0 artifacts and durably projects their lifecycle and compatibility facts.
+  The remaining gap is consuming those facts through the managed-instance/provider
+  journey across producer-published release lines, not catalog cardinality.
 - Azure deployment now has a real provider/proof-host vertical slice; the production
   API still fails closed with an unconfigured runner rather than silently presenting
   proof composition as a managed stamp service.
