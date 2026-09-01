@@ -302,6 +302,35 @@ public sealed class ReleaseManifestAdmissionTests
         Assert.Null(admission.SignatureEvidence);
     }
 
+    [Theory]
+    [InlineData("sha1:9999999999999999999999999999999999999999")]
+    [InlineData("sha256:9999999999999999999999999999999999999999999999999999999999999999")]
+    public async Task Artifact_payload_digest_failure_uses_stable_format_and_binding_diagnostic(string suppliedDigest)
+    {
+        var artifact = Artifact(Digest('b')) with { PayloadDigest = suppliedDigest };
+
+        var admission = await Admit(artifact);
+
+        var finding = Assert.Single(admission.Findings, x => x.Code == "manifest.payloadDigest.mismatch");
+        Assert.Equal(
+            "The release-manifest payload digest must be a sha256 digest matching the exact UTF-8 payload.",
+            finding.Message);
+    }
+
+    [Fact]
+    public async Task Scheme_less_legacy_evidence_reference_is_rejected_at_admission()
+    {
+        var payload = ManifestJson().Replace(
+            "oci://evidence/sbom@",
+            "evidence.example/sbom@",
+            StringComparison.Ordinal);
+
+        var admission = await Admit(WithPayload(Artifact(Digest('b')), payload));
+
+        Assert.False(admission.Accepted);
+        Assert.Contains(admission.Findings, x => x.Code == "supplyChain.sbom.invalid");
+    }
+
     [Fact]
     public async Task Invalid_options_do_not_invoke_signature_verifier()
     {

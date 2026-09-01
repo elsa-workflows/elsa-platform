@@ -197,7 +197,7 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
             if (!string.IsNullOrWhiteSpace(artifact.PayloadDigest)
                 && (!IsDigest(artifact.PayloadDigest)
                     || !string.Equals(payloadDigest, artifact.PayloadDigest, StringComparison.OrdinalIgnoreCase)))
-                findings.Add(new("manifest.payloadDigest.mismatch", "The exact UTF-8 release-manifest payload digest is invalid.", "artifact.payload"));
+                findings.Add(new("manifest.payloadDigest.mismatch", "The release-manifest payload digest must be a sha256 digest matching the exact UTF-8 payload.", "artifact.payload"));
         }
     }
 
@@ -628,7 +628,7 @@ public sealed class ReleaseManifestAdmissionService(IReleaseManifestSignatureVer
 
     internal static bool IsSafeEvidenceReference(string reference, string? digest)
     {
-        if (!IsSafeLocator(reference, requireAbsolute: true) && !IsSafeImageReference(reference))
+        if (!IsSafeLocator(reference, requireAbsolute: true))
             return false;
 
         var embeddedDigest = ExtractDigest(reference);
