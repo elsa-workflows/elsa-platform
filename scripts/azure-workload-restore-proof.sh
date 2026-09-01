@@ -375,22 +375,30 @@ quiesce_source() {
 }
 
 resume_source() {
-  local revision revisions_json active_count expected_active_count source_healthy=0
+  local revision revisions_json expected_revisions_json active_exact source_healthy=0 revision_active
   (( source_quiesced == 1 )) || return 0
-  expected_active_count="$(printf '%s\n' "$source_revisions_json" | wc -l | tr -d ' ')"
+  expected_revisions_json="$(printf '%s\n' "$source_revisions_json" | jq -Rsc 'split("\n") | map(select(length > 0)) | sort')" || return 1
+  revisions_json="$(az containerapp revision list --subscription "$subscription_id" --resource-group "$source_resource_group" \
+    --name "$source_app" --output json --only-show-errors)" || return 1
   for revision in $source_revisions_json; do
-    az containerapp revision activate --subscription "$subscription_id" --resource-group "$source_resource_group" \
-      --name "$source_app" --revision "$revision" --only-show-errors >/dev/null || {
-      echo "CRITICAL: a source revision could not be reactivated" >&2
-      return 1
-    }
+    revision_active="$(jq -r --arg revision "$revision" \
+      '[.[] | select(.name == $revision and .properties.active == true)] | length == 1' <<<"$revisions_json")" || return 1
+    if [[ "$revision_active" != true ]]; then
+      az containerapp revision activate --subscription "$subscription_id" --resource-group "$source_resource_group" \
+        --name "$source_app" --revision "$revision" --only-show-errors >/dev/null || {
+        echo "CRITICAL: a source revision could not be reactivated" >&2
+        return 1
+      }
+    fi
   done
-  for _ in {1..60}; do
+  # Managed-environment reactivation has an observed multi-minute provider tail.
+  # Keep this bounded but long enough to restore the source before any target work.
+  for _ in {1..180}; do
     revisions_json="$(az containerapp revision list --subscription "$subscription_id" --resource-group "$source_resource_group" \
       --name "$source_app" --output json --only-show-errors)" || return 1
-    active_count="$(jq -r --argjson names "$(printf '%s\n' "$source_revisions_json" | jq -Rsc 'split("\\n") | map(select(length > 0))')" \
-      '[.[] | select(.properties.active == true and (.name as $name | $names | index($name) != null))] | length' <<<"$revisions_json")" || return 1
-    if (( active_count == expected_active_count )); then
+    active_exact="$(jq -r --argjson names "$expected_revisions_json" \
+      '([.[] | select(.properties.active == true) | .name] | sort) == $names' <<<"$revisions_json")" || return 1
+    if [[ "$active_exact" == true ]]; then
       if curl --fail --silent --show-error --max-time 30 "$source_endpoint/health" >/dev/null 2>&1; then
         source_healthy=1
         break

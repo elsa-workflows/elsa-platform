@@ -41,6 +41,15 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
             source.index('manifest_file="$temp_dir/recovery-manifest.json"'),
         )
 
+    def test_source_resume_is_idempotent_and_waits_for_external_health(self) -> None:
+        source = self.source
+        resume = source[source.index("resume_source()") : source.index("verify_target_group_inventory()")]
+        self.assertIn('revision_active="$(jq -r', resume)
+        self.assertIn('if [[ "$revision_active" != true ]]', resume)
+        self.assertIn("for _ in {1..180}", resume)
+        self.assertIn("active_exact=", resume)
+        self.assertIn('curl --fail --silent --show-error --max-time 30 "$source_endpoint/health"', resume)
+
     def test_rpo_uses_incident_age_and_provider_restore_point(self) -> None:
         source = self.source
         self.assertIn(
