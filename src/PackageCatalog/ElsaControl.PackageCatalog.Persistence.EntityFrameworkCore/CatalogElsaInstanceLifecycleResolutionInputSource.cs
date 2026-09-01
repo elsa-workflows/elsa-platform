@@ -11,15 +11,46 @@ using Microsoft.EntityFrameworkCore;
 namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 
 /// <summary>
+/// Server-owned origin used to construct dereferenceable resolved-plan references for lifecycle
+/// workers. It is intentionally required at runtime; a placeholder authority would make a
+/// persisted plan look valid while pointing at an endpoint that cannot serve it.
+/// </summary>
+public sealed class ElsaInstancePlanAuthorityOptions
+{
+    public const string ConfigurationSection = "ControlPlane";
+
+    public string? Origin { get; init; }
+
+    public bool TryGetOrigin(out string origin)
+    {
+        origin = "";
+        var value = Origin?.Trim();
+        if (string.IsNullOrWhiteSpace(value) ||
+            !Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(uri.Host) ||
+            !string.IsNullOrEmpty(uri.UserInfo) ||
+            !string.IsNullOrEmpty(uri.Query) ||
+            !string.IsNullOrEmpty(uri.Fragment) ||
+            uri.AbsolutePath is not ("" or "/"))
+            return false;
+
+        origin = uri.GetLeftPart(UriPartial.Authority);
+        return true;
+    }
+}
+
+/// <summary>
 /// Reconstructs the resolver input for a claimed managed-instance operation from
 /// the durable catalog projection. The request body and producer payload are not
 /// available at this boundary; only the exact admitted catalog row is projected.
 /// </summary>
 public sealed class CatalogElsaInstanceLifecycleResolutionInputSource(
     CatalogDbContext dbContext,
-    IGovernedReleaseCatalogStore releaseCatalog) : IElsaInstanceLifecycleResolutionInputSource
+    IGovernedReleaseCatalogStore releaseCatalog,
+    ElsaInstancePlanAuthorityOptions? authorityOptions = null) : IElsaInstanceLifecycleResolutionInputSource
 {
-    private const string PlanAuthority = "https://control.example.invalid";
+    private readonly ElsaInstancePlanAuthorityOptions _authorityOptions = authorityOptions ?? new();
 
     public async Task<ElsaInstanceLifecycleResolutionInput?> GetAsync(
         ElsaInstance instance,
@@ -29,6 +60,8 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSource(
         ArgumentNullException.ThrowIfNull(instance);
         ArgumentNullException.ThrowIfNull(operation);
         if (operation.InstanceId != instance.Id || operation.Action == ElsaInstanceOperationAction.Delete)
+            return null;
+        if (!_authorityOptions.TryGetOrigin(out var planAuthority))
             return null;
 
         var candidates = await releaseCatalog.QueryAsync(new GovernedReleaseCatalogQuery(
@@ -54,7 +87,7 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSource(
             return null;
 
         var planId = PlanId(entry.ManifestDigest);
-        var planUri = $"{PlanAuthority}/api/workspaces/{instance.WorkspaceId:D}/instances/{instance.Id:D}/resolved-plans/{planId}";
+        var planUri = $"{planAuthority}/api/workspaces/{instance.WorkspaceId:D}/instances/{instance.Id:D}/resolved-plans/{planId}";
         var builderIntent = new RuntimeBuilderIntent(
             new RuntimeImageSelection("elsa-instance", null, null, null),
             [], [], [], null);
@@ -83,9 +116,9 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSource(
             return null;
 
         var environment = environments[0];
-        var engine = environment.Engines.OrderBy(x => x.Id).FirstOrDefault();
-        if (engine is null)
+        if (environment.Engines.Count != 1)
             return null;
+        var engine = environment.Engines[0];
 
         var actorAccountId = await dbContext.ElsaInstanceAuditEvents
             .AsNoTracking()

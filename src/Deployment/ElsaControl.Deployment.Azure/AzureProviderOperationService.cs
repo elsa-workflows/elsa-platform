@@ -19,6 +19,14 @@ public sealed record AzureProviderOperationStatusResponse(
     AzureProviderOperation Operation,
     IReadOnlyList<AzureProviderOperationTransition> Transitions);
 
+/// <summary>
+/// The provider-facing result of a durable operation reservation. Replay status comes from the
+/// store's atomic create-or-get decision rather than from executor attempt counters.
+/// </summary>
+public sealed record AzureProviderOperationSubmissionResult(
+    AzureProviderOperation Operation,
+    bool Replayed);
+
 public interface IAzureProviderOperationService
 {
     Task<AzureProviderOperation> SubmitAsync(
@@ -38,23 +46,42 @@ public interface IAzureProviderOperationService
 }
 
 /// <summary>
+/// Optional richer submission contract used by lifecycle adapters that need to distinguish a
+/// newly reserved provider operation from a replay. The legacy operation service remains stable
+/// for callers that only need the durable operation.
+/// </summary>
+public interface IAzureProviderOperationReplayService
+{
+    Task<AzureProviderOperationSubmissionResult> SubmitWithReplayAsync(
+        Guid workspaceId,
+        AzureProviderOperationSubmission submission,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
 /// Creates durable Azure operations from an admitted provider plan. The operation store retains
 /// the safe provider-plan fields needed for a worker to recover after a process restart; raw
 /// resolved-plan JSON, credentials and secret values are never accepted.
 /// </summary>
 public sealed class AzureProviderOperationService(
     IAzureProviderOperationStore store,
-    TimeProvider? timeProvider = null) : IAzureProviderOperationService
+    TimeProvider? timeProvider = null) : IAzureProviderOperationService, IAzureProviderOperationReplayService
 {
     private const int MaximumIdempotencyKeyLength = 512;
     private const string DeleteIdempotencySuffix = ":delete";
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
-    public Task<AzureProviderOperation> SubmitAsync(
+    public async Task<AzureProviderOperation> SubmitAsync(
         Guid workspaceId,
         AzureProviderOperationSubmission submission,
         CancellationToken cancellationToken = default) =>
-        SubmitCoreAsync(workspaceId, submission, AzureProviderOperationAction.Reconcile, cancellationToken);
+        (await SubmitWithReplayAsync(workspaceId, submission, cancellationToken)).Operation;
+
+    public Task<AzureProviderOperationSubmissionResult> SubmitWithReplayAsync(
+        Guid workspaceId,
+        AzureProviderOperationSubmission submission,
+        CancellationToken cancellationToken = default) =>
+        SubmitCoreWithReplayAsync(workspaceId, submission, AzureProviderOperationAction.Reconcile, cancellationToken);
 
     public async Task<AzureProviderOperation> SubmitDeleteAsync(
         Guid workspaceId,
@@ -132,6 +159,13 @@ public sealed class AzureProviderOperationService(
         Guid workspaceId,
         AzureProviderOperationSubmission submission,
         AzureProviderOperationAction action,
+        CancellationToken cancellationToken) =>
+        (await SubmitCoreWithReplayAsync(workspaceId, submission, action, cancellationToken)).Operation;
+
+    private async Task<AzureProviderOperationSubmissionResult> SubmitCoreWithReplayAsync(
+        Guid workspaceId,
+        AzureProviderOperationSubmission submission,
+        AzureProviderOperationAction action,
         CancellationToken cancellationToken)
     {
         if (workspaceId == Guid.Empty)
@@ -151,7 +185,8 @@ public sealed class AzureProviderOperationService(
             plan,
             action,
             submission.ProviderScopeFingerprint);
-        return await store.CreateOrGetAsync(operationRequest, _timeProvider.GetUtcNow(), cancellationToken);
+        var result = await store.CreateOrGetWithResultAsync(operationRequest, _timeProvider.GetUtcNow(), cancellationToken);
+        return new(result.Operation, result.Replayed);
     }
 
     public static AzureProviderOperationRequest CreateOperationRequest(

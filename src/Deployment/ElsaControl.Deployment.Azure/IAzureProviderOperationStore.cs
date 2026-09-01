@@ -1,8 +1,29 @@
 namespace ElsaControl.Deployment.Azure;
 
+/// <summary>
+/// The atomic outcome of an operation create-or-get reservation. <see cref="Replayed"/> is
+/// assigned by the durable store while selecting or inserting the reservation; it must not be
+/// inferred from executor attempts, which can also increase after retries or restarts.
+/// </summary>
+public sealed record AzureProviderOperationCreateResult(
+    AzureProviderOperation Operation,
+    bool Replayed);
+
 public interface IAzureProviderOperationStore
 {
     Task<AzureProviderOperation> CreateOrGetAsync(AzureProviderOperationRequest request, DateTimeOffset now, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atomically creates or gets an operation and reports whether the durable reservation was
+    /// already present. Implementations that only support the legacy operation result receive a
+    /// conservative non-replayed result; durable stores should override this member.
+    /// </summary>
+    async Task<AzureProviderOperationCreateResult> CreateOrGetWithResultAsync(
+        AzureProviderOperationRequest request,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default) =>
+        new(await CreateOrGetAsync(request, now, cancellationToken), Replayed: false);
+
     Task<AzureProviderOperation?> GetAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<AzureProviderOperation>> ListRunnableAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken = default);
     Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, string? providerScopeFingerprint, CancellationToken cancellationToken = default);

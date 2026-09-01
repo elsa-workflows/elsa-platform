@@ -41,6 +41,21 @@ public sealed class AzureProviderOperationServiceTests
         Assert.Equal(new string('c', 64), store.Request!.ProviderScopeFingerprint);
     }
 
+    [Fact]
+    public async Task Submit_with_replay_reports_the_atomic_store_decision()
+    {
+        var store = new CapturingStore();
+        var service = new AzureProviderOperationService(store, new FixedTimeProvider(Now));
+        var submission = new AzureProviderOperationSubmission("request-1", new('b', 64), CreatePlan());
+
+        var first = await service.SubmitWithReplayAsync(WorkspaceId, submission);
+        var replay = await service.SubmitWithReplayAsync(WorkspaceId, submission);
+
+        Assert.False(first.Replayed);
+        Assert.True(replay.Replayed);
+        Assert.Equal(first.Operation.Id, replay.Operation.Id);
+    }
+
     [Theory]
     [InlineData("secret://vault/../database")]
     [InlineData("secret://vault/database%2Fconnection")]
@@ -243,6 +258,17 @@ public sealed class AzureProviderOperationServiceTests
         public List<AzureProviderOperationRequest> Requests { get; } = [];
         private AzureProviderOperation? _operation;
         private readonly Dictionary<string, AzureProviderOperation> _operations = new(StringComparer.Ordinal);
+
+        public async Task<AzureProviderOperationCreateResult> CreateOrGetWithResultAsync(
+            AzureProviderOperationRequest request,
+            DateTimeOffset now,
+            CancellationToken cancellationToken = default)
+        {
+            var normalized = AzureProviderOperationValidation.Normalize(request);
+            var replayed = _operations.ContainsKey(normalized.IdempotencyKey);
+            var operation = await CreateOrGetAsync(normalized, now, cancellationToken);
+            return new(operation, replayed);
+        }
 
         public Task<AzureProviderOperation> CreateOrGetAsync(AzureProviderOperationRequest request, DateTimeOffset now, CancellationToken cancellationToken = default)
         {

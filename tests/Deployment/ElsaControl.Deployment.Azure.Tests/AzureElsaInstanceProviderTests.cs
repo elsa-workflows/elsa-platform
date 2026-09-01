@@ -21,7 +21,7 @@ public sealed class AzureElsaInstanceProviderTests
         var instanceId = Guid.Parse("22222222-2222-2222-2222-222222222222");
         var operationId = Guid.Parse("33333333-3333-3333-3333-333333333333");
         var plan = Translate(releaseLine, version);
-        var service = new CapturingOperationService(CreateOperation(workspaceId, plan, operationId));
+        var service = new CapturingOperationService(CreateOperation(workspaceId, plan, operationId) with { AttemptNumber = 17 });
         var provider = new AzureElsaInstanceProvider(
             service,
             new CapturingOperationStore(),
@@ -32,7 +32,7 @@ public sealed class AzureElsaInstanceProviderTests
         var second = await provider.SubmitAsync(request);
 
         Assert.False(first.Replayed);
-        Assert.False(second.Replayed);
+        Assert.True(second.Replayed);
         Assert.Equal(first.CorrelationId, second.CorrelationId);
         Assert.Equal(2, service.Submissions.Count);
         Assert.Equal(service.Submissions[0].IdempotencyKey, service.Submissions[1].IdempotencyKey);
@@ -271,7 +271,7 @@ public sealed class AzureElsaInstanceProviderTests
             plan.ReleaseManifestSignatureReference,
             plan.SecretReferences);
 
-    private sealed class CapturingOperationService(AzureProviderOperation? operation) : IAzureProviderOperationService
+    private sealed class CapturingOperationService(AzureProviderOperation? operation) : IAzureProviderOperationService, IAzureProviderOperationReplayService
     {
         public List<AzureProviderOperationSubmission> Submissions { get; } = [];
 
@@ -282,6 +282,15 @@ public sealed class AzureElsaInstanceProviderTests
         {
             Submissions.Add(submission);
             return Task.FromResult(operation!);
+        }
+
+        public Task<AzureProviderOperationSubmissionResult> SubmitWithReplayAsync(
+            Guid workspaceId,
+            AzureProviderOperationSubmission submission,
+            CancellationToken cancellationToken = default)
+        {
+            Submissions.Add(submission);
+            return Task.FromResult(new AzureProviderOperationSubmissionResult(operation!, Replayed: Submissions.Count > 1));
         }
 
         public Task<AzureProviderOperation> SubmitDeleteAsync(

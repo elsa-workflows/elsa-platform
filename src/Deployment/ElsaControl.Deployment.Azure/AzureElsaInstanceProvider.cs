@@ -35,15 +35,17 @@ public sealed class AzureElsaInstanceProvider(
         if (!translation.IsAccepted)
             throw new InvalidOperationException("The resolved plan is outside the governed Azure provider profile.");
 
-        var operation = await operationService.SubmitAsync(
-            request.WorkspaceId,
-            new AzureProviderOperationSubmission(
-                IdempotencyKey(request.OperationId),
-                _options.TemplateFingerprint,
-                translation.Plan!,
-                _options.ProviderScopeFingerprint),
-            cancellationToken);
-        return new(operation.OperationIdentity, Replayed: operation.AttemptNumber > 1);
+        var submission = new AzureProviderOperationSubmission(
+            IdempotencyKey(request.OperationId),
+            _options.TemplateFingerprint,
+            translation.Plan!,
+            _options.ProviderScopeFingerprint);
+        var result = operationService is IAzureProviderOperationReplayService replayService
+            ? await replayService.SubmitWithReplayAsync(request.WorkspaceId, submission, cancellationToken)
+            : new AzureProviderOperationSubmissionResult(
+                await operationService.SubmitAsync(request.WorkspaceId, submission, cancellationToken),
+                Replayed: false);
+        return new(result.Operation.OperationIdentity, result.Replayed);
     }
 
     public async Task<ElsaInstanceProviderObservation> ObserveAsync(

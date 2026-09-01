@@ -14,7 +14,16 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         new ReadOnlyDictionary<string, string>(
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
 
-    public async Task<AzureProviderOperation> CreateOrGetAsync(AzureProviderOperationRequest request, DateTimeOffset now, CancellationToken cancellationToken = default)
+    public async Task<AzureProviderOperation> CreateOrGetAsync(
+        AzureProviderOperationRequest request,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default) =>
+        (await CreateOrGetWithResultAsync(request, now, cancellationToken)).Operation;
+
+    public async Task<AzureProviderOperationCreateResult> CreateOrGetWithResultAsync(
+        AzureProviderOperationRequest request,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
     {
         var normalized = AzureProviderOperationValidation.Normalize(request);
         var hash = AzureProviderOperationValidation.ComputeRequestHash(normalized);
@@ -27,7 +36,8 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
                          x.Status == AzureProviderOperationStatus.Running || x.Status == AzureProviderOperationStatus.RecoveryRequired))
             .SingleOrDefaultAsync(cancellationToken);
         existing ??= identityEntity is null ? null : ToModel(identityEntity);
-        if (existing is not null) return EnsureSameRequest(existing, hash);
+        if (existing is not null)
+            return new(EnsureSameRequest(existing, hash), Replayed: true);
 
         var activeTargetEntity = await FindActiveTargetAsync(normalized, cancellationToken);
         if (activeTargetEntity is not null)
@@ -103,7 +113,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         try
         {
             await db.SaveChangesAsync(cancellationToken);
-            return ToModel(entity);
+            return new(ToModel(entity), Replayed: false);
         }
         catch (DbUpdateException)
         {
@@ -115,7 +125,8 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
                              x.Status == AzureProviderOperationStatus.Running || x.Status == AzureProviderOperationStatus.RecoveryRequired))
                 .SingleOrDefaultAsync(cancellationToken);
             existing ??= identityEntity is null ? null : ToModel(identityEntity);
-            if (existing is not null) return EnsureSameRequest(existing, hash);
+            if (existing is not null)
+                return new(EnsureSameRequest(existing, hash), Replayed: true);
             activeTargetEntity = await FindActiveTargetAsync(normalized, cancellationToken);
             if (activeTargetEntity is not null)
                 throw new AzureProviderOperationConflictException(ToModel(activeTargetEntity));

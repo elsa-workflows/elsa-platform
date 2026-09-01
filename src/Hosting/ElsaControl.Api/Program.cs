@@ -244,7 +244,13 @@ builder.Services.AddScoped<IElsaInstanceProviderSubmissionStore>(services => ser
 builder.Services.AddScoped<IElsaInstanceProviderPendingOperationStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
 builder.Services.AddScoped<IElsaInstanceProviderReconciliationStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
 builder.Services.AddScoped<IElsaInstanceDeletionStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
-builder.Services.AddScoped<IElsaInstanceLifecycleResolutionInputSource, CatalogElsaInstanceLifecycleResolutionInputSource>();
+builder.Services.Configure<ElsaInstancePlanAuthorityOptions>(
+    builder.Configuration.GetSection(ElsaInstancePlanAuthorityOptions.ConfigurationSection));
+builder.Services.AddScoped<IElsaInstanceLifecycleResolutionInputSource>(services =>
+    new CatalogElsaInstanceLifecycleResolutionInputSource(
+        services.GetRequiredService<CatalogDbContext>(),
+        services.GetRequiredService<IGovernedReleaseCatalogStore>(),
+        services.GetRequiredService<IOptions<ElsaInstancePlanAuthorityOptions>>().Value));
 builder.Services.AddScoped<IElsaInstancePlanResolver, ElsaInstancePlanResolver>();
 builder.Services.AddScoped<ElsaInstanceLifecycleService>();
 builder.Services.AddScoped<ElsaInstanceLifecycleWorker>();
