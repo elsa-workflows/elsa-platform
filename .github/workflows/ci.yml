@@ -43,6 +43,7 @@ jobs:
         run: |
           az bicep build --file infra/azure-workload-proof/main.bicep --stdout >/dev/null
           az bicep build --file infra/azure-workload-proof/recovery-target.bicep --stdout >/dev/null
+          az bicep build --file infra/azure-workload-proof/recovery-database.bicep --stdout >/dev/null
           az bicep build --file infra/azure-workload-proof/acr-pull-role.bicep --stdout >/dev/null
 
       - name: Setup .NET SDK

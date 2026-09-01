@@ -12,6 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 RUNBOOK = ROOT / "scripts" / "azure-workload-restore-proof.sh"
 TARGET_TEMPLATE = ROOT / "infra" / "azure-workload-proof" / "recovery-target.bicep"
+DATABASE_TEMPLATE = ROOT / "infra" / "azure-workload-proof" / "recovery-database.bicep"
 
 
 class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
@@ -19,6 +20,7 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.source = RUNBOOK.read_text()
         cls.target_template = TARGET_TEMPLATE.read_text()
+        cls.database_template = DATABASE_TEMPLATE.read_text()
 
     def test_cutoff_is_provider_observed_after_real_quiescence(self) -> None:
         source = self.source
@@ -93,18 +95,18 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
             source,
         )
 
-    def test_existing_database_requires_manifest_and_provider_identity(self) -> None:
+    def test_existing_database_requires_manifest_and_durable_provider_provenance(self) -> None:
         source = self.source
         for expected in (
             "verify_owned_target_database",
             'tags[\"manifest-digest\"] == $manifest',
-            ".properties.createMode // .createMode",
-            ".properties.sourceDatabaseId // .sourceDatabaseId",
-            ".properties.restorePointInTime // .restorePointInTime",
+            "verify_provider_restore_provenance",
+            ".properties.outputs.createMode.value",
+            ".properties.outputs.sourceDatabaseId.value",
+            ".properties.outputs.restorePointUtc.value",
             "PointInTimeRestore",
-            "Azure provider restore point does not match the selected recovery cutoff",
-            "--tags proof=129 owner=elsa-control recovery-id=",
-            "recovery-point-utc=\"$restore_point_utc\"",
+            'database_restore_deployment="elsa129-db-${target_name}"',
+            'delete_and_verify_group_deployment "$subscription_id" "$source_resource_group" "$database_restore_deployment"',
             "restore-started-utc=\"$restore_accepted_at\"",
         ):
             self.assertIn(expected, source)
@@ -112,8 +114,15 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
             source.index('verify_owned_target_database "$target_db_json" "$manifest_tag"'),
             source.index("deploy_target false"),
         )
-        self.assertNotIn('az resource tag --ids "$target_db_id" --tags proof=129 owner=elsa-control', source[: source.index("verify_owned_target_database")])
         self.assertIn('.tags["restore-started-utc"] // empty', source)
+        self.assertNotIn("az sql db restore", source)
+        for expected in (
+            "createMode: 'PointInTimeRestore'",
+            "sourceDatabaseId: sourceDatabaseId",
+            "restorePointInTime: restorePointUtc",
+            "output recoveryManifestDigest",
+        ):
+            self.assertIn(expected, self.database_template)
 
     def test_firewall_collision_and_cleanup_are_ownership_checked(self) -> None:
         source = self.source

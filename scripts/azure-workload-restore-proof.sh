@@ -104,6 +104,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
 proof_dir="$repo_root/infra/azure-workload-proof"
 target_template="$proof_dir/recovery-target.bicep"
+database_template="$proof_dir/recovery-database.bicep"
 probe_project="$repo_root/src/Deployment/ElsaControl.Deployment.WorkflowProbeHost/ElsaControl.WorkflowProbeHost.csproj"
 # shellcheck source=scripts/lib/azure-workload-proof.sh
 source "$script_dir/lib/azure-workload-proof.sh"
@@ -237,8 +238,9 @@ done
 if [[ "$mode" == apply ]]; then
   command -v oras >/dev/null || fail "oras is required"
 fi
-[[ -f "$target_template" && -f "$probe_project" && -f "$proof_dir/sql-bootstrap.sql" ]] || fail "checked-in recovery proof artifacts are missing"
+[[ -f "$target_template" && -f "$database_template" && -f "$probe_project" && -f "$proof_dir/sql-bootstrap.sql" ]] || fail "checked-in recovery proof artifacts are missing"
 az bicep build --file "$target_template" --stdout >/dev/null
+az bicep build --file "$database_template" --stdout >/dev/null
 
 if [[ "$mode" == validate ]]; then
   echo '{"outcome":"passed","mode":"validate","proof":"129"}'
@@ -262,6 +264,7 @@ target_vault="${target_name}-kv"
 target_identity="${target_name}-identity"
 target_app="${target_name}-app"
 acr_deployment="elsa129-${target_name}"
+database_restore_deployment="elsa129-db-${target_name}"
 source_db_id="/subscriptions/${subscription_id}/resourceGroups/${source_resource_group}/providers/Microsoft.Sql/servers/${source_server}/databases/${source_database}"
 source_vault_id="/subscriptions/${subscription_id}/resourceGroups/${source_resource_group}/providers/Microsoft.KeyVault/vaults/${source_vault}"
 target_db_id="/subscriptions/${subscription_id}/resourceGroups/${source_resource_group}/providers/Microsoft.Sql/servers/${source_server}/databases/${target_database}"
@@ -445,29 +448,35 @@ query_target_database() {
   target_db_json="$(jq -c --arg name "$target_database" '[.[] | select(.name == $name)] | first // empty' <<<"$listed_databases")"
 }
 
-verify_provider_restore_point() {
-  local database_json="$1" provider_point provider_source provider_mode
-  provider_mode="$(jq -r '.properties.createMode // .createMode // empty' <<<"$database_json")"
-  provider_source="$(jq -r '.properties.sourceDatabaseId // .sourceDatabaseId // empty' <<<"$database_json")"
-  provider_point="$(jq -r '.properties.restorePointInTime // .restorePointInTime // empty' <<<"$database_json")"
-  [[ "$provider_mode" == PointInTimeRestore ]] || {
-    echo "Azure target database is not provider-marked as a point-in-time restore" >&2
+verify_provider_restore_provenance() {
+  local deployment_json provider_point
+  deployment_json="$(az deployment group show --subscription "$subscription_id" --resource-group "$source_resource_group" \
+    --name "$database_restore_deployment" --output json --only-show-errors 2>/dev/null)" || {
+    echo "Azure restore deployment provenance could not be read" >&2
     return 1
   }
-  [[ "$(printf '%s' "$provider_source" | tr '[:upper:]' '[:lower:]')" == "$(printf '%s' "$source_db_id" | tr '[:upper:]' '[:lower:]')" ]] || {
-    echo "Azure target database source identity does not match the source database" >&2
-    return 1
-  }
-  provider_point="$(canonical_utc "$provider_point")" || {
-    echo "Azure did not return a valid provider restore point" >&2
-    return 1
-  }
+  provider_point="$(jq -r '.properties.outputs.restorePointUtc.value // empty' <<<"$deployment_json")"
+  provider_point="$(canonical_utc "$provider_point")" || return 1
   if [[ -n "${recovery_cutoff_utc:-}" ]]; then
-    same_instant "$provider_point" "$recovery_cutoff_utc" || {
-      echo "Azure provider restore point does not match the selected recovery cutoff" >&2
-      return 1
-    }
+    same_instant "$provider_point" "$recovery_cutoff_utc" || return 1
+  else
+    recovery_cutoff_utc="$provider_point"
   fi
+  jq -e --arg source "$source_db_id" --arg target "$target_database" --arg point "$provider_point" \
+    --arg manifest "$manifest_tag" --arg targetId "$target_db_id" '
+    .properties.provisioningState == "Succeeded" and
+    ((.properties.parameters.sourceDatabaseId.value // "") | ascii_downcase) == ($source | ascii_downcase) and
+    .properties.parameters.targetDatabaseName.value == $target and
+    .properties.parameters.restorePointUtc.value == $point and
+    .properties.outputs.createMode.value == "PointInTimeRestore" and
+    ((.properties.outputs.sourceDatabaseId.value // "") | ascii_downcase) == ($source | ascii_downcase) and
+    ((.properties.outputs.restoredDatabaseId.value // "") | ascii_downcase) == ($targetId | ascii_downcase) and
+    .properties.outputs.restorePointUtc.value == $point and
+    .properties.outputs.recoveryManifestDigest.value == $manifest
+  ' <<<"$deployment_json" >/dev/null || {
+    echo "Azure restore deployment provenance is not exact" >&2
+    return 1
+  }
   provider_restore_point_utc="$provider_point"
 }
 
@@ -479,8 +488,7 @@ verify_owned_target_database() {
     .tags["recovery-id"] == $recovery and .tags["target-role"] == "restore" and
     .tags["managed-by"] == "elsa-control-recovery" and
     .tags["manifest-digest"] == $manifest
-  ' <<<"$database_json" >/dev/null || return 1
-  verify_provider_restore_point "$database_json"
+  ' <<<"$database_json" >/dev/null
 }
 
 list_owned_firewall_rules() {
@@ -733,6 +741,7 @@ lookup_owned_acr_assignment() {
 
 cleanup_target() {
   local group_exists group_json assignment_id="" vault_location cleanup_manifest_tag observed_target_principal identities_json vaults_json vault_count
+  local restore_deployments_json restore_deployment_count
   cleanup_manifest_tag="${manifest_tag:-sha256:${expected_manifest_digest:-}}"
   group_exists="$(az group exists --name "$target_resource_group" --subscription "$subscription_id" --output tsv --only-show-errors)"
   [[ "$group_exists" == true || "$group_exists" == false ]] || fail "target resource group existence could not be determined"
@@ -768,8 +777,18 @@ cleanup_target() {
     cleanup_owned_acr_deployment || fail "target ACR deployment cleanup could not be verified"
   fi
 
+  restore_deployments_json="$(az deployment group list --subscription "$subscription_id" --resource-group "$source_resource_group" \
+    --output json --only-show-errors)" || fail "restore deployment inventory could not be read during cleanup"
+  restore_deployment_count="$(jq -r --arg name "$database_restore_deployment" \
+    '[.[] | select(.name == $name)] | length' <<<"$restore_deployments_json")" || fail "restore deployment inventory is invalid"
+  (( restore_deployment_count <= 1 )) || fail "restore deployment inventory is ambiguous"
+  if (( restore_deployment_count == 1 )); then
+    verify_provider_restore_provenance || fail "restore deployment provenance is invalid during cleanup"
+  fi
+
   query_target_database || fail "target database existence could not be determined during cleanup"
   if [[ -n "$target_db_json" ]]; then
+    (( restore_deployment_count == 1 )) || fail "target database has no exact restore deployment provenance"
     verify_owned_target_database "$target_db_json" "$cleanup_manifest_tag" || fail "target database ownership or restore identity is invalid"
     az sql db delete --subscription "$subscription_id" --resource-group "$source_resource_group" --server "$source_server" \
       --name "$target_database" --yes --no-wait --only-show-errors >/dev/null || fail "target database deletion was not accepted"
@@ -780,6 +799,10 @@ cleanup_target() {
     done
     query_target_database || fail "target database absence could not be determined"
     [[ -z "$target_db_json" ]] || fail "target database absence was not verified"
+  fi
+  if (( restore_deployment_count == 1 )); then
+    delete_and_verify_group_deployment "$subscription_id" "$source_resource_group" "$database_restore_deployment" || \
+      fail "restore deployment record cleanup could not be verified"
   fi
 
   if [[ "$group_exists" == true ]]; then
@@ -965,11 +988,15 @@ validate_direct_acr_pull_assignment "$registry_id" "$assignment_json" "$target_p
 
 query_target_database || fail "target database existence could not be determined"
 if (( target_db_existing == 0 )); then
-  az sql db restore --subscription "$subscription_id" --resource-group "$source_resource_group" --server "$source_server" \
-    --name "$source_database" --dest-name "$target_database" --time "$restore_point_utc" \
-    --tags proof=129 owner=elsa-control recovery-id="$recovery_id" target-role=restore managed-by=elsa-control-recovery \
-      manifest-digest="$manifest_tag" recovery-point-utc="$restore_point_utc" expiry="$expiry_utc" \
-    --no-wait --only-show-errors >/dev/null
+  existing_restore_deployments="$(az deployment group list --subscription "$subscription_id" --resource-group "$source_resource_group" \
+    --output json --only-show-errors)" || fail "restore deployment inventory could not be read"
+  jq -e --arg name "$database_restore_deployment" '[.[] | select(.name == $name)] | length == 0' \
+    <<<"$existing_restore_deployments" >/dev/null || fail "refusing to reuse an existing restore deployment record"
+  az deployment group create --subscription "$subscription_id" --resource-group "$source_resource_group" \
+    --name "$database_restore_deployment" --template-file "$database_template" \
+    --parameters serverName="$source_server" sourceDatabaseId="$source_db_id" targetDatabaseName="$target_database" \
+      restorePointUtc="$restore_point_utc" recoveryManifestDigest="$manifest_digest" recoveryId="$recovery_id" expiryUtc="$expiry_utc" \
+    --only-show-errors --output json >"$temp_dir/database-restore.json" || fail "Azure point-in-time restore deployment failed"
 else
   verify_owned_target_database "$target_db_json" "$manifest_tag" || fail "refusing to adopt a stale or unrelated restored database"
 fi
@@ -984,9 +1011,8 @@ done
 if [[ -z "${target_db_json:-}" ]] || ! jq -e --arg id "$target_db_id" '(.id | ascii_downcase) == ($id | ascii_downcase) and ((.status // .properties.status) == "Online")' <<<"$target_db_json" >/dev/null; then
   fail "target database restore was not verified"
 fi
-verify_provider_restore_point "$target_db_json" || fail "Azure provider restore metadata was not verified"
-az resource tag --ids "$target_db_id" --tags proof=129 owner=elsa-control recovery-id="$recovery_id" target-role=restore \
-  managed-by=elsa-control-recovery manifest-digest="$manifest_tag" recovery-point-utc="$restore_point_utc" expiry="$expiry_utc" --only-show-errors >/dev/null
+verify_owned_target_database "$target_db_json" "$manifest_tag" || fail "restored database ownership is invalid"
+verify_provider_restore_provenance || fail "Azure provider restore provenance was not verified"
 
 sql_connection_file="$temp_dir/sql-connection"
 printf 'Server=tcp:%s.database.windows.net,1433;Initial Catalog=%s;Authentication=Active Directory Managed Identity;User Id=%s;Encrypt=True;Trust Server Certificate=False;' "$source_server" "$target_database" "$target_client_id" >"$sql_connection_file"
