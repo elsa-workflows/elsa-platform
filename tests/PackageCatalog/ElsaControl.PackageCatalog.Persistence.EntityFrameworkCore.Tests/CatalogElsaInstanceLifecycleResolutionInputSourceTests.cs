@@ -92,6 +92,57 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSourceTests : IAs
     }
 
     [Fact]
+    public async Task Multiple_acceptance_audits_for_an_operation_fail_closed()
+    {
+        var accepted = await _db.ElsaInstanceAuditEvents
+            .AsNoTracking()
+            .SingleAsync(x => x.OperationId == _accepted.Operation.Id && x.EventType == "lifecycle.accepted");
+        _db.ElsaInstanceAuditEvents.Add(new ElsaInstanceAuditEventEntity
+        {
+            Id = Guid.NewGuid(),
+            OrganizationId = accepted.OrganizationId,
+            WorkspaceId = accepted.WorkspaceId,
+            InstanceId = accepted.InstanceId,
+            Sequence = accepted.Sequence + 1,
+            EventType = accepted.EventType,
+            ActorAccountId = Guid.NewGuid(),
+            OperationId = accepted.OperationId,
+            PriorState = accepted.PriorState,
+            NewState = accepted.NewState,
+            DesiredStateRevisionId = accepted.DesiredStateRevisionId,
+            PlanReference = accepted.PlanReference,
+            DiagnosticCode = accepted.DiagnosticCode,
+            Summary = accepted.Summary,
+            RequestKeyHash = accepted.RequestKeyHash,
+            OccurredAt = accepted.OccurredAt.AddSeconds(1)
+        });
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+
+        var result = await CreateSource("https://control.example.test").GetAsync(_accepted.Instance, _accepted.Operation);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task Missing_environment_desired_revision_uses_the_managed_shell_revision_purpose()
+    {
+        var environment = await _db.DeploymentEnvironments
+            .SingleAsync(x => x.ElsaInstanceId == _accepted.Instance.Id);
+        environment.DesiredRevisionId = null;
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+
+        var result = await CreateSource("https://control.example.test").GetAsync(_accepted.Instance, _accepted.Operation);
+
+        Assert.NotNull(result);
+        Assert.Equal(
+            DeterministicGuid(_accepted.Instance.Id, "desired-revision"),
+            result!.DeploymentTarget.SourceRevisionId);
+        Assert.NotEqual(DeterministicGuid(_accepted.Instance.Id, "revision"), result.DeploymentTarget.SourceRevisionId);
+    }
+
+    [Fact]
     public async Task Resolved_plan_uri_uses_the_configured_control_plane_origin()
     {
         var source = CreateSource("https://control.example.test/");
@@ -154,6 +205,13 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSourceTests : IAs
             []),
         "supported",
         DateTimeOffset.UtcNow);
+
+    private static Guid DeterministicGuid(Guid seed, string purpose)
+    {
+        using var sha256 = System.Security.Cryptography.SHA256.Create();
+        var bytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes($"elsa-control:{purpose}:{seed:D}"));
+        return new Guid(bytes[..16]);
+    }
 
     private sealed class StaticCatalog(GovernedReleaseCatalogEntry entry) : IGovernedReleaseCatalogStore
     {

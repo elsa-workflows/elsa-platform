@@ -120,15 +120,21 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSource(
             return null;
         var engine = environment.Engines[0];
 
-        var actorAccountId = await dbContext.ElsaInstanceAuditEvents
+        // More than one acceptance event is an ambiguous persisted identity. Load
+        // at most two rows so malformed history cannot cause an unbounded read or
+        // let SingleOrDefaultAsync surface a provider exception to the worker.
+        var acceptedActors = await dbContext.ElsaInstanceAuditEvents
             .AsNoTracking()
             .Where(x => x.WorkspaceId == instance.WorkspaceId &&
                         x.InstanceId == instance.Id &&
                         x.OperationId == operation.Id &&
                         x.EventType == "lifecycle.accepted")
             .Select(x => x.ActorAccountId)
-            .SingleOrDefaultAsync(cancellationToken);
-        if (!actorAccountId.HasValue || actorAccountId.Value == Guid.Empty)
+            .Take(2)
+            .ToListAsync(cancellationToken);
+        if (acceptedActors.Count != 1 ||
+            acceptedActors[0] is not { } actorAccountId ||
+            actorAccountId == Guid.Empty)
             return null;
 
         // The deployment-run contract requires a confirmation identity. The
@@ -136,14 +142,14 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSource(
         // managed provider path does not expose a provider confirmation token.
         // Preserve the authenticated actor from the acceptance audit event.
         var confirmationId = DeterministicGuid(operation.Id, "confirmation");
-        var sourceRevisionId = environment.DesiredRevisionId ?? DeterministicGuid(instance.Id, "revision");
+        var sourceRevisionId = environment.DesiredRevisionId ?? DeterministicGuid(instance.Id, "desired-revision");
         return new(
             environment.ApplicationId,
             environment.Id,
             engine.Id,
             sourceRevisionId,
             confirmationId,
-            actorAccountId.Value);
+            actorAccountId);
     }
 
     private static bool Matches(ElsaInstance instance, GovernedReleaseCatalogEntry entry) =>
