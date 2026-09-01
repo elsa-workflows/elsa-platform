@@ -828,7 +828,12 @@ internal static class ProducerReleaseManifestMapper
         return $"sha256:{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream.ToArray())).ToLowerInvariant()}";
     }
 
-    private static void WriteCanonical(JsonElement element, Utf8JsonWriter writer, bool removeSelfDigest, bool rootObject = false)
+    private static void WriteCanonical(
+        JsonElement element,
+        Utf8JsonWriter writer,
+        bool removeSelfDigest,
+        bool rootObject = false,
+        bool integrityObject = false)
     {
         switch (element.ValueKind)
         {
@@ -839,14 +844,14 @@ internal static class ProducerReleaseManifestMapper
                     if (removeSelfDigest && rootObject && property.NameEquals("integrity"))
                     {
                         writer.WritePropertyName(property.Name);
-                        WriteCanonical(property.Value, writer, removeSelfDigest: true);
+                        WriteCanonical(property.Value, writer, removeSelfDigest: true, integrityObject: true);
                         continue;
                     }
 
-                    if (removeSelfDigest && !rootObject && property.NameEquals("canonicalContentDigest"))
+                    if (removeSelfDigest && integrityObject && property.NameEquals("canonicalContentDigest"))
                         continue;
                     writer.WritePropertyName(property.Name);
-                    WriteCanonical(property.Value, writer, removeSelfDigest, rootObject: false);
+                    WriteCanonical(property.Value, writer, removeSelfDigest, rootObject: false, integrityObject: false);
                 }
 
                 writer.WriteEndObject();
@@ -854,7 +859,7 @@ internal static class ProducerReleaseManifestMapper
             case JsonValueKind.Array:
                 writer.WriteStartArray();
                 foreach (var item in element.EnumerateArray())
-                    WriteCanonical(item, writer, removeSelfDigest, rootObject: false);
+                    WriteCanonical(item, writer, removeSelfDigest, rootObject: false, integrityObject: false);
                 writer.WriteEndArray();
                 break;
             case JsonValueKind.String:

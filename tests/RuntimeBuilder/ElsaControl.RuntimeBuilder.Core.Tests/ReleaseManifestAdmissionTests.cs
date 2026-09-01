@@ -203,6 +203,24 @@ public sealed class ReleaseManifestAdmissionTests
     }
 
     [Fact]
+    public void Producer_canonical_digest_removes_only_the_integrity_self_digest()
+    {
+        var producer = JsonNode.Parse(ProducerFixture())!;
+        producer["release"]!["source"]!["extension"] = new JsonObject
+        {
+            ["canonicalContentDigest"] = Digest('8')
+        };
+        RefreshProducerCanonicalDigest(producer);
+        var first = producer["integrity"]!["canonicalContentDigest"]!.GetValue<string>();
+
+        producer["release"]!["source"]!["extension"]!["canonicalContentDigest"] = Digest('9');
+        RefreshProducerCanonicalDigest(producer);
+        var second = producer["integrity"]!["canonicalContentDigest"]!.GetValue<string>();
+
+        Assert.NotEqual(first, second);
+    }
+
+    [Fact]
     public async Task Producer_image_signature_subject_allows_the_optional_oci_scheme()
     {
         var producer = JsonNode.Parse(ProducerFixture())!;
