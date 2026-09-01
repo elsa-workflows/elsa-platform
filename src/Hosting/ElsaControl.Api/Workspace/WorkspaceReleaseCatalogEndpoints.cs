@@ -13,7 +13,6 @@ public static class WorkspaceReleaseCatalogEndpoints
             .WithTags("Workspace Release Catalog");
 
         group.MapGet("/", async (
-            Guid workspaceId,
             [FromQuery] string? distributionId,
             [FromQuery] string? releaseLine,
             [FromQuery] string? releaseVersion,
@@ -27,7 +26,6 @@ public static class WorkspaceReleaseCatalogEndpoints
             IGovernedReleaseCatalogStore catalog,
             CancellationToken cancellationToken) =>
         {
-            _ = workspaceId;
             var entries = await catalog.QueryAsync(
                 new GovernedReleaseCatalogQuery(
                     distributionId,

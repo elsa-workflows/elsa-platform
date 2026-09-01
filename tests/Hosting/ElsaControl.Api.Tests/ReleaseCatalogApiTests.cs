@@ -107,6 +107,23 @@ public sealed class ReleaseCatalogApiTests
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Admin_ingestion_reports_a_request_specific_detail_for_a_missing_body()
+    {
+        await using var app = CreateApplication();
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = CreateAdminClient(app);
+
+        var response = await client.PostAsync(
+            "/api/admin/release-catalog/manifests",
+            new StringContent("null", Encoding.UTF8, "application/json"));
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("A release-manifest request body is required.", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("could not be admitted", body, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static ControlApiTestApplication CreateApplication(Action<IServiceCollection>? configureServices = null) =>
         new(new Dictionary<string, string?>
         {

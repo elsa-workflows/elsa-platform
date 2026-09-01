@@ -105,8 +105,8 @@ public sealed class GovernedReleaseCatalogIngestionService(
                 new(
                     topology.Id,
                     topology.Compatibility.PackageManifestSchema,
-                    topology.RuntimeKinds.Order(StringComparer.OrdinalIgnoreCase).ToArray(),
-                    topology.Compatibility.RuntimeCapabilities.Order(StringComparer.OrdinalIgnoreCase).ToArray(),
+                    CanonicalStrings(topology.RuntimeKinds),
+                    CanonicalStrings(topology.Compatibility.RuntimeCapabilities),
                     topology.Components
                         .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
                         .Select(x => new GovernedReleaseComponentVersion(x.Key, x.Value))
@@ -154,6 +154,9 @@ public sealed class GovernedReleaseCatalogIngestionService(
 
     private static IReadOnlyList<string> CanonicalStrings(IEnumerable<string>? values) =>
         (values ?? [])
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .Order(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 

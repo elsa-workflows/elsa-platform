@@ -138,6 +138,34 @@ public sealed class GovernedReleaseCatalogIngestionServiceTests
         Assert.Equal(0, store.Calls);
     }
 
+    [Fact]
+    public async Task Producer_identity_lists_are_canonicalized_before_store_validation()
+    {
+        var producer = JsonNode.Parse(ProducerFixture())!;
+        var distribution = producer["distributions"]![0]!;
+        var capabilities = distribution["capabilities"]!.AsArray();
+        capabilities.Add(capabilities[0]!.GetValue<string>().ToUpperInvariant());
+        distribution["runtimeKinds"] = new JsonArray("elsa.server", "ELSA.SERVER");
+        RefreshProducerCanonicalDigest(producer);
+        var artifact = ProducerArtifact(producer.ToJsonString(), 'a');
+
+        var result = await CreateService(artifact, new RecordingStore()).AdmitAsync(
+            artifact,
+            CatalogOptions("preview"));
+
+        Assert.True(result.Accepted, Findings(result));
+        Assert.All(result.Entries, entry =>
+        {
+            AssertDistinct(entry.Topology.RuntimeKinds);
+            AssertDistinct(entry.Topology.Capabilities);
+            Assert.All(entry.Topology.Components, component =>
+            {
+                AssertDistinct(component.Roles);
+                AssertDistinct(component.Capabilities);
+            });
+        });
+    }
+
     private static GovernedReleaseCatalogIngestionService CreateService(
         ReleaseManifestArtifact artifact,
         IGovernedReleaseCatalogStore store,
@@ -199,6 +227,9 @@ public sealed class GovernedReleaseCatalogIngestionServiceTests
 
     private static string Findings(GovernedReleaseCatalogAdmissionResult result) =>
         string.Join("; ", result.Findings.Select(x => $"{x.Code}:{x.Message}"));
+
+    private static void AssertDistinct(IReadOnlyList<string> values) =>
+        Assert.Equal(values.Count, values.Distinct(StringComparer.OrdinalIgnoreCase).Count());
 
     private static string Digest(char value) => $"sha256:{new string(value, 64)}";
 

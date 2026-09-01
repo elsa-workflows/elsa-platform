@@ -23,7 +23,12 @@ public static class AdminReleaseCatalogEndpoints
             CancellationToken cancellationToken) =>
         {
             if (request is null)
-                return Problem(httpContext, "Invalid release-manifest request.", "releaseCatalog.request.invalid", StatusCodes.Status400BadRequest);
+                return Problem(
+                    httpContext,
+                    "Invalid release-manifest request.",
+                    "releaseCatalog.request.invalid",
+                    StatusCodes.Status400BadRequest,
+                    "A release-manifest request body is required.");
 
             var options = configuredOptions.Value;
             var result = await ingestion.AdmitAsync(
@@ -50,6 +55,7 @@ public static class AdminReleaseCatalogEndpoints
                     title,
                     code,
                     status,
+                    "The release manifest could not be admitted into the governed catalog.",
                     result.Findings);
             }
 
@@ -70,11 +76,12 @@ public static class AdminReleaseCatalogEndpoints
         string title,
         string code,
         int statusCode,
+        string detail,
         IReadOnlyList<GovernedReleaseCatalogFinding>? findings = null) =>
         Results.Problem(
             type: $"urn:elsa-control:problem:{code.Replace(".", "-", StringComparison.Ordinal)}",
             title: title,
-            detail: "The release manifest could not be admitted into the governed catalog.",
+            detail: detail,
             statusCode: statusCode,
             extensions: new Dictionary<string, object?>
             {
