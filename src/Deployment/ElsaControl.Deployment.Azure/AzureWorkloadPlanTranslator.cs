@@ -81,6 +81,7 @@ public static class AzureWorkloadPlanTranslator
             imageDigest = component.Image.Digest.ToLowerInvariant(),
             releaseManifestReference = evidence.Reference,
             releaseManifestDigest = evidence.Digest!.ToLowerInvariant(),
+            releaseManifestPayloadDigest = evidence.PayloadDigest?.ToLowerInvariant(),
             releaseManifestSignatureReference = signatureEvidence.Reference,
             releaseManifestSignatureDigest = signatureEvidence.Digest!.ToLowerInvariant(),
             secretReferences = secretReferences

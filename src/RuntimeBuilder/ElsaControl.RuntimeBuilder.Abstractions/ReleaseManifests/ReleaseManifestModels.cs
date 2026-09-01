@@ -5,7 +5,21 @@ namespace ElsaControl.RuntimeBuilder.Abstractions.ReleaseManifests;
 /// </summary>
 public static class ReleaseManifestSchema
 {
-    public const string CurrentVersion = "1";
+    /// <summary>
+    /// The producer's semver schema identity. This is intentionally independent of
+    /// the Elsa release line carried by a manifest.
+    /// </summary>
+    public const string CurrentVersion = "2.0.0";
+
+    /// <summary>
+    /// The pre-producer Control shape remains readable so existing catalog records and
+    /// fixtures can be migrated deliberately. It is not the current producer contract.
+    /// </summary>
+    public const string LegacyVersion = "1";
+
+    public const string PreviousProducerVersion = "1.0.0";
+
+    public const string DefaultOidcIssuer = "https://token.actions.githubusercontent.com";
 }
 
 public sealed record CommercialReleaseManifest(
@@ -20,7 +34,12 @@ public sealed record ReleaseManifestDistribution(
     string ReleaseVersion,
     string Channel,
     string Lifecycle,
-    ReleaseManifestSource Source);
+    ReleaseManifestSource Source,
+    /// <summary>
+    /// Optional producer release edition. Image registry classes remain the
+    /// provider-neutral selection identity when a release contains multiple editions.
+    /// </summary>
+    string? Edition = null);
 
 public sealed record ReleaseManifestSource(
     string Repository,
@@ -72,7 +91,8 @@ public sealed record ReleaseManifestSupplyChain(
 
 public sealed record ReleaseManifestAttestation(
     string Uri,
-    string Digest);
+    string Digest,
+    string? PayloadDigest = null);
 
 public sealed record ReleaseManifestSignatureEvidence(
     string RegistryClass,
@@ -84,7 +104,8 @@ public sealed record ReleaseManifestVulnerabilityScan(
     string Tool,
     string Policy,
     string Report,
-    string? Digest = null);
+    string? Digest = null,
+    string? PayloadDigest = null);
 
 /// <summary>
 /// An immutable artifact envelope. Payload is used only at the ingestion boundary and
@@ -93,7 +114,28 @@ public sealed record ReleaseManifestVulnerabilityScan(
 public sealed record ReleaseManifestArtifact(
     string Reference,
     string Digest,
-    string Payload);
+    string Payload,
+    /// <summary>
+    /// Exact UTF-8 payload identity. This is distinct from <see cref="Digest"/>,
+    /// which identifies the signed OCI subject containing the payload.
+    /// </summary>
+    string? PayloadDigest = null)
+{
+    public ReleaseManifestSubjectIdentity Subject => new(Reference, Digest);
+}
+
+/// <summary>
+/// Identity of the immutable OCI subject signed by the producer.
+/// </summary>
+public sealed record ReleaseManifestSubjectIdentity(
+    string Reference,
+    string Digest);
+
+/// <summary>
+/// Identity of the exact manifest payload blob contained by the OCI subject.
+/// </summary>
+public sealed record ReleaseManifestPayloadIdentity(
+    string Digest);
 
 /// <summary>
 /// Cryptographic verification is deliberately a seam: registry/cosign implementations
@@ -104,7 +146,13 @@ public sealed record ReleaseManifestSignatureVerification(
     string Subject,
     string SubjectDigest,
     string EvidenceReference,
-    string EvidenceDigest);
+    string EvidenceDigest,
+    string? OidcIssuer = null,
+    /// <summary>
+    /// Digest of the exact payload proven to be bound to the signed OCI subject.
+    /// The admission service compares this with its own UTF-8 hash.
+    /// </summary>
+    string? BoundPayloadDigest = null);
 
 public interface IReleaseManifestSignatureVerifier
 {
@@ -116,7 +164,13 @@ public interface IReleaseManifestSignatureVerifier
 public sealed record ReleaseManifestAdmissionOptions(
     string ExpectedSignatureSubject,
     string RegistryClass = "paid",
-    string? TopologyId = null);
+    string? TopologyId = null,
+    string? ExpectedOidcIssuer = null,
+    /// <summary>
+    /// Explicit migration switch for the historical Control-only shape. Normal
+    /// admission never enables it; producer releases use <see cref="ReleaseManifestSchema.CurrentVersion"/>.
+    /// </summary>
+    bool AllowLegacySchema = false);
 
 public sealed record ReleaseManifestAdmissionFinding(
     string Code,
@@ -139,7 +193,21 @@ public sealed record ReleaseManifestAdmissionResult(
     ReleaseManifestAdmissionEvidence? SignatureEvidence,
     string RegistryClass,
     string? TopologyId,
-    IReadOnlyList<ReleaseManifestAdmissionFinding> Findings);
+    IReadOnlyList<ReleaseManifestAdmissionFinding> Findings,
+    /// <summary>
+    /// Exact UTF-8 payload identity, retained separately from the signed OCI subject
+    /// digest in <see cref="Digest"/>.
+    /// </summary>
+    string? PayloadDigest = null)
+{
+    public ReleaseManifestSubjectIdentity? Subject => Reference is not null && Digest is not null
+        ? new(Reference, Digest)
+        : null;
+
+    public ReleaseManifestPayloadIdentity? Payload => PayloadDigest is not null
+        ? new(PayloadDigest)
+        : null;
+}
 
 public static class ReleaseManifestEvidenceKinds
 {

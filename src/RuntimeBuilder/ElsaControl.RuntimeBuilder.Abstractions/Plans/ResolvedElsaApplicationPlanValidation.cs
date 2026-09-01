@@ -235,6 +235,8 @@ public static class ResolvedElsaApplicationPlanValidator
             Required(evidence.Description, "evidence.description.required", "Evidence description is required.", $"evidence:{evidence.Kind}");
             if (evidence.Digest is not null)
                 Digest(evidence.Digest, "evidence.digest.invalid", $"evidence:{evidence.Kind}", findings);
+            if (evidence.PayloadDigest is not null)
+                Digest(evidence.PayloadDigest, "evidence.payloadDigest.invalid", $"evidence:{evidence.Kind}", findings);
         }
 
         return findings;

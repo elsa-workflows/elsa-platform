@@ -18,10 +18,17 @@
     <ProjectReference Include="..\..\..\src\RuntimeBuilder\ElsaControl.RuntimeBuilder.Core\ElsaControl.RuntimeBuilder.Core.csproj" />
     <ProjectReference Include="..\..\..\src\RuntimeBuilder\ElsaControl.RuntimeBuilder.DeploymentTemplates\ElsaControl.RuntimeBuilder.DeploymentTemplates.csproj" />
     <ProjectReference Include="..\..\..\src\Deployment\ElsaControl.Deployment.Abstractions\ElsaControl.Deployment.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\src\Deployment\ElsaControl.Deployment.Azure\ElsaControl.Deployment.Azure.csproj" />
     <ProjectReference Include="..\..\PackageCatalog\ElsaControl.PackageCatalog.Testing\ElsaControl.PackageCatalog.Testing.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Fixtures/producer-release-manifest-2.0.0.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 </Project>

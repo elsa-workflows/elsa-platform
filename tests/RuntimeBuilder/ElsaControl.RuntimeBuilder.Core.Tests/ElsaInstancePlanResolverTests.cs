@@ -1003,7 +1003,7 @@ public sealed class ElsaInstancePlanResolverTests
         var artifact = new ReleaseManifestArtifact($"oci://future-runtime/release-manifest@{digest}", digest, payload);
         return await new ReleaseManifestAdmissionService(verifier).AdmitAsync(
             artifact,
-            new("subject", "paid", manifest.Topologies[0].Id));
+            new("subject", "paid", manifest.Topologies[0].Id, AllowLegacySchema: true));
     }
 
     private sealed class FakeCatalog(IReadOnlyList<PublicPackageVersionProjection> versions) : IPublicCatalogQueries

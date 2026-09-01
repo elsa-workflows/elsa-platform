@@ -315,11 +315,17 @@ public sealed record ResolvedPlanEvidence(
     string Kind,
     string Reference,
     string? Digest,
-    string Description)
+    string Description,
+    /// <summary>
+    /// Optional exact payload identity when <see cref="Digest"/> identifies an
+    /// addressable evidence subject rather than its contained payload.
+    /// </summary>
+    string? PayloadDigest = null)
 {
     internal ResolvedPlanEvidence Normalize() => this with
     {
-        Digest = string.IsNullOrWhiteSpace(Digest) ? null : Digest.Trim()
+        Digest = string.IsNullOrWhiteSpace(Digest) ? null : Digest.Trim(),
+        PayloadDigest = string.IsNullOrWhiteSpace(PayloadDigest) ? null : PayloadDigest.Trim()
     };
 }
 

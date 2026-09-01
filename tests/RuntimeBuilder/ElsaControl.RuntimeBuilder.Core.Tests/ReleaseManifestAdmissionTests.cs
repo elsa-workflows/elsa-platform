@@ -1,14 +1,183 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using ElsaControl.Deployment.Abstractions.Instances;
+using ElsaControl.Deployment.Azure;
+using ElsaControl.PackageCatalog.Abstractions.Catalog;
+using ElsaControl.PackageCatalog.Abstractions.Compatibility;
+using ElsaControl.RuntimeBuilder.Abstractions;
 using ElsaControl.RuntimeBuilder.Abstractions.Plans;
 using ElsaControl.RuntimeBuilder.Abstractions.ReleaseManifests;
+using ElsaControl.RuntimeBuilder.Core.Plans;
 using ElsaControl.RuntimeBuilder.Core.ReleaseManifests;
 
 namespace ElsaControl.RuntimeBuilder.Core.Tests;
 
 public sealed class ReleaseManifestAdmissionTests
 {
+    private const string ProducerSigner = "https://github.com/valence-works/elsa-production-image/.github/workflows/build-and-push.yml@refs/heads/main";
+
+    [Fact]
+    public async Task Producer_v2_fixture_projects_release_identity_and_separate_subject_payload_evidence()
+    {
+        var payload = ProducerFixture();
+        var artifact = ProducerArtifact(payload);
+        var verifier = new StubSignatureVerifier(ProducerVerification(artifact));
+
+        var admission = await new ReleaseManifestAdmissionService(verifier).AdmitAsync(
+            artifact,
+            new(ProducerSigner, "paid", "combined"));
+
+        Assert.True(admission.Accepted);
+        Assert.Empty(admission.Findings);
+        Assert.Equal(artifact.Digest, admission.Digest);
+        Assert.Equal(PayloadDigest(payload), admission.PayloadDigest);
+        Assert.NotEqual(admission.Digest, admission.PayloadDigest);
+        Assert.Equal("valence-runtime", admission.Manifest!.Distribution.Id);
+        Assert.Equal("3.8", admission.Manifest.Distribution.ReleaseLine);
+        Assert.Equal("3.8.0-preview.5413", admission.Manifest.Distribution.ReleaseVersion);
+        Assert.Equal("preview", admission.Manifest.Distribution.Channel);
+        Assert.Equal("preview", admission.Manifest.Distribution.Lifecycle);
+        Assert.Equal("commercial", admission.Manifest.Distribution.Edition);
+        Assert.Equal("producer-2.0.0", admission.Manifest.Distribution.Generation);
+
+        var serialized = JsonSerializer.Serialize(admission);
+        Assert.DoesNotContain("certificateIdentity", serialized, StringComparison.Ordinal);
+        Assert.DoesNotContain("verification", serialized, StringComparison.Ordinal);
+        Assert.DoesNotContain(payload, serialized, StringComparison.Ordinal);
+
+        var projected = ReleaseManifestPlanProjector.Project(admission, CreatePlan());
+        var manifestEvidence = Assert.Single(projected.Evidence, x => x.Kind == ReleaseManifestEvidenceKinds.Manifest);
+        Assert.Equal(admission.PayloadDigest, manifestEvidence.PayloadDigest);
+        Assert.Contains(projected.Evidence, x => x.Kind == ReleaseManifestEvidenceKinds.Sbom && x.PayloadDigest == "sha256:6e71a3cb3add948ebd219bd2e14c38276488a87a0da3267f4aeb89b5b24e307e");
+        Assert.Contains(projected.Evidence, x => x.Kind == ReleaseManifestEvidenceKinds.Provenance && x.PayloadDigest == "sha256:9d71bdfffae9c73820cfcea1af2803bc24612cadffd109fe0ef6b7d82d66a00d");
+        Assert.Contains(projected.Evidence, x => x.Kind == ReleaseManifestEvidenceKinds.VulnerabilityScan && x.PayloadDigest == "sha256:7273962ea21c67474dff90e662f8f6e44805e7ee0ed6e2eef73ead4355d95af5");
+    }
+
+    [Fact]
+    public async Task Producer_payload_mutation_is_rejected_when_verifier_binding_remains_original()
+    {
+        var payload = ProducerFixture();
+        var artifact = ProducerArtifact(payload + "\n");
+        var verifier = new StubSignatureVerifier(ProducerVerification(ProducerArtifact(payload)));
+
+        var admission = await new ReleaseManifestAdmissionService(verifier).AdmitAsync(
+            artifact,
+            new(ProducerSigner));
+
+        Assert.False(admission.Accepted);
+        Assert.Contains(admission.Findings, x => x.Code == "signature.boundPayloadDigest.mismatch");
+    }
+
+    [Fact]
+    public async Task Producer_unbound_subject_is_rejected_even_when_local_payload_hash_matches()
+    {
+        var payload = ProducerFixture();
+        var artifact = ProducerArtifact(payload);
+        var verifier = new StubSignatureVerifier(ProducerVerification(artifact, boundPayloadDigest: Digest('9')));
+
+        var admission = await new ReleaseManifestAdmissionService(verifier).AdmitAsync(
+            artifact,
+            new(ProducerSigner));
+
+        Assert.False(admission.Accepted);
+        Assert.Contains(admission.Findings, x => x.Code == "signature.boundPayloadDigest.mismatch");
+    }
+
+    [Fact]
+    public async Task Producer_wrong_signer_and_oidc_issuer_are_rejected()
+    {
+        var payload = ProducerFixture();
+        var artifact = ProducerArtifact(payload);
+
+        var wrongSigner = await new ReleaseManifestAdmissionService(
+                new StubSignatureVerifier(ProducerVerification(artifact, subject: "unapproved-signer")))
+            .AdmitAsync(artifact, new(ProducerSigner));
+        Assert.False(wrongSigner.Accepted);
+        Assert.Contains(wrongSigner.Findings, x => x.Code == "signature.subject.mismatch");
+
+        var wrongIssuer = await new ReleaseManifestAdmissionService(
+                new StubSignatureVerifier(ProducerVerification(artifact, oidcIssuer: "https://issuer.attacker.example")))
+            .AdmitAsync(artifact, new(ProducerSigner));
+        Assert.False(wrongIssuer.Accepted);
+        Assert.Contains(wrongIssuer.Findings, x => x.Code == "signature.oidcIssuer.mismatch");
+    }
+
+    [Fact]
+    public async Task Producer_evidence_subject_digest_mismatch_is_rejected()
+    {
+        var producer = JsonNode.Parse(ProducerFixture())!;
+        producer["distributions"]![0]!["images"]!["paid"]!["attestations"]![0]!["subjectDigest"] = Digest('7');
+        var payload = producer.ToJsonString();
+        var artifact = ProducerArtifact(payload);
+
+        var admission = await new ReleaseManifestAdmissionService(
+                new StubSignatureVerifier(ProducerVerification(artifact)))
+            .AdmitAsync(artifact, new(ProducerSigner));
+
+        Assert.False(admission.Accepted);
+        Assert.Contains(admission.Findings, x => x.Code == "evidence.subject.invalid");
+    }
+
+    [Fact]
+    public async Task Producer_fixture_flows_through_resolver_to_azure_translator()
+    {
+        var payload = ProducerFixture();
+        var artifact = ProducerArtifact(payload);
+        var admission = await new ReleaseManifestAdmissionService(
+                new StubSignatureVerifier(ProducerVerification(artifact)))
+            .AdmitAsync(artifact, new(ProducerSigner, "paid", "combined"));
+
+        var request = new ElsaInstancePlanResolutionRequest(
+            new(
+                new("valence-runtime", "3.8", "3.8.0-preview.5413", "preview"),
+                new("combined"),
+                new("managed", "westeurope", "Dedicated", "standard-small", "public", "managed")),
+            new(new("runtime-combined", null, null, null), [], [], [], null),
+            admission,
+            "plan_01JPRODUCER202",
+            "https://control.example.test/api/workspaces/00000000-0000-0000-0000-000000000001/instances/00000000-0000-0000-0000-000000000002/resolved-plans/plan_01JPRODUCER202");
+
+        var resolved = await new ElsaInstancePlanResolver(
+            new EmptyCatalog(),
+            new CompatibleCatalog(),
+            new ElsaInstancePlanResolutionOptions(DefaultEgress: "unrestricted"))
+            .ResolveAsync(request);
+        Assert.True(resolved.Succeeded, string.Join("; ", resolved.Findings.Select(x => x.Code + ":" + x.Message)));
+
+        var translated = AzureWorkloadPlanTranslator.Translate(
+            resolved.Plan,
+            new AzureWorkloadTarget("runtime-prod", "westeurope"));
+
+        Assert.True(translated.IsAccepted, string.Join("; ", translated.Findings.Select(x => x.Code + ":" + x.Message)));
+        Assert.Equal("valenceruntimeimages.azurecr.io/runtime-combined", translated.Plan!.ImageRepository);
+        Assert.Equal("e782d9426f03fa1e42da85977b7cf609119ab11dc5bfb86b0a385fc280ce2a33", translated.Plan.ImageDigest);
+        Assert.Equal(admission.Digest, translated.Plan.ReleaseManifestDigest);
+        Assert.Equal(admission.Reference, translated.Plan.ReleaseManifestReference);
+    }
+
+    [Theory]
+    [InlineData("1")]
+    [InlineData("1.0.0")]
+    public async Task Historical_producer_schemas_are_rejected_by_default(string schemaVersion)
+    {
+        var payload = schemaVersion == "1"
+            ? ManifestJson(schemaVersion: schemaVersion)
+            : """{"schemaVersion":"1.0.0"}""";
+        var artifact = ProducerArtifact(payload);
+        var verifier = new StubSignatureVerifier(ProducerVerification(artifact));
+
+        var admission = await new ReleaseManifestAdmissionService(verifier).AdmitAsync(
+            artifact,
+            new(ProducerSigner));
+
+        Assert.False(admission.Accepted);
+        Assert.Null(admission.Manifest);
+        Assert.Contains(admission.Findings, x => x.Code == "manifest.schema.unsupported");
+        Assert.Equal(0, verifier.Calls);
+    }
+
     [Fact]
     public async Task Known_good_manifest_projects_verified_release_topology_images_and_safe_evidence()
     {
@@ -24,7 +193,7 @@ public sealed class ReleaseManifestAdmissionTests
 
         var admission = await new ReleaseManifestAdmissionService(verifier).AdmitAsync(
             artifact,
-            new("workflow://valence-works/elsa-production-image/release"));
+            new("workflow://valence-works/elsa-production-image/release", AllowLegacySchema: true));
 
         Assert.True(admission.Accepted);
         Assert.Empty(admission.Findings);
@@ -61,7 +230,7 @@ public sealed class ReleaseManifestAdmissionTests
 
         var admission = await new ReleaseManifestAdmissionService(verifier).AdmitAsync(
             artifact,
-            new("subject"));
+            new("subject", AllowLegacySchema: true));
 
         Assert.True(admission.Accepted);
         var projected = ReleaseManifestPlanProjector.Project(admission, CreatePlan());
@@ -88,8 +257,7 @@ public sealed class ReleaseManifestAdmissionTests
     {
         var artifact = Artifact(Digest('b')) with
         {
-            Digest = Digest('9'),
-            Reference = $"oci://valence-runtime/release-manifest@{Digest('9')}"
+            PayloadDigest = Digest('9')
         };
         var verifier = new StubSignatureVerifier(new(
             true,
@@ -98,7 +266,7 @@ public sealed class ReleaseManifestAdmissionTests
             $"oci://signatures/release@{Digest('c')}",
             Digest('c')));
 
-        var admission = await new ReleaseManifestAdmissionService(verifier).AdmitAsync(artifact, new("subject"));
+        var admission = await new ReleaseManifestAdmissionService(verifier).AdmitAsync(artifact, new("subject", AllowLegacySchema: true));
 
         Assert.False(admission.Accepted);
         Assert.Contains(admission.Findings, x => x.Code == "manifest.payloadDigest.mismatch");
@@ -178,7 +346,7 @@ public sealed class ReleaseManifestAdmissionTests
     public async Task Wrong_signature_subject_is_rejected()
     {
         var artifact = Artifact(Digest('b'));
-        var admission = await Admit(artifact, new("expected-subject"), new(
+        var admission = await Admit(artifact, new("expected-subject", AllowLegacySchema: true), new(
             true, "different-subject", artifact.Digest, $"oci://signatures/release@{Digest('c')}", Digest('c')));
 
         Assert.False(admission.Accepted);
@@ -200,7 +368,7 @@ public sealed class ReleaseManifestAdmissionTests
     public async Task Signature_subject_digest_mismatch_is_rejected()
     {
         var artifact = Artifact(Digest('b'));
-        var admission = await Admit(artifact, new("subject"), new(
+        var admission = await Admit(artifact, new("subject", AllowLegacySchema: true), new(
             true, "subject", Digest('9'), $"oci://signatures/release@{Digest('c')}", Digest('c')));
 
         Assert.False(admission.Accepted);
@@ -423,6 +591,19 @@ public sealed class ReleaseManifestAdmissionTests
     }
 
     [Fact]
+    public async Task Projector_rejects_existing_evidence_with_unsafe_payload_identity()
+    {
+        var admission = await Admit(Artifact(Digest('b')));
+        var plan = CreatePlan() with
+        {
+            Evidence = [new("existing", $"https://evidence.example/a@{Digest('a')}", Digest('a'), "Retained immutable evidence.", "secret-token")]
+        };
+
+        Assert.True(admission.Accepted);
+        Assert.Throws<ReleaseManifestProjectionValidationException>(() => ReleaseManifestPlanProjector.Project(admission, plan));
+    }
+
+    [Fact]
     public async Task Projector_retains_unrelated_evidence_with_separately_retained_digest()
     {
         var admission = await Admit(Artifact(Digest('b')));
@@ -493,8 +674,31 @@ public sealed class ReleaseManifestAdmissionTests
         verification ??= new(true, "subject", artifact.Digest, $"oci://signatures/release@{Digest('c')}", Digest('c'));
         return await new ReleaseManifestAdmissionService(new StubSignatureVerifier(verification)).AdmitAsync(
             artifact,
-            options ?? new("subject"));
+            options ?? new("subject", AllowLegacySchema: true));
     }
+
+    private static string ProducerFixture() =>
+        File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "producer-release-manifest-2.0.0.json"));
+
+    private static ReleaseManifestArtifact ProducerArtifact(string payload)
+    {
+        var subjectDigest = Digest('a');
+        return new($"oci://valence-runtime/release-manifests/release-manifest@{subjectDigest}", subjectDigest, payload);
+    }
+
+    private static ReleaseManifestSignatureVerification ProducerVerification(
+        ReleaseManifestArtifact artifact,
+        string? subject = null,
+        string? oidcIssuer = null,
+        string? boundPayloadDigest = null) =>
+        new(
+            true,
+            subject ?? ProducerSigner,
+            artifact.Digest,
+            $"oci://valence-runtime/signatures/release@{Digest('c')}",
+            Digest('c'),
+            oidcIssuer ?? ReleaseManifestSchema.DefaultOidcIssuer,
+            boundPayloadDigest ?? PayloadDigest(artifact.Payload));
 
     private static ReleaseManifestArtifact Artifact(
         string imageDigest,
@@ -595,5 +799,25 @@ public sealed class ReleaseManifestAdmissionTests
             Calls++;
             return ValueTask.FromResult(result);
         }
+    }
+
+    private sealed class EmptyCatalog : IPublicCatalogQueries
+    {
+        public Task<IReadOnlyList<PublicPackageProjection>> ListPackagesAsync(IReadOnlyList<Guid> sourceIds, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<PublicPackageProjection>> ListPackagesForWorkspaceAsync(Guid workspaceId, IReadOnlyList<Guid> sourceIds, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PublicPackageProjection?> GetPackageAsync(Guid sourceId, string packageId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PublicPackageProjection?> GetPackageForWorkspaceAsync(Guid workspaceId, Guid sourceId, string packageId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<PublicPackageVersionProjection>> ListVersionsAsync(Guid sourceId, string packageId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<PublicPackageVersionProjection>>([]);
+        public Task<IReadOnlyList<PublicPackageVersionProjection>> ListVersionsForWorkspaceAsync(Guid workspaceId, Guid sourceId, string packageId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<PublicPackageVersionProjection>>([]);
+        public Task<PublicPackageVersionProjection?> GetVersionAsync(Guid sourceId, string packageId, string version, CancellationToken cancellationToken = default) => Task.FromResult<PublicPackageVersionProjection?>(null);
+        public Task<PublicPackageVersionProjection?> GetVersionForWorkspaceAsync(Guid workspaceId, Guid sourceId, string packageId, string version, CancellationToken cancellationToken = default) => Task.FromResult<PublicPackageVersionProjection?>(null);
+        public Task<IReadOnlyList<PublicFeatureProjection>> ListFeaturesAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PublicFeatureProjection?> GetFeatureAsync(string featureId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class CompatibleCatalog : IPackageCompatibilityService
+    {
+        public Task<CompatibilityCheckResult> CheckAsync(CompatibilityCheckRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new CompatibilityCheckResult(true, []));
     }
 }
