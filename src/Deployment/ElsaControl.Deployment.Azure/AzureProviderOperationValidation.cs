@@ -473,10 +473,23 @@ public static class AzureProviderOperationValidation
         if (values.Count > 64)
             errors.Add("secretReferences.tooMany");
         var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var mappedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var pair in values)
         {
             if (string.IsNullOrWhiteSpace(pair.Key) || pair.Key.Length > 256 || pair.Key.Any(char.IsControl) || !keys.Add(pair.Key.Trim()))
                 errors.Add("secretReferences.key.invalid");
+            else
+            {
+                try
+                {
+                    if (!mappedNames.Add(MapSecretName(pair.Key)))
+                        errors.Add("secretReferences.nameCollision");
+                }
+                catch (ArgumentException)
+                {
+                    errors.Add("secretReferences.key.invalid");
+                }
+            }
             if (!IsSafeSecretReference(pair.Value))
                 errors.Add("secretReferences.value.invalid");
         }
@@ -488,11 +501,39 @@ public static class AzureProviderOperationValidation
             return false;
 
         var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        return values.All(pair =>
-            !string.IsNullOrWhiteSpace(pair.Key) && pair.Key.Length <= 256 &&
-            !pair.Key.Any(char.IsControl) &&
-            string.Equals(pair.Key, pair.Key.Trim().ToLowerInvariant(), StringComparison.Ordinal) &&
-            keys.Add(pair.Key) && IsSafeSecretReference(pair.Value));
+        var mappedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in values)
+        {
+            if (string.IsNullOrWhiteSpace(pair.Key) || pair.Key.Length > 256 || pair.Key.Any(char.IsControl) ||
+                !string.Equals(pair.Key, pair.Key.Trim().ToLowerInvariant(), StringComparison.Ordinal) ||
+                !keys.Add(pair.Key) || !IsSafeSecretReference(pair.Value))
+                return false;
+            try
+            {
+                if (!mappedNames.Add(MapSecretName(pair.Key)))
+                    return false;
+            }
+            catch (ArgumentException)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    internal static string MapSecretName(string key)
+    {
+        var normalized = key.Trim().ToLowerInvariant();
+        var mapped = normalized switch
+        {
+            "database:connectionstring" or "database:connection-string" or "sql-connection" => "sql-connection",
+            "identity:signingkey" or "identity:signing-key" or "identity-signing-key" => "identity-signing-key",
+            "admin:password" or "admin-password" => "admin-password",
+            _ => normalized.Replace(':', '-').Replace('_', '-')
+        };
+        if (mapped.Length is 0 or > 127 || mapped.Any(character => !char.IsAsciiLetterOrDigit(character) && character != '-'))
+            throw new ArgumentException("The secret reference key cannot be mapped to a governed Azure secret name.", nameof(key));
+        return mapped;
     }
 
     /// <summary>

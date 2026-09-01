@@ -17,6 +17,9 @@ there is no duplicated or shipped fallback fingerprint that can become stale.
 
 The worker receives only admitted immutable plan identities and safe secret
 references. Secret aliases are configured under
-`Deployment:AzureProvider:Secrets:<index>:Reference` and `Value`; only exact
-safe references are accepted. A missing alias fails a workload step closed, and
-secret values never enter provider contracts, diagnostics, or durable records.
+`Deployment:AzureProvider:Secrets:<index>:Name`, `Reference`, and `Value`. The
+name binds the safe reference to a required resolved-plan configuration slot;
+only the reference crosses into lifecycle resolution and durable provider
+records. A missing or ambiguous named alias fails startup closed when managed
+instance lifecycle is enabled. Secret values remain runtime-only and never enter
+provider contracts, diagnostics, or durable records.

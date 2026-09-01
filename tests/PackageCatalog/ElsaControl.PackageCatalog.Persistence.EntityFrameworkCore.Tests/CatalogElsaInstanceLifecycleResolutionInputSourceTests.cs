@@ -1,10 +1,15 @@
 using ElsaControl.Deployment.Abstractions.Instances;
+using ElsaControl.Deployment.Azure;
 using ElsaControl.Deployment.Core.Cockpit;
 using ElsaControl.Deployment.Core.Instances;
 using ElsaControl.Deployment.Core.Workspace;
+using ElsaControl.PackageCatalog.Abstractions.Catalog;
+using ElsaControl.PackageCatalog.Abstractions.Compatibility;
 using ElsaControl.PackageCatalog.Core.Accounts;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models;
 using ElsaControl.RuntimeBuilder.Abstractions.ReleaseCatalog;
+using ElsaControl.RuntimeBuilder.Abstractions.ReleaseManifests;
+using ElsaControl.RuntimeBuilder.Core.Plans;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,7 +17,15 @@ namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests;
 
 public sealed class CatalogElsaInstanceLifecycleResolutionInputSourceTests : IAsyncLifetime
 {
+    private static readonly IReadOnlyDictionary<string, string> GovernedSecrets =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["database:connectionstring"] = "secret://vault/database-connection",
+            ["identity:signingkey"] = "secret://vault/identity-signing-key",
+            ["admin:password"] = "secret://vault/admin-password"
+        };
     private readonly SqliteConnection _connection = new("Data Source=:memory:");
+    private DbContextOptions<CatalogDbContext> _dbOptions = null!;
     private CatalogDbContext _db = null!;
     private Workspace _workspace = null!;
     private ElsaInstanceLifecycleAcceptance _accepted = null!;
@@ -20,9 +33,10 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSourceTests : IAs
     public async Task InitializeAsync()
     {
         await _connection.OpenAsync();
-        _db = new CatalogDbContext(new DbContextOptionsBuilder<CatalogDbContext>()
+        _dbOptions = new DbContextOptionsBuilder<CatalogDbContext>()
             .UseSqlite(_connection)
-            .Options);
+            .Options;
+        _db = new CatalogDbContext(_dbOptions);
         await _db.Database.EnsureCreatedAsync();
 
         var organization = new Organization { Id = Guid.NewGuid(), Name = "Resolution test organization" };
@@ -171,15 +185,71 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSourceTests : IAs
         var source = new CatalogElsaInstanceLifecycleResolutionInputSource(
             _db,
             new StaticCatalog(CreateEntry("preview")),
-            new ElsaInstancePlanAuthorityOptions { Origin = "https://control.example.test" });
+            new ElsaInstancePlanAuthorityOptions { Origin = "https://control.example.test" },
+            GovernedSecrets);
 
         var result = await source.GetAsync(_accepted.Instance, _accepted.Operation);
 
         Assert.Null(result);
     }
 
+    [Fact]
+    public async Task Catalog_release_resolves_and_creates_a_durable_Azure_provider_operation()
+    {
+        var catalog = new GovernedReleaseCatalogStore(_dbOptions);
+        Assert.Equal(
+            GovernedReleaseCatalogWriteStatus.Stored,
+            (await catalog.StoreAsync([CreateEntry()])).Status);
+        var source = new CatalogElsaInstanceLifecycleResolutionInputSource(
+            _db,
+            catalog,
+            new ElsaInstancePlanAuthorityOptions { Origin = "https://control.example.test" },
+            GovernedSecrets);
+        var input = await source.GetAsync(_accepted.Instance, _accepted.Operation);
+        Assert.NotNull(input);
+        Assert.Equal(
+            ["Elsa.Persistence.EFCore.SqlServer", "Elsa.Scheduling.Quartz.EFCore.SqlServer"],
+            input!.PlanRequest.ReleaseManifest.Manifest!.ComponentDeclarations!.Packages.Select(package => package.Id).ToArray());
+
+        var resolved = await new ElsaInstancePlanResolver(
+                new EmptyCatalog(),
+                new CompatibleCatalog(),
+                new(DefaultEgress: "unrestricted"))
+            .ResolveAsync(input.PlanRequest);
+        Assert.True(resolved.Succeeded, string.Join("; ", resolved.Findings.Select(x => x.Code)));
+
+        var operationStore = new AzureProviderOperationStore(_db);
+        var provider = new AzureElsaInstanceProvider(
+            new AzureProviderOperationService(operationStore),
+            operationStore,
+            new AzureElsaInstanceProviderOptions
+            {
+                Enabled = true,
+                TemplateFingerprint = new string('b', 64),
+                ProviderScopeFingerprint = new string('a', 64)
+            });
+
+        var submission = await provider.SubmitAsync(new(
+            _workspace.Id,
+            _accepted.Instance.Id,
+            _accepted.Operation.Id,
+            1,
+            ElsaDesiredLifecycle.Running,
+            resolved.Plan!,
+            input.DeploymentTarget,
+            "westeurope"));
+
+        var persisted = await _db.AzureProviderOperations.AsNoTracking().SingleAsync();
+        Assert.False(submission.Replayed);
+        Assert.Equal("5.0.0", persisted.SqlWorkflowPackageVersion);
+        Assert.Equal("5.0.0", persisted.SqlQuartzPackageVersion);
+        Assert.Equal("valenceruntimeimages.azurecr.io/runtime-combined", persisted.ImageRepository);
+        Assert.Equal(3, resolved.Plan!.Configuration.Entries.Count(entry => entry.Secret));
+        Assert.Equal(2, resolved.Plan.Release.ComponentDeclarations!.Packages.Count);
+    }
+
     private CatalogElsaInstanceLifecycleResolutionInputSource CreateSource(string? origin) =>
-        new(_db, new StaticCatalog(CreateEntry()), new ElsaInstancePlanAuthorityOptions { Origin = origin });
+        new(_db, new StaticCatalog(CreateEntry()), new ElsaInstancePlanAuthorityOptions { Origin = origin }, GovernedSecrets);
 
     private GovernedReleaseCatalogEntry CreateEntry(string catalogLifecycle = "supported") => new(
         "2.0.0",
@@ -208,16 +278,23 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSourceTests : IAs
             [new GovernedReleaseComponentVersion("server", "5.0.0")],
             [new GovernedReleaseComponent(
                 "server",
-                "registry.example.test/elsa/server@sha256:" + new string('a', 64),
+                "valenceruntimeimages.azurecr.io/runtime-combined@sha256:" + new string('a', 64),
                 "sha256:" + new string('a', 64),
                 new Dictionary<string, string>(),
                 ["server"],
                 [],
                 [],
                 null)],
-            []),
+            [new GovernedReleaseEvidence(ReleaseManifestEvidenceKinds.Sbom, "https://catalog.example.test/evidence/sbom", "sha256:" + new string('1', 64)),
+             new GovernedReleaseEvidence(ReleaseManifestEvidenceKinds.Provenance, "https://catalog.example.test/evidence/provenance", "sha256:" + new string('2', 64)),
+             new GovernedReleaseEvidence(ReleaseManifestEvidenceKinds.VulnerabilityScan, "https://catalog.example.test/evidence/scan", "sha256:" + new string('3', 64))]),
         catalogLifecycle,
-        DateTimeOffset.UtcNow);
+        DateTimeOffset.UtcNow,
+        new(
+            "central-package-declarations-v1",
+            "sha256:" + new string('f', 64),
+            [new("Elsa.Persistence.EFCore.SqlServer", "5.0.0"),
+             new("Elsa.Scheduling.Quartz.EFCore.SqlServer", "5.0.0")]));
 
     private static Guid DeterministicGuid(Guid seed, string purpose)
     {
@@ -251,5 +328,25 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSourceTests : IAs
             ElsaInstanceOperation operation,
             CancellationToken cancellationToken = default) =>
             Task.FromResult<ElsaInstanceLifecycleResolutionInput?>(null);
+    }
+
+    private sealed class EmptyCatalog : IPublicCatalogQueries
+    {
+        public Task<IReadOnlyList<PublicPackageProjection>> ListPackagesAsync(IReadOnlyList<Guid> sourceIds, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<PublicPackageProjection>> ListPackagesForWorkspaceAsync(Guid workspaceId, IReadOnlyList<Guid> sourceIds, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PublicPackageProjection?> GetPackageAsync(Guid sourceId, string packageId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PublicPackageProjection?> GetPackageForWorkspaceAsync(Guid workspaceId, Guid sourceId, string packageId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<PublicPackageVersionProjection>> ListVersionsAsync(Guid sourceId, string packageId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<PublicPackageVersionProjection>>([]);
+        public Task<IReadOnlyList<PublicPackageVersionProjection>> ListVersionsForWorkspaceAsync(Guid workspaceId, Guid sourceId, string packageId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<PublicPackageVersionProjection>>([]);
+        public Task<PublicPackageVersionProjection?> GetVersionAsync(Guid sourceId, string packageId, string version, CancellationToken cancellationToken = default) => Task.FromResult<PublicPackageVersionProjection?>(null);
+        public Task<PublicPackageVersionProjection?> GetVersionForWorkspaceAsync(Guid workspaceId, Guid sourceId, string packageId, string version, CancellationToken cancellationToken = default) => Task.FromResult<PublicPackageVersionProjection?>(null);
+        public Task<IReadOnlyList<PublicFeatureProjection>> ListFeaturesAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PublicFeatureProjection?> GetFeatureAsync(string featureId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class CompatibleCatalog : IPackageCompatibilityService
+    {
+        public Task<CompatibilityCheckResult> CheckAsync(CompatibilityCheckRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new CompatibilityCheckResult(true, []));
     }
 }

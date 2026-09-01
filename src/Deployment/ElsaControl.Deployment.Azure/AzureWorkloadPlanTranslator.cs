@@ -1,7 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using System.Collections.ObjectModel;
 using ElsaControl.RuntimeBuilder.Abstractions.Plans;
 using ElsaControl.RuntimeBuilder.Abstractions.ReleaseManifests;
@@ -36,10 +35,11 @@ public static class AzureWorkloadPlanTranslator
     public const string SupportedReleaseLine = "*";
     public const string SupportedRegistryClass = "paid";
     public const string SupportedRegistryHost = "valenceruntimeimages.azurecr.io";
+    public const string SupportedRepository = SupportedRegistryHost + "/runtime-combined";
     public const string SqlWorkflowPackageId = "Elsa.Persistence.EFCore.SqlServer";
     public const string SqlQuartzPackageId = "Elsa.Scheduling.Quartz.EFCore.SqlServer";
-    private static readonly string[] RequiredSecretKeys =
-        ["database:connectionstring", "identity:signingkey", "admin:password"];
+    public static IReadOnlyList<string> RequiredSecretKeys { get; } = Array.AsReadOnly(
+        ["database:connectionstring", "identity:signingkey", "admin:password"]);
     public static AzureWorkloadPlanTranslation Translate(
         ResolvedElsaApplicationPlan? resolvedPlan,
         AzureWorkloadTarget? target)
@@ -64,8 +64,9 @@ public static class AzureWorkloadPlanTranslator
             findings.Add(new("azure.plan.normalization.invalid", "The resolved plan could not be normalized safely.", "plan"));
             return Rejected(findings);
         }
-        var sqlWorkflowPackageVersion = RequiredPackageVersion(normalized.Packages, SqlWorkflowPackageId, findings);
-        var sqlQuartzPackageVersion = RequiredPackageVersion(normalized.Packages, SqlQuartzPackageId, findings);
+        var releasePackages = normalized.Release.ComponentDeclarations?.Packages;
+        var sqlWorkflowPackageVersion = RequiredPackageVersion(releasePackages, SqlWorkflowPackageId, findings);
+        var sqlQuartzPackageVersion = RequiredPackageVersion(releasePackages, SqlQuartzPackageId, findings);
         if (findings.Count > 0)
             return Rejected(findings);
         var component = normalized.Topology.Components.Single();
@@ -139,13 +140,13 @@ public static class AzureWorkloadPlanTranslator
     }
 
     private static string? RequiredPackageVersion(
-        IReadOnlyList<ResolvedElsaPackage> packages,
+        IReadOnlyList<ResolvedReleasePackageDeclaration>? packages,
         string packageId,
         ICollection<ResolvedPlanValidationFinding> findings)
     {
         var matches = (packages ?? [])
             .Where(package => package is not null &&
-                              string.Equals(package.PackageId, packageId, StringComparison.OrdinalIgnoreCase))
+                              string.Equals(package.Id, packageId, StringComparison.OrdinalIgnoreCase))
             .ToArray();
         if (matches.Length == 0)
         {
@@ -273,14 +274,7 @@ public static class AzureWorkloadPlanTranslator
 
     private static bool IsSafeImageRepository(string repository)
     {
-        var prefix = $"{SupportedRegistryHost}/";
-        if (string.IsNullOrWhiteSpace(repository) || repository.Length > 255 || !repository.StartsWith(prefix, StringComparison.Ordinal))
-            return false;
-
-        return Regex.IsMatch(
-            repository[prefix.Length..],
-            "^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*$",
-            RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
+        return string.Equals(repository, SupportedRepository, StringComparison.Ordinal);
     }
 
     private static bool ImageReferenceMatchesRepository(ResolvedImageIdentity image)

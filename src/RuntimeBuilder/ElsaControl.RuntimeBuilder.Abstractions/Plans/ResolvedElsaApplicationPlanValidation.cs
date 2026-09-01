@@ -23,6 +23,25 @@ public static class ResolvedElsaApplicationPlanValidator
             Required(plan.Release.SourceCommit, "release.commit.required", "Release source commit is required.", "release.sourceCommit");
             Required(plan.Release.ReleaseManifestReference, "release.manifest.required", "Release manifest reference is required.", "release.releaseManifestReference");
             Digest(plan.Release.ReleaseManifestDigest, "release.manifestDigest.invalid", "release.releaseManifestDigest", findings);
+            if (plan.Release.ComponentDeclarations is { } declarations)
+            {
+                Required(declarations.Format, "release.componentDeclarations.format.required", "Release component declaration format is required.", "release.componentDeclarations.format");
+                Digest(declarations.Digest, "release.componentDeclarations.digest.invalid", "release.componentDeclarations.digest", findings);
+                if (declarations.Packages is null || declarations.Packages.Count == 0)
+                    findings.Add(new("release.componentDeclarations.packages.required", "Release component declarations must contain at least one package.", "release.componentDeclarations.packages"));
+                Duplicate(declarations.Packages, x => x.Id, "release.componentDeclarations.package.duplicate", "release.componentDeclarations.packages");
+                foreach (var package in declarations.Packages ?? [])
+                {
+                    if (package is null)
+                    {
+                        findings.Add(new("release.componentDeclarations.package.null", "Release component declarations cannot contain null packages.", "release.componentDeclarations.packages"));
+                        continue;
+                    }
+
+                    Required(package.Id, "release.componentDeclarations.package.id.required", "Release package identity is required.", "release.componentDeclarations.packages");
+                    Required(package.Version, "release.componentDeclarations.package.version.required", "Release package version is required.", "release.componentDeclarations.packages");
+                }
+            }
         }
 
         var topologyComponents = plan.Topology?.Components;

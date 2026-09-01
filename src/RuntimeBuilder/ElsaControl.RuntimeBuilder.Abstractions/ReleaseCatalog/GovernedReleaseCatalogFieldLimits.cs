@@ -25,6 +25,10 @@ public static class GovernedReleaseCatalogFieldLimits
     public const int SourceCommit = 128;
     public const int SourceRunId = 128;
     public const int CatalogLifecycle = 64;
+    public const int ComponentDeclarationsFormat = 64;
+    public const int ComponentDeclarationsDigest = 71;
+    public const int ReleasePackageId = 256;
+    public const int ReleasePackageVersion = 256;
     public const int TopologyId = 200;
     public const int PackageManifestSchema = 128;
     public const int RuntimeKind = 200;
@@ -63,6 +67,18 @@ public static class GovernedReleaseCatalogStorageContract
         Validate(entry.SignatureEvidenceDigest, GovernedReleaseCatalogFieldLimits.SignatureEvidenceDigest, "signatureEvidenceDigest");
         Validate(entry.RegistryClass, GovernedReleaseCatalogFieldLimits.RegistryClass, "registryClass");
         Validate(entry.CatalogLifecycle, GovernedReleaseCatalogFieldLimits.CatalogLifecycle, "catalogLifecycle");
+        if (entry.ComponentDeclarations is { } declarations)
+        {
+            Validate(declarations.Format, GovernedReleaseCatalogFieldLimits.ComponentDeclarationsFormat, "componentDeclarations.format");
+            Validate(declarations.Digest, GovernedReleaseCatalogFieldLimits.ComponentDeclarationsDigest, "componentDeclarations.digest");
+            foreach (var package in declarations.Packages ?? [])
+            {
+                if (package is null)
+                    continue;
+                Validate(package.Id, GovernedReleaseCatalogFieldLimits.ReleasePackageId, "componentDeclarations.package.id");
+                Validate(package.Version, GovernedReleaseCatalogFieldLimits.ReleasePackageVersion, "componentDeclarations.package.version");
+            }
+        }
 
         var distribution = entry.Distribution;
         Validate(distribution.Id, GovernedReleaseCatalogFieldLimits.DistributionId, "distribution.id");

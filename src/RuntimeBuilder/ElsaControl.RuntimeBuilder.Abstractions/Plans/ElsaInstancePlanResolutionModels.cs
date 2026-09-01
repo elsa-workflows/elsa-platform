@@ -14,7 +14,8 @@ public sealed record ElsaInstancePlanResolutionRequest(
     string PlanId,
     string PlanUri,
     Guid? WorkspaceId = null,
-    IReadOnlyList<ResolvedPlanEvidence>? ExistingEvidence = null);
+    IReadOnlyList<ResolvedPlanEvidence>? ExistingEvidence = null,
+    IReadOnlyDictionary<string, string>? GovernedSecretReferences = null);
 
 /// <summary>Safe, typed resolver diagnostic. Messages are fixed and value-free.</summary>
 public sealed record ElsaInstancePlanResolutionFinding(

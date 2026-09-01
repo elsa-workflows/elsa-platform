@@ -5,7 +5,8 @@ namespace ElsaControl.RuntimeBuilder.Core.ReleaseManifests;
 
 /// <summary>
 /// Projects only the verified producer facts into the provider-neutral plan. Customer
-/// policy, packages, configuration and provider capabilities remain owned by the caller.
+/// policy, customer-selected packages, configuration and provider capabilities remain owned by the caller.
+/// Signed image-build package declarations remain producer-owned release facts.
 /// </summary>
 public static class ReleaseManifestPlanProjector
 {
@@ -37,7 +38,8 @@ public static class ReleaseManifestPlanProjector
                 manifest.Distribution.Source.Repository,
                 manifest.Distribution.Source.Commit,
                 admission.Reference,
-                admission.Digest),
+                admission.Digest,
+                ProjectComponentDeclarations(manifest.ComponentDeclarations)),
             Topology = new(topology.Id, components),
             Evidence = ProjectEvidence(admission, topology, plan.Evidence)
         };
@@ -48,6 +50,17 @@ public static class ReleaseManifestPlanProjector
 
         return projected.Normalize();
     }
+
+    private static ResolvedReleaseComponentDeclarations? ProjectComponentDeclarations(
+        ReleaseManifestComponentDeclarations? declarations) =>
+        declarations is null
+            ? null
+            : new(
+                declarations.Format,
+                declarations.Digest,
+                declarations.Packages
+                    .Select(package => new ResolvedReleasePackageDeclaration(package.Id, package.Version))
+                    .ToArray());
 
     internal static void ValidateProjectionShape(CommercialReleaseManifest manifest)
     {

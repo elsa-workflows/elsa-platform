@@ -48,7 +48,8 @@ public sealed class ElsaInstancePlanAuthorityOptions
 public sealed class CatalogElsaInstanceLifecycleResolutionInputSource(
     CatalogDbContext dbContext,
     IGovernedReleaseCatalogStore releaseCatalog,
-    ElsaInstancePlanAuthorityOptions? authorityOptions = null) : IElsaInstanceLifecycleResolutionInputSource
+    ElsaInstancePlanAuthorityOptions? authorityOptions = null,
+    IReadOnlyDictionary<string, string>? governedSecretReferences = null) : IElsaInstanceLifecycleResolutionInputSource
 {
     private readonly ElsaInstancePlanAuthorityOptions _authorityOptions = authorityOptions ?? new();
 
@@ -98,7 +99,8 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSource(
             admission,
             planId,
             planUri,
-            instance.WorkspaceId);
+            instance.WorkspaceId,
+            GovernedSecretReferences: governedSecretReferences);
         return new ElsaInstanceLifecycleResolutionInput(request, target);
     }
 
@@ -225,7 +227,15 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSource(
                         [],
                         topology.Evidence.FirstOrDefault(x => x.Kind == ReleaseManifestEvidenceKinds.VulnerabilityScan) is { } scan
                             ? new ReleaseManifestVulnerabilityScan("catalog", "governed-policy", scan.Reference, scan.Digest)
-                            : null))]);
+                            : null))],
+                entry.ComponentDeclarations is null
+                    ? null
+                    : new(
+                        entry.ComponentDeclarations.Format,
+                        entry.ComponentDeclarations.Digest,
+                        entry.ComponentDeclarations.Packages
+                            .Select(package => new ReleaseManifestPackageDeclaration(package.Id, package.Version))
+                            .ToArray()));
 
             admission = new ReleaseManifestAdmissionResult(
                 true,

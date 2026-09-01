@@ -22,9 +22,11 @@ public sealed class AzureProviderOperationMigrationTests
         var indexes = await db.Database.SqlQueryRaw<string>("SELECT name AS Value FROM sqlite_master WHERE type = 'index'").ToListAsync();
         Assert.Contains("AzureProviderOperations", tables);
         Assert.Contains("AzureProviderOperationTransitions", tables);
+        Assert.Contains("GovernedReleaseCatalogPackageDeclarations", tables);
         Assert.Contains("IX_AzureProviderOperations_WorkspaceId_TargetKey_OperationIdentity", indexes);
         Assert.Contains("IX_AzureProviderOperations_WorkspaceId_TargetKey", indexes);
         Assert.Contains("IX_AzureProviderOperations_Status_LeaseExpiresAt_UpdatedAt_Id", indexes);
+        Assert.Contains("IX_GovernedReleaseCatalogPackageDeclarations_ReleaseId_PackageId", indexes);
         Assert.DoesNotContain("IX_AzureProviderOperations_WorkspaceId_Status_LeaseExpiresAt_UpdatedAt", indexes);
         var columns = await db.Database.SqlQueryRaw<string>(
             "SELECT name AS Value FROM pragma_table_info('AzureProviderOperations')").ToListAsync();
@@ -42,6 +44,10 @@ public sealed class AzureProviderOperationMigrationTests
         Assert.Contains("ProviderScopeFingerprint", columns);
         Assert.Contains("SqlWorkflowPackageVersion", columns);
         Assert.Contains("SqlQuartzPackageVersion", columns);
+        var releaseColumns = await db.Database.SqlQueryRaw<string>(
+            "SELECT name AS Value FROM pragma_table_info('GovernedReleaseCatalog')").ToListAsync();
+        Assert.Contains("ComponentDeclarationsFormat", releaseColumns);
+        Assert.Contains("ComponentDeclarationsDigest", releaseColumns);
         Assert.Empty(await db.Database.GetPendingMigrationsAsync());
     }
 }

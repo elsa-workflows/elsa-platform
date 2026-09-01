@@ -48,7 +48,6 @@ public sealed class GovernedReleaseCatalogIngestionServiceTests
         Assert.DoesNotContain("certificateIdentity", serialized, StringComparison.Ordinal);
         Assert.DoesNotContain("cosign-keyless", serialized, StringComparison.Ordinal);
         Assert.DoesNotContain(ProducerSigner, serialized, StringComparison.Ordinal);
-        Assert.DoesNotContain("identity", serialized, StringComparison.OrdinalIgnoreCase);
         Assert.All(result.Entries.SelectMany(x => x.Topology.Evidence), evidence =>
             Assert.True(ReleaseManifestEvidenceContract.IsSafe(
                 evidence.Kind,

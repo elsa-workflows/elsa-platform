@@ -278,7 +278,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         {
             secretReferences = (command.Plan.SecretReferences ?? EmptyReferences)
                 .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
-                .Select(x => (x.Key, Reference: x.Value, Name: MapSecretName(x.Key)))
+                .Select(x => (x.Key, Reference: x.Value, Name: AzureProviderOperationValidation.MapSecretName(x.Key)))
                 .ToArray();
         }
         catch (ArgumentException exception)
@@ -1544,21 +1544,6 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     private static bool IsSafeWorkloadName(string? value) => value is not null && value.Length is >= 3 and <= 16 &&
         char.IsAsciiLetterOrDigit(value[0]) && char.IsAsciiLetterOrDigit(value[^1]) &&
         value.All(character => char.IsAsciiLetterOrDigit(character) || character == '-');
-    private static string MapSecretName(string key)
-    {
-        var normalized = key.Trim().ToLowerInvariant();
-        var mapped = normalized switch
-        {
-            "database:connectionstring" or "database:connection-string" or "sql-connection" => "sql-connection",
-            "identity:signingkey" or "identity:signing-key" or "identity-signing-key" => "identity-signing-key",
-            "admin:password" or "admin-password" => "admin-password",
-            _ => normalized.Replace(':', '-').Replace('_', '-')
-        };
-        if (mapped.Length is 0 or > 127 || mapped.Any(character => !char.IsAsciiLetterOrDigit(character) && character != '-'))
-            throw new ArgumentException("The secret reference key cannot be mapped to a governed Azure secret name.", nameof(key));
-        return mapped;
-    }
-
     private static void ValidateExactResourceId(string id, string subscription, string group, string provider, string type, string name)
     {
         var expected = $"/subscriptions/{subscription}/resourceGroups/{group}/providers/{provider}/{type}/{name}";

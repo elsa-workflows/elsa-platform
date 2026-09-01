@@ -82,6 +82,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     internal DbSet<Models.ManagedElsaHandoffReplayEntity> ManagedElsaHandoffReplays => Set<Models.ManagedElsaHandoffReplayEntity>();
     internal DbSet<Models.ManagedElsaHandoffAuditEventEntity> ManagedElsaHandoffAuditEvents => Set<Models.ManagedElsaHandoffAuditEventEntity>();
     internal DbSet<Models.GovernedReleaseCatalogEntity> GovernedReleaseCatalog => Set<Models.GovernedReleaseCatalogEntity>();
+    internal DbSet<Models.GovernedReleaseCatalogPackageDeclarationEntity> GovernedReleaseCatalogPackageDeclarations => Set<Models.GovernedReleaseCatalogPackageDeclarationEntity>();
     internal DbSet<Models.GovernedReleaseCatalogTopologyEntity> GovernedReleaseCatalogTopologies => Set<Models.GovernedReleaseCatalogTopologyEntity>();
     internal DbSet<Models.GovernedReleaseCatalogRuntimeKindEntity> GovernedReleaseCatalogRuntimeKinds => Set<Models.GovernedReleaseCatalogRuntimeKindEntity>();
     internal DbSet<Models.GovernedReleaseCatalogCapabilityEntity> GovernedReleaseCatalogCapabilities => Set<Models.GovernedReleaseCatalogCapabilityEntity>();
@@ -160,6 +161,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.ApplyConfiguration(new Models.ManagedElsaHandoffReplayConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ManagedElsaHandoffAuditEventConfiguration());
         modelBuilder.ApplyConfiguration(new Models.GovernedReleaseCatalogConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.GovernedReleaseCatalogPackageDeclarationConfiguration());
         modelBuilder.ApplyConfiguration(new Models.GovernedReleaseCatalogTopologyConfiguration());
         modelBuilder.ApplyConfiguration(new Models.GovernedReleaseCatalogRuntimeKindConfiguration());
         modelBuilder.ApplyConfiguration(new Models.GovernedReleaseCatalogCapabilityConfiguration());

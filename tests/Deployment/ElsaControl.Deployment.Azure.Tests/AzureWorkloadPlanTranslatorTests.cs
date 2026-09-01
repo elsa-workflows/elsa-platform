@@ -96,8 +96,18 @@ public sealed class AzureWorkloadPlanTranslatorTests
     [Fact]
     public void Requires_exact_provider_package_metadata_before_translation()
     {
+        var plan = CreatePlan();
         var result = AzureWorkloadPlanTranslator.Translate(
-            CreatePlan() with { Packages = [CreatePlan().Packages[0]] },
+            plan with
+            {
+                Release = plan.Release with
+                {
+                    ComponentDeclarations = plan.Release.ComponentDeclarations! with
+                    {
+                        Packages = [plan.Release.ComponentDeclarations.Packages[0]]
+                    }
+                }
+            },
             new("workload-a", "westeurope"));
 
         Assert.False(result.IsAccepted);
@@ -111,11 +121,17 @@ public sealed class AzureWorkloadPlanTranslatorTests
         var result = AzureWorkloadPlanTranslator.Translate(
             plan with
             {
-                Packages = plan.Packages.Select(package =>
-                    string.Equals(package.PackageId, AzureWorkloadPlanTranslator.SqlWorkflowPackageId,
-                        StringComparison.OrdinalIgnoreCase)
-                        ? package with { Version = "3.8.0] || injected" }
-                        : package).ToArray()
+                Release = plan.Release with
+                {
+                    ComponentDeclarations = plan.Release.ComponentDeclarations! with
+                    {
+                        Packages = plan.Release.ComponentDeclarations.Packages.Select(package =>
+                            string.Equals(package.Id, AzureWorkloadPlanTranslator.SqlWorkflowPackageId,
+                                StringComparison.OrdinalIgnoreCase)
+                                ? package with { Version = "3.8.0] || injected" }
+                                : package).ToArray()
+                    }
+                }
             },
             new("workload-a", "westeurope"));
 
@@ -360,6 +376,32 @@ public sealed class AzureWorkloadPlanTranslatorTests
     }
 
     [Fact]
+    public void Rejects_other_repository_under_the_governed_registry()
+    {
+        var plan = CreatePlan();
+        var component = plan.Topology.Components[0];
+        const string repository = "valenceruntimeimages.azurecr.io/runtime-server";
+        var result = AzureWorkloadPlanTranslator.Translate(
+            plan with
+            {
+                Topology = plan.Topology with
+                {
+                    Components = [component with
+                    {
+                        Image = component.Image with
+                        {
+                            Repository = repository,
+                            Reference = $"{repository}@{ImageDigest}"
+                        }
+                    }]
+                }
+            },
+            new("workload-a", "westeurope"));
+
+        Assert.Contains(result.Findings, x => x.Code == "azure.imageRepository.invalid");
+    }
+
+    [Fact]
     public void Rejects_images_outside_initial_paid_registry_authority()
     {
         var plan = CreatePlan();
@@ -500,12 +542,16 @@ public sealed class AzureWorkloadPlanTranslatorTests
     {
         var plan = CreatePlan("5.0", "5.0.0") with
         {
-            Packages =
-            [
-                CreatePlan().Packages[0] with { Version = "5.0.0" },
-                CreatePlan().Packages[1] with { Version = "5.0.1" },
-                CreatePlan().Packages[2] with { Version = "5.0.2" }
-            ]
+            Release = CreatePlan("5.0", "5.0.0").Release with
+            {
+                ComponentDeclarations = new(
+                    "central-package-declarations-v1",
+                    ImageDigest,
+                    [
+                        new(AzureWorkloadPlanTranslator.SqlWorkflowPackageId, "5.0.1"),
+                        new(AzureWorkloadPlanTranslator.SqlQuartzPackageId, "5.0.2")
+                    ])
+            }
         };
 
         var result = AzureWorkloadPlanTranslator.Translate(plan, new("workload-a", "westeurope"));
@@ -528,7 +574,21 @@ public sealed class AzureWorkloadPlanTranslatorTests
 
         return new(
             ResolvedElsaApplicationPlanSchema.CurrentVersion,
-            new("valence-runtime", releaseLine, version, "https://github.com/valence-works/elsa-production-image", "1aeee8df455b21cf3bf3d2b26dfbd512d76da27b", "oci://release-manifest.example/manifest", ManifestDigest),
+            new(
+                "valence-runtime",
+                releaseLine,
+                version,
+                "https://github.com/valence-works/elsa-production-image",
+                "1aeee8df455b21cf3bf3d2b26dfbd512d76da27b",
+                "oci://release-manifest.example/manifest",
+                ManifestDigest,
+                new(
+                    "central-package-declarations-v1",
+                    ImageDigest,
+                    [
+                        new(AzureWorkloadPlanTranslator.SqlWorkflowPackageId, "3.8.0-preview.5413"),
+                        new(AzureWorkloadPlanTranslator.SqlQuartzPackageId, "3.8.0-preview.342")
+                    ])),
             new("combined", [component]),
             [
                 new(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), "Elsa.Core", version, ImageDigest, ["elsa.server"], [new("runtime", "Elsa.Runtime", ["elsa.server"], ["workflow.runtime"])]),

@@ -150,6 +150,7 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
         IQueryable<GovernedReleaseCatalogEntity> roots) =>
         roots
             .AsSplitQuery()
+            .Include(x => x.PackageDeclarations)
             .Include(x => x.Topologies).ThenInclude(x => x.RuntimeKinds)
             .Include(x => x.Topologies).ThenInclude(x => x.Capabilities)
             .Include(x => x.Topologies).ThenInclude(x => x.ComponentVersions)
@@ -198,8 +199,20 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
             // The application supplies immutable Control policy for this admitted
             // catalog identity; a policy change requires a separate transition path.
             CatalogLifecycle = Normalize(first.CatalogLifecycle),
-            AdmittedAtUtcTicks = first.AdmittedAt.UtcTicks
+            AdmittedAtUtcTicks = first.AdmittedAt.UtcTicks,
+            ComponentDeclarationsFormat = first.ComponentDeclarations?.Format,
+            ComponentDeclarationsDigest = first.ComponentDeclarations?.Digest is { } declarationsDigest
+                ? Normalize(declarationsDigest)
+                : null
         };
+
+        foreach (var package in first.ComponentDeclarations?.Packages ?? [])
+            root.PackageDeclarations.Add(new()
+            {
+                Id = Guid.NewGuid(),
+                PackageId = package.Id,
+                Version = package.Version
+            });
 
         foreach (var entry in entries)
         {
@@ -306,8 +319,28 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
                         .Select(x => new GovernedReleaseEvidence(x.Kind, x.Reference, x.Digest))
                         .ToArray()),
                 root.CatalogLifecycle,
-                new DateTimeOffset(root.AdmittedAtUtcTicks, TimeSpan.Zero)))
+                new DateTimeOffset(root.AdmittedAtUtcTicks, TimeSpan.Zero),
+                ToComponentDeclarations(root)))
             .ToArray();
+
+    private static GovernedReleaseComponentDeclarations? ToComponentDeclarations(GovernedReleaseCatalogEntity root)
+    {
+        var hasFormat = !string.IsNullOrWhiteSpace(root.ComponentDeclarationsFormat);
+        var hasDigest = !string.IsNullOrWhiteSpace(root.ComponentDeclarationsDigest);
+        var hasPackages = root.PackageDeclarations.Count > 0;
+        if (!hasFormat && !hasDigest && !hasPackages)
+            return null;
+        if (!hasFormat || !hasDigest || !hasPackages)
+            throw new InvalidOperationException("Persisted component declarations are incomplete.");
+
+        return new(
+            root.ComponentDeclarationsFormat!,
+            root.ComponentDeclarationsDigest!,
+            root.PackageDeclarations
+                .OrderBy(x => x.PackageId, StringComparer.OrdinalIgnoreCase)
+                .Select(x => new GovernedReleasePackageDeclaration(x.PackageId, x.Version))
+                .ToArray());
+    }
 
     private static bool Matches(GovernedReleaseCatalogEntry entry, GovernedReleaseCatalogQuery query) =>
         (query.TopologyId is null || string.Equals(entry.Topology.Id, query.TopologyId, StringComparison.Ordinal))
@@ -376,6 +409,17 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
         },
         CatalogLifecycle = Normalize(entry.CatalogLifecycle),
         AdmittedAt = DateTimeOffset.UnixEpoch,
+        ComponentDeclarations = entry.ComponentDeclarations is null
+            ? null
+            : entry.ComponentDeclarations with
+            {
+                Format = entry.ComponentDeclarations.Format,
+                Digest = Normalize(entry.ComponentDeclarations.Digest),
+                Packages = entry.ComponentDeclarations.Packages
+                    .OrderBy(x => x.Id, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(x => x.Version, StringComparer.OrdinalIgnoreCase)
+                    .ToArray()
+            },
         Topology = entry.Topology with
         {
             Id = Normalize(entry.Topology.Id),
@@ -430,6 +474,21 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
         SafeEvidenceReference(entry.SignatureEvidenceReference, entry.SignatureEvidenceDigest, nameof(entry.SignatureEvidenceReference));
         Required(entry.RegistryClass, nameof(entry.RegistryClass));
         Required(entry.CatalogLifecycle, nameof(entry.CatalogLifecycle));
+        if (entry.ComponentDeclarations is { } declarations)
+        {
+            RequiredSafeIdentity(declarations.Format, "componentDeclarations.format");
+            Digest(declarations.Digest, "componentDeclarations.digest");
+            if (declarations.Packages is null || declarations.Packages.Count is 0 or > 2048)
+                throw new ArgumentException("Catalog component declarations must contain packages.", nameof(entry));
+            if (declarations.Packages.Any(package => package is null))
+                throw new ArgumentException("Catalog component declarations cannot contain null packages.", nameof(entry));
+            EnsureUnique(declarations.Packages.Select(x => x.Id), "componentDeclarations.packages");
+            foreach (var package in declarations.Packages)
+            {
+                RequiredSafeIdentity(package.Id, "componentDeclarations.package.id");
+                RequiredSafeIdentity(package.Version, "componentDeclarations.package.version");
+            }
+        }
         Required(entry.Distribution.Id, "distribution.id");
         Required(entry.Distribution.Generation, "distribution.generation");
         Required(entry.Distribution.ReleaseLine, "distribution.releaseLine");
@@ -503,10 +562,33 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
                 || !string.Equals(entry.SignatureEvidenceDigest, first.SignatureEvidenceDigest, StringComparison.OrdinalIgnoreCase)
                 || !string.Equals(entry.RegistryClass, first.RegistryClass, StringComparison.OrdinalIgnoreCase)
                 || !string.Equals(entry.CatalogLifecycle, first.CatalogLifecycle, StringComparison.OrdinalIgnoreCase)
+                || !EquivalentComponentDeclarations(entry.ComponentDeclarations, first.ComponentDeclarations)
                 || !EquivalentDistribution(entry.Distribution, first.Distribution))
                 throw new ArgumentException("A catalog write must contain one immutable release projection.", nameof(entries));
         }
         EnsureUnique(entries.Select(x => x.Topology.Id), "topology.identities");
+    }
+
+    private static bool EquivalentComponentDeclarations(
+        GovernedReleaseComponentDeclarations? left,
+        GovernedReleaseComponentDeclarations? right)
+    {
+        if (left is null || right is null)
+            return left is null && right is null;
+        if (!string.Equals(left.Format, right.Format, StringComparison.Ordinal)
+            || !string.Equals(left.Digest, right.Digest, StringComparison.OrdinalIgnoreCase)
+            || left.Packages.Count != right.Packages.Count)
+            return false;
+
+        return left.Packages
+            .OrderBy(x => x.Id, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.Version, StringComparer.OrdinalIgnoreCase)
+            .Zip(right.Packages
+                    .OrderBy(x => x.Id, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(x => x.Version, StringComparer.OrdinalIgnoreCase),
+                (a, b) => string.Equals(a.Id, b.Id, StringComparison.OrdinalIgnoreCase)
+                          && string.Equals(a.Version, b.Version, StringComparison.Ordinal))
+            .All(x => x);
     }
 
     private static bool EquivalentDistribution(GovernedReleaseDistribution left, GovernedReleaseDistribution right) =>
@@ -532,6 +614,13 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
     {
         if (string.IsNullOrWhiteSpace(value))
             throw new ArgumentException("A required catalog value is missing.", name);
+    }
+
+    private static void RequiredSafeIdentity(string? value, string name)
+    {
+        Required(value, name);
+        if (value!.Any(character => char.IsControl(character) || char.IsWhiteSpace(character)))
+            throw new ArgumentException("A catalog identity contains unsafe characters.", name);
     }
 
     private static void Digest(string? value, string name)

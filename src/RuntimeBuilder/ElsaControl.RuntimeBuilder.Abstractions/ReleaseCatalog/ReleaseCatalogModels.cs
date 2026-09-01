@@ -17,7 +17,8 @@ public sealed record GovernedReleaseCatalogEntry(
     GovernedReleaseDistribution Distribution,
     GovernedReleaseTopology Topology,
     string CatalogLifecycle,
-    DateTimeOffset AdmittedAt);
+    DateTimeOffset AdmittedAt,
+    GovernedReleaseComponentDeclarations? ComponentDeclarations = null);
 
 public sealed record GovernedReleaseDistribution(
     string Id,
@@ -41,6 +42,15 @@ public sealed record GovernedReleaseTopology(
     IReadOnlyList<GovernedReleaseEvidence> Evidence);
 
 public sealed record GovernedReleaseComponentVersion(
+    string Id,
+    string Version);
+
+public sealed record GovernedReleaseComponentDeclarations(
+    string Format,
+    string Digest,
+    IReadOnlyList<GovernedReleasePackageDeclaration> Packages);
+
+public sealed record GovernedReleasePackageDeclaration(
     string Id,
     string Version);
 

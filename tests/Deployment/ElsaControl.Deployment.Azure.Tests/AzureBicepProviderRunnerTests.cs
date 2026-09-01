@@ -204,6 +204,33 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Colliding_secret_names_fail_before_resolution_or_seeding()
+    {
+        var process = new FakeCommandProcess();
+        var resolver = new RecordingSecretResolver("database-password");
+        var command = _fixture.Command(AzureProviderRunnerStep.SeedSecrets, _fixture.FoundationResources with
+        {
+            RegistryResourceId = _fixture.RegistryId,
+            AcrPullDeploymentId = _fixture.RegistryDeploymentId,
+            AcrPullRoleAssignmentId = _fixture.RegistryRoleAssignmentId
+        }) with
+        {
+            Plan = _fixture.Plan with { SecretReferences = new Dictionary<string, string>
+            {
+                ["database:password"] = "secret://vault/database-password",
+                ["database_password"] = "secret://vault/other-database-password"
+            }}
+        };
+
+        var result = await _fixture.Runner(process, resolver).RunAsync(command);
+
+        Assert.Equal(AzureProviderRunnerOutcome.Failed, result.Outcome);
+        Assert.Equal("azure.runner.input-invalid", result.Code);
+        Assert.Empty(resolver.Requests);
+        Assert.Empty(process.Calls);
+    }
+
+    [Fact]
     public async Task Does_not_promote_a_candidate_that_is_not_active_and_healthy()
     {
         var process = new FakeCommandProcess();

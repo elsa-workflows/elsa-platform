@@ -216,6 +216,21 @@ public sealed class AzureProviderOperationValidationTests
     }
 
     [Fact]
+    public void Secret_reference_collection_rejects_names_that_collide_after_Azure_mapping()
+    {
+        var references = new Dictionary<string, string>
+        {
+            ["database:password"] = "secret://vault/database-password",
+            ["database_password"] = "secret://vault/other-database-password"
+        };
+
+        Assert.False(AzureProviderOperationValidation.IsSafeSecretReferences(references));
+        Assert.Contains(
+            "secretReferences.nameCollision",
+            AzureProviderOperationValidation.Validate(ValidRequest() with { SecretReferences = references }));
+    }
+
+    [Fact]
     public void Rejects_newline_terminated_codes_and_worker_ids()
     {
         Assert.Throws<ArgumentException>(() => AzureProviderOperationValidation.ValidateCode("operation.succeeded\n"));

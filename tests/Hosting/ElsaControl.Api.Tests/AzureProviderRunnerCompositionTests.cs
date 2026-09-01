@@ -54,10 +54,13 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
             ["Deployment:AzureProvider:Runner:TargetScope:RegistryName"] = "valenceruntimeimages",
             ["Deployment:AzureProvider:Runner:TargetScope:Location"] = "westeurope",
             ["Deployment:AzureProvider:Secrets:0:Reference"] = "secret://vault/database",
+            ["Deployment:AzureProvider:Secrets:0:Name"] = "database:connectionstring",
             ["Deployment:AzureProvider:Secrets:0:Value"] = "runtime-only-secret",
             ["Deployment:AzureProvider:Secrets:1:Reference"] = "secret://vault/identity-signing-key",
+            ["Deployment:AzureProvider:Secrets:1:Name"] = "identity:signingkey",
             ["Deployment:AzureProvider:Secrets:1:Value"] = "runtime-only-signing-key",
             ["Deployment:AzureProvider:Secrets:2:Reference"] = "secret://vault/admin-password",
+            ["Deployment:AzureProvider:Secrets:2:Name"] = "admin:password",
             ["Deployment:AzureProvider:Secrets:2:Value"] = "runtime-only-admin-password"
         });
         var services = new ServiceCollection();
@@ -71,6 +74,40 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
         using var scope = provider.CreateScope();
         Assert.IsType<AzureBicepProviderRunner>(scope.ServiceProvider.GetRequiredService<IAzureProviderRunner>());
         Assert.IsType<ConfiguredAzureSecretResolver>(scope.ServiceProvider.GetRequiredService<IAzureSecretResolver>());
+    }
+
+    [Fact]
+    public void Named_secret_references_project_only_safe_locators_for_lifecycle_resolution()
+    {
+        var references = ConfiguredAzureSecretResolver.ReadNamedReferences(
+            Configuration(new Dictionary<string, string?>
+            {
+                ["Deployment:AzureProvider:Secrets:0:Name"] = "database:connectionstring",
+                ["Deployment:AzureProvider:Secrets:0:Reference"] = "secret://vault/database",
+                ["Deployment:AzureProvider:Secrets:0:Value"] = "runtime-only-secret",
+                ["Deployment:AzureProvider:Secrets:1:Name"] = "identity:signingkey",
+                ["Deployment:AzureProvider:Secrets:1:Reference"] = "secret://vault/identity-signing-key",
+                ["Deployment:AzureProvider:Secrets:1:Value"] = "runtime-only-signing-key",
+                ["Deployment:AzureProvider:Secrets:2:Name"] = "admin:password",
+                ["Deployment:AzureProvider:Secrets:2:Reference"] = "secret://vault/admin-password",
+                ["Deployment:AzureProvider:Secrets:2:Value"] = "runtime-only-admin-password"
+            }));
+
+        Assert.Equal(3, references.Count);
+        Assert.Equal("secret://vault/database", references["database:connectionstring"]);
+        Assert.DoesNotContain(references.Values, value => value.Contains("runtime-only", StringComparison.Ordinal));
+        Assert.Throws<NotSupportedException>(() => ((IDictionary<string, string>)references).Add("extra", "secret://vault/extra"));
+    }
+
+    [Fact]
+    public void Named_secret_references_fail_closed_when_required_binding_is_missing()
+    {
+        Assert.Throws<InvalidOperationException>(() => ConfiguredAzureSecretResolver.ReadNamedReferences(
+            Configuration(new Dictionary<string, string?>
+            {
+                ["Deployment:AzureProvider:Secrets:0:Name"] = "database:connectionstring",
+                ["Deployment:AzureProvider:Secrets:0:Reference"] = "secret://vault/database"
+            })));
     }
 
     [Fact]

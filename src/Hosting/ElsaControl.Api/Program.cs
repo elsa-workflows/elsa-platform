@@ -246,11 +246,17 @@ builder.Services.AddScoped<IElsaInstanceProviderReconciliationStore>(services =>
 builder.Services.AddScoped<IElsaInstanceDeletionStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
 builder.Services.Configure<ElsaInstancePlanAuthorityOptions>(
     builder.Configuration.GetSection(ElsaInstancePlanAuthorityOptions.ConfigurationSection));
+var azureInstanceLifecycleConfigured = builder.Configuration.GetValue<bool>(
+    $"{AzureElsaInstanceProviderOptions.ConfigurationSection}:{nameof(AzureElsaInstanceProviderOptions.Enabled)}");
+var governedAzureSecretReferences = azureInstanceLifecycleConfigured
+    ? ConfiguredAzureSecretResolver.ReadNamedReferences(builder.Configuration)
+    : null;
 builder.Services.AddScoped<IElsaInstanceLifecycleResolutionInputSource>(services =>
     new CatalogElsaInstanceLifecycleResolutionInputSource(
         services.GetRequiredService<CatalogDbContext>(),
         services.GetRequiredService<IGovernedReleaseCatalogStore>(),
-        services.GetRequiredService<IOptions<ElsaInstancePlanAuthorityOptions>>().Value));
+        services.GetRequiredService<IOptions<ElsaInstancePlanAuthorityOptions>>().Value,
+        governedAzureSecretReferences));
 builder.Services.AddScoped<IElsaInstancePlanResolver, ElsaInstancePlanResolver>();
 builder.Services.AddScoped<ElsaInstanceLifecycleService>();
 builder.Services.AddScoped<ElsaInstanceLifecycleWorker>();

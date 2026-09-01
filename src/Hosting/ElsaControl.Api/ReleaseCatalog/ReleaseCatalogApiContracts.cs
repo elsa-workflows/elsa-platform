@@ -52,7 +52,15 @@ public sealed record ReleaseCatalogEntryResponse(
     string RegistryClass,
     ReleaseCatalogDistributionResponse Distribution,
     ReleaseCatalogTopologyResponse Topology,
-    DateTimeOffset AdmittedAt);
+    DateTimeOffset AdmittedAt,
+    ReleaseCatalogComponentDeclarationsResponse? ComponentDeclarations);
+
+public sealed record ReleaseCatalogComponentDeclarationsResponse(
+    string Format,
+    string Digest,
+    IReadOnlyList<ReleaseCatalogPackageDeclarationResponse> Packages);
+
+public sealed record ReleaseCatalogPackageDeclarationResponse(string Id, string Version);
 
 public sealed record ReleaseCatalogDistributionResponse(
     string Id,
@@ -147,5 +155,13 @@ public static class ReleaseCatalogApiMappings
                         endpoint.Path)).ToArray(),
                     x.CompanionComponentId)).ToArray(),
                 entry.Topology.Evidence.Select(x => new ReleaseCatalogEvidenceResponse(x.Kind, x.Reference, x.Digest)).ToArray()),
-            entry.AdmittedAt);
+            entry.AdmittedAt,
+            entry.ComponentDeclarations is null
+                ? null
+                : new(
+                    entry.ComponentDeclarations.Format,
+                    entry.ComponentDeclarations.Digest,
+                    entry.ComponentDeclarations.Packages
+                        .Select(package => new ReleaseCatalogPackageDeclarationResponse(package.Id, package.Version))
+                        .ToArray()));
 }
