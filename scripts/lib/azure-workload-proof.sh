@@ -151,6 +151,12 @@ verify_workload_traffic() {
 # Azure role-assignment deletion is eventually consistent and may commit even
 # when the CLI returns an error. Verify the exact owned assignment is absent
 # before its deployment record (the cleanup provenance) can be removed.
+azure_cli_error_is_not_found() {
+  local error_text
+  error_text="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  [[ "$error_text" =~ (notfound|not[[:space:]-]*found|does[[:space:]]+not[[:space:]]+exist|could[[:space:]]+not[[:space:]]+be[[:space:]]+found) ]]
+}
+
 valid_role_assignment_id() {
   local registry_id_lower assignment_id_lower expected_prefix assignment_guid
   registry_id_lower="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
@@ -162,16 +168,38 @@ valid_role_assignment_id() {
 }
 
 delete_and_verify_role_assignment() {
-  local registry_id="$1"
-  local assignment_id="$2"
-  local max_attempts="${3:-24}"
-  local delay_seconds="${4:-5}"
-  local assignments_json attempt
+  local subscription_id="$1"
+  local registry_id="$2"
+  local assignment_id="$3"
+  local max_attempts="${4:-24}"
+  local delay_seconds="${5:-5}"
+  local assignments_json attempt error_file error_text
 
-  az role assignment delete --ids "$assignment_id" --only-show-errors >/dev/null 2>&1 || true
+  valid_role_assignment_id "$registry_id" "$assignment_id" || {
+    echo "Refusing to delete an ACR role assignment outside the governed registry" >&2
+    return 1
+  }
+  error_file="$(mktemp)"
+  if ! az role assignment delete --subscription "$subscription_id" --ids "$assignment_id" --only-show-errors >/dev/null 2>"$error_file"; then
+    error_text="$(<"$error_file")"
+    if azure_cli_error_is_not_found "$error_text"; then
+      : # The desired postcondition already holds.
+    else
+      echo "Role assignment deletion returned an uncertain result; verifying absence" >&2
+    fi
+  fi
+  rm -f -- "$error_file"
   for (( attempt = 1; attempt <= max_attempts; attempt++ )); do
-    if assignments_json="$(az role assignment list --all --output json --only-show-errors 2>/dev/null)" &&
-      jq -e --arg id "$assignment_id" '[.[] | select((.id | ascii_downcase) == ($id | ascii_downcase))] | length == 0' <<<"$assignments_json" >/dev/null; then
+    error_file="$(mktemp)"
+    if assignments_json="$(az role assignment list --subscription "$subscription_id" --all --output json --only-show-errors 2>"$error_file")"; then
+      rm -f -- "$error_file"
+    else
+      error_text="$(<"$error_file")"
+      rm -f -- "$error_file"
+      echo "Could not verify ACR role assignment absence: Azure CLI read failed" >&2
+      return 2
+    fi
+    if jq -e --arg id "$assignment_id" 'type == "array" and ([.[] | select((.id | ascii_downcase) == ($id | ascii_downcase))] | length == 0)' <<<"$assignments_json" >/dev/null; then
       return 0
     fi
     (( attempt == max_attempts )) || sleep "$delay_seconds"
@@ -237,16 +265,34 @@ delete_and_verify_firewall_rule() {
 }
 
 delete_and_verify_group_deployment() {
-  local resource_group="$1"
-  local deployment_name="$2"
-  local max_attempts="${3:-24}"
-  local delay_seconds="${4:-5}"
-  local deployments_json attempt
+  local subscription_id="$1"
+  local resource_group="$2"
+  local deployment_name="$3"
+  local max_attempts="${4:-24}"
+  local delay_seconds="${5:-5}"
+  local deployments_json attempt error_file error_text
 
-  az deployment group delete --resource-group "$resource_group" --name "$deployment_name" --only-show-errors >/dev/null 2>&1 || true
+  error_file="$(mktemp)"
+  if ! az deployment group delete --subscription "$subscription_id" --resource-group "$resource_group" --name "$deployment_name" --only-show-errors >/dev/null 2>"$error_file"; then
+    error_text="$(<"$error_file")"
+    if azure_cli_error_is_not_found "$error_text"; then
+      : # The desired postcondition already holds.
+    else
+      echo "Deployment deletion returned an uncertain result; verifying absence" >&2
+    fi
+  fi
+  rm -f -- "$error_file"
   for (( attempt = 1; attempt <= max_attempts; attempt++ )); do
-    if deployments_json="$(az deployment group list --resource-group "$resource_group" --output json --only-show-errors 2>/dev/null)" &&
-      jq -e --arg name "$deployment_name" '[.[] | select(.name == $name)] | length == 0' <<<"$deployments_json" >/dev/null; then
+    error_file="$(mktemp)"
+    if deployments_json="$(az deployment group list --subscription "$subscription_id" --resource-group "$resource_group" --output json --only-show-errors 2>"$error_file")"; then
+      rm -f -- "$error_file"
+    else
+      error_text="$(<"$error_file")"
+      rm -f -- "$error_file"
+      echo "Could not verify ACR deployment absence: Azure CLI read failed" >&2
+      return 2
+    fi
+    if jq -e --arg name "$deployment_name" 'type == "array" and ([.[] | select(.name == $name)] | length == 0)' <<<"$deployments_json" >/dev/null; then
       return 0
     fi
     (( attempt == max_attempts )) || sleep "$delay_seconds"
@@ -256,17 +302,33 @@ delete_and_verify_group_deployment() {
 }
 
 wait_for_resource_group_absence() {
-  local resource_group="$1"
+  local subscription_id="$1"
+  local resource_group="$2"
   # Container Apps managed-environment deletion has exceeded twenty minutes in
   # live proof runs. Keep the wait bounded while allowing the provider's
   # observed tail latency to complete before reporting cleanup failure.
-  local max_attempts="${2:-300}"
-  local delay_seconds="${3:-5}"
-  local group_exists attempt
+  local max_attempts="${3:-300}"
+  local delay_seconds="${4:-5}"
+  local group_exists attempt error_file error_text
 
   for (( attempt = 1; attempt <= max_attempts; attempt++ )); do
-    group_exists="$(az group exists --name "$resource_group" --output tsv --only-show-errors 2>/dev/null || echo unknown)"
-    [[ "$group_exists" == false ]] && return 0
+    error_file="$(mktemp)"
+    if group_exists="$(az group exists --subscription "$subscription_id" --name "$resource_group" --output tsv --only-show-errors 2>"$error_file")"; then
+      rm -f -- "$error_file"
+      case "$group_exists" in
+        false) return 0 ;;
+        true) ;;
+        *)
+          echo "Could not verify resource group absence: Azure CLI returned an unexpected value" >&2
+          return 2
+          ;;
+      esac
+    else
+      error_text="$(<"$error_file")"
+      rm -f -- "$error_file"
+      echo "Could not verify resource group absence: Azure CLI read failed" >&2
+      return 2
+    fi
     (( attempt == max_attempts )) || sleep "$delay_seconds"
   done
   echo "Proof resource group remained observable after the bounded deletion window" >&2
@@ -317,7 +379,10 @@ verify_proof_resource_inventory() {
   }
 
   vault_id="$group_id/providers/Microsoft.KeyVault/vaults/$proof_name-kv"
-  assignments_json="$(az role assignment list --all --output json --only-show-errors)" || return 1
+  assignments_json="$(az role assignment list --subscription "$subscription_id" --all --output json --only-show-errors)" || {
+    echo "Could not read proof vault role assignments: Azure CLI read failed" >&2
+    return 1
+  }
   jq -e --arg scope "$vault_id" --arg workload "$identity_principal_id" --arg bootstrap "$bootstrap_object_id" '
     ($workload | ascii_downcase) as $workload_lower |
     ($bootstrap | ascii_downcase) as $bootstrap_lower |
@@ -335,7 +400,10 @@ verify_proof_resource_inventory() {
     return 1
   }
 
-  direct_group_assignments="$(az role assignment list --all --output json --only-show-errors)" || return 1
+  direct_group_assignments="$(az role assignment list --subscription "$subscription_id" --all --output json --only-show-errors)" || {
+    echo "Could not read resource-group role assignments: Azure CLI read failed" >&2
+    return 1
+  }
   jq -e --arg scope "$group_id" '[.[] | select((.scope // "" | ascii_downcase) == ($scope | ascii_downcase))] | length == 0' <<<"$direct_group_assignments" >/dev/null || {
     echo "Refusing cleanup: resource group has an unexpected direct role assignment" >&2
     return 1
@@ -343,23 +411,45 @@ verify_proof_resource_inventory() {
 }
 
 purge_and_verify_deleted_vault() {
-  local vault_name="$1"
-  local location="$2"
-  local max_attempts="${3:-30}"
-  local delay_seconds="${4:-5}"
-  local deleted_vaults_json vault_count attempt purge_requested=0
+  local subscription_id="$1"
+  local vault_name="$2"
+  local location="$3"
+  local max_attempts="${4:-30}"
+  local delay_seconds="${5:-5}"
+  local deleted_vaults_json vault_count attempt purge_requested=0 error_file error_text
 
   for (( attempt = 1; attempt <= max_attempts; attempt++ )); do
-    if deleted_vaults_json="$(az keyvault list-deleted --resource-type vault --output json --only-show-errors 2>/dev/null)"; then
-      vault_count="$(jq -r --arg name "$vault_name" --arg location "$location" \
-        '[.[] | select(.name == $name and ((.properties.location // .location // "") | ascii_downcase) == ($location | ascii_downcase))] | length' \
-        <<<"$deleted_vaults_json")" || return 1
-      (( vault_count == 0 )) && return 0
-      (( vault_count == 1 )) || { echo "Expected at most one deleted proof vault" >&2; return 1; }
-      if (( purge_requested == 0 )); then
-        az keyvault purge --name "$vault_name" --location "$location" --only-show-errors >/dev/null 2>&1 || true
-        purge_requested=1
+    error_file="$(mktemp)"
+    if deleted_vaults_json="$(az keyvault list-deleted --subscription "$subscription_id" --resource-type vault --output json --only-show-errors 2>"$error_file")"; then
+      rm -f -- "$error_file"
+    else
+      error_text="$(<"$error_file")"
+      rm -f -- "$error_file"
+      echo "Could not verify deleted proof vault absence: Azure CLI read failed" >&2
+      return 2
+    fi
+    vault_count="$(jq -r --arg name "$vault_name" --arg location "$location" \
+      'if type != "array" then error("expected an array") else ([.[] | select(.name == $name and ((.properties.location // .location // "") | ascii_downcase) == ($location | ascii_downcase))] | length) end' \
+      <<<"$deleted_vaults_json")" || {
+      echo "Could not verify deleted proof vault absence: Azure CLI returned invalid JSON" >&2
+      return 2
+    }
+    [[ "$vault_count" =~ ^[0-9]+$ ]] || {
+      echo "Could not verify deleted proof vault absence: Azure CLI returned an unexpected JSON shape" >&2
+      return 2
+    }
+    (( vault_count == 0 )) && return 0
+    (( vault_count == 1 )) || { echo "Expected at most one deleted proof vault" >&2; return 1; }
+    if (( purge_requested == 0 )); then
+      error_file="$(mktemp)"
+      if ! az keyvault purge --subscription "$subscription_id" --name "$vault_name" --location "$location" --only-show-errors >/dev/null 2>"$error_file"; then
+        error_text="$(<"$error_file")"
+        if ! azure_cli_error_is_not_found "$error_text"; then
+          echo "Deleted proof vault purge returned an uncertain result; verifying absence" >&2
+        fi
       fi
+      rm -f -- "$error_file"
+      purge_requested=1
     fi
     (( attempt == max_attempts )) || sleep "$delay_seconds"
   done

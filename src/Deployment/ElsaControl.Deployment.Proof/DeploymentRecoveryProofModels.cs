@@ -41,6 +41,8 @@ public sealed record DeploymentRecoveryArtifact(
 /// <summary>
 /// A sealed recovery point containing only control-plane identities and cryptographic
 /// digests. Provider resource identifiers and secret values cannot be represented here.
+/// The canonical <see cref="ManifestDigest"/> binds every immutable field in this envelope;
+/// use <see cref="Seal"/> after collecting the provider-confirmed snapshot identity.
 /// </summary>
 public sealed record DeploymentRecoveryPoint
 {
@@ -61,7 +63,9 @@ public sealed record DeploymentRecoveryPoint
         IReadOnlyList<DeploymentRecoveryArtifact>? artifacts,
         string providerSnapshotReference,
         string providerSnapshotDigest,
-        IReadOnlyList<string>? requiredSecretReferenceKeys)
+        IReadOnlyList<string>? requiredSecretReferenceKeys,
+        string? releaseManifestReference = null,
+        string? releaseManifestDigest = null)
     {
         OrganizationId = organizationId;
         WorkspaceId = workspaceId;
@@ -80,6 +84,8 @@ public sealed record DeploymentRecoveryPoint
         ProviderSnapshotReference = providerSnapshotReference;
         ProviderSnapshotDigest = providerSnapshotDigest;
         RequiredSecretReferenceKeys = requiredSecretReferenceKeys?.ToArray() ?? [];
+        ReleaseManifestReference = releaseManifestReference ?? string.Empty;
+        ReleaseManifestDigest = releaseManifestDigest ?? string.Empty;
     }
 
     public string OrganizationId { get; }
@@ -108,6 +114,14 @@ public sealed record DeploymentRecoveryPoint
 
     public string ResolvedPlanDigest { get; }
 
+    /// <summary>
+    /// Immutable subject reference for the exact release manifest projected into the
+    /// resolved plan. This is separate from the canonical recovery-manifest digest.
+    /// </summary>
+    public string ReleaseManifestReference { get; }
+
+    public string ReleaseManifestDigest { get; }
+
     public IReadOnlyList<DeploymentRecoveryArtifact> Artifacts { get; }
 
     public string ProviderSnapshotReference { get; }
@@ -115,6 +129,31 @@ public sealed record DeploymentRecoveryPoint
     public string ProviderSnapshotDigest { get; }
 
     public IReadOnlyList<string> RequiredSecretReferenceKeys { get; }
+
+    /// <summary>
+    /// Returns a copy with <see cref="ManifestDigest"/> calculated from the complete
+    /// normalized envelope. The input instance remains unchanged.
+    /// </summary>
+    public DeploymentRecoveryPoint Seal() => new(
+        OrganizationId,
+        WorkspaceId,
+        SourceInstanceId,
+        RecoveryPointId,
+        CapturedAt,
+        SourceQuiescedAt,
+        RestorePointAt,
+        SourceLifecycle,
+        DeploymentRecoveryProofContract.ComputeManifestDigest(this),
+        DesiredRevisionId,
+        DesiredRevisionHash,
+        ResolvedPlanReference,
+        ResolvedPlanDigest,
+        Artifacts,
+        ProviderSnapshotReference,
+        ProviderSnapshotDigest,
+        RequiredSecretReferenceKeys,
+        ReleaseManifestReference,
+        ReleaseManifestDigest);
 }
 
 /// <summary>
@@ -138,7 +177,9 @@ public sealed record DeploymentRecoveryRestoredState
         string resolvedPlanDigest,
         IReadOnlyList<DeploymentRecoveryArtifact>? artifacts,
         string providerSnapshotReference,
-        string providerSnapshotDigest)
+        string providerSnapshotDigest,
+        string? releaseManifestReference = null,
+        string? releaseManifestDigest = null)
     {
         TargetInstanceId = targetInstanceId;
         SourceInstanceId = sourceInstanceId;
@@ -150,6 +191,8 @@ public sealed record DeploymentRecoveryRestoredState
         Artifacts = artifacts?.ToArray() ?? [];
         ProviderSnapshotReference = providerSnapshotReference;
         ProviderSnapshotDigest = providerSnapshotDigest;
+        ReleaseManifestReference = releaseManifestReference ?? string.Empty;
+        ReleaseManifestDigest = releaseManifestDigest ?? string.Empty;
     }
 
     public string TargetInstanceId { get; }
@@ -165,6 +208,10 @@ public sealed record DeploymentRecoveryRestoredState
     public string ResolvedPlanReference { get; }
 
     public string ResolvedPlanDigest { get; }
+
+    public string ReleaseManifestReference { get; }
+
+    public string ReleaseManifestDigest { get; }
 
     public IReadOnlyList<DeploymentRecoveryArtifact> Artifacts { get; }
 
@@ -196,6 +243,19 @@ public sealed record DeploymentRecoveryWorkflow(bool Succeeded, string Result = 
 public sealed record DeploymentRecoveryCutoverEligibility(bool Eligible);
 
 public sealed record DeploymentRecoveryCleanup(bool Succeeded);
+
+/// <summary>
+/// Opaque provider-owned cleanup scope issued by the harness before target creation.
+/// Providers must associate every remote mutation (including partial creation) with this
+/// handle and make cleanup idempotent: cleanup is a safe no-op when no mutation occurred.
+/// The handle intentionally exposes no provider resource identifier, credential, or payload.
+/// </summary>
+public sealed class DeploymentRecoveryCleanupHandle
+{
+    internal DeploymentRecoveryCleanupHandle()
+    {
+    }
+}
 
 public sealed record DeploymentRecoveryStageResult(
     DeploymentRecoveryStage Stage,
@@ -238,6 +298,7 @@ public interface IDeploymentRecoveryProvider
 {
     Task<DeploymentRecoveryTarget> CreateIsolatedTargetAsync(
         DeploymentRecoveryPoint recoveryPoint,
+        DeploymentRecoveryCleanupHandle cleanupHandle,
         CancellationToken cancellationToken = default);
 
     Task<DeploymentRecoveryRestoredState> RestoreRelationalStateAsync(
@@ -274,11 +335,14 @@ public interface IDeploymentRecoveryProvider
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Cleans up only the target returned by <see cref="CreateIsolatedTargetAsync"/>. There is
-    /// no source-instance parameter by design, so source cleanup cannot be represented here.
+    /// Cleans up only the provider-owned scope associated with the handle issued before
+    /// <see cref="CreateIsolatedTargetAsync"/>. The harness calls this after every attempted
+    /// create, including a null result or exception, so a provider can remove partial remote
+    /// mutations without guessing from a missing target. There is no source-instance parameter
+    /// by design, so source cleanup cannot be represented here.
     /// </summary>
     Task<DeploymentRecoveryCleanup> CleanupAsync(
-        DeploymentRecoveryTarget target,
+        DeploymentRecoveryCleanupHandle cleanupHandle,
         CancellationToken cancellationToken = default);
 }
 

@@ -105,15 +105,16 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("--dest-name", source)
         self.assertIn("--tags proof=129", source)
         self.assertIn("earliestRestoreDate", source)
-        self.assertIn("selected recovery point does not contain the pre-point workflow", source)
+        self.assertIn("provider-confirmed recovery cutoff does not contain the pre-point workflow", source)
         self.assertNotIn("recoverableDatabases", source)
         self.assertIn("--mode verify --absent-workflow-id", source)
         self.assertIn("healthBeforeEligibility:true", source)
         self.assertIn("trafficMutated:false", source)
-        self.assertIn("delete_and_verify_role_assignment", source)
+        self.assertIn("cleanup_owned_role_assignment", source)
+        self.assertIn("cleanup_source_secret_assignment", source)
         self.assertNotIn("az role assignment show", source)
         self.assertIn("az sql db delete", source)
-        self.assertIn("wait_for_resource_group_absence", source)
+        self.assertIn("wait_for_target_group_absence", source)
         self.assertIn("sourcePreserved:true", source)
         self.assertIn("source_healthy", source)
         self.assertNotIn("set -x", source)
@@ -315,8 +316,8 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("purge_and_verify_deleted_vault", library)
         self.assertIn("stored ACR deployment has no valid role-assignment output", source)
         self.assertLess(
-            source.index('delete_and_verify_role_assignment "$registry_id" "$role_assignment_id"'),
-            source.index('delete_and_verify_group_deployment "$registry_resource_group"'),
+            source.index('delete_and_verify_role_assignment "$registry_subscription_id" "$registry_id" "$role_assignment_id"'),
+            source.index('delete_and_verify_group_deployment "$registry_subscription_id" "$registry_resource_group"'),
         )
         self.assertIn("--retry-all-errors", library)
         self.assertIn("/revisions?api-version=2024-03-01", source)
@@ -650,13 +651,13 @@ az() {
   count=$((count + 1))
   printf '%s' "$count" >"$STATE_FILE"
   if (( count < 3 )); then
-    printf '[{"id":"/subscriptions/proof/providers/Microsoft.Authorization/roleAssignments/ABC"}]\n'
+    printf '[{"id":"/subscriptions/proof/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/acr/providers/Microsoft.Authorization/roleAssignments/00000000-0000-0000-0000-000000000001"}]\n'
   else
     printf '[]\n'
   fi
 }
 sleep() { :; }
-delete_and_verify_role_assignment /subscriptions/proof/registries/acr /subscriptions/proof/providers/Microsoft.Authorization/roleAssignments/abc 4 0
+delete_and_verify_role_assignment proof-sub /subscriptions/proof/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/acr /subscriptions/proof/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/acr/providers/Microsoft.Authorization/roleAssignments/00000000-0000-0000-0000-000000000001 4 0
 '''
             result = subprocess.run(
                 ["bash", "-c", script, "test", str(RUNBOOK_LIB), str(state), str(calls)],
@@ -668,6 +669,7 @@ delete_and_verify_role_assignment /subscriptions/proof/registries/acr /subscript
             call_lines = calls.read_text().splitlines()
             self.assertEqual(1, sum("role assignment delete" in line for line in call_lines))
             self.assertEqual(3, sum("role assignment list" in line for line in call_lines))
+            self.assertTrue(all("--subscription proof-sub" in line for line in call_lines))
 
     def test_role_assignment_id_must_be_present_and_scoped_to_registry(self) -> None:
         registry = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerRegistry/registries/acr"
@@ -700,10 +702,10 @@ delete_and_verify_role_assignment /subscriptions/proof/registries/acr /subscript
 source "$1"
 az() {
   if [[ "$*" == *"role assignment delete"* ]]; then return 0; fi
-  printf '[{"id":"proof-role"}]\n'
+  printf '[{"id":"/subscriptions/proof/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/acr/providers/Microsoft.Authorization/roleAssignments/00000000-0000-0000-0000-000000000001"}]\n'
 }
 sleep() { :; }
-delete_and_verify_role_assignment proof-registry proof-role 2 0
+delete_and_verify_role_assignment proof-sub /subscriptions/proof/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/acr /subscriptions/proof/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/acr/providers/Microsoft.Authorization/roleAssignments/00000000-0000-0000-0000-000000000001 2 0
 '''
         result = subprocess.run(
             ["bash", "-c", script, "test", str(RUNBOOK_LIB)],
@@ -717,11 +719,14 @@ delete_and_verify_role_assignment proof-registry proof-role 2 0
     def test_external_deployment_cleanup_waits_for_absence(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             state = Path(temp_dir) / "state"
+            calls = Path(temp_dir) / "calls"
             state.write_text("0")
             script = r'''
 source "$1"
 STATE_FILE="$2"
+CALLS_FILE="$3"
 az() {
+  printf '%s\n' "$*" >>"$CALLS_FILE"
   if [[ "$*" == *"deployment group delete"* ]]; then return 1; fi
   count="$(cat "$STATE_FILE")"
   count=$((count + 1))
@@ -729,16 +734,17 @@ az() {
   (( count < 3 )) && printf '[{"name":"proof-acr"}]\n' || printf '[]\n'
 }
 sleep() { :; }
-delete_and_verify_group_deployment proof-rg proof-acr 4 0
+delete_and_verify_group_deployment proof-sub proof-rg proof-acr 4 0
 '''
             result = subprocess.run(
-                ["bash", "-c", script, "test", str(RUNBOOK_LIB), str(state)],
+                ["bash", "-c", script, "test", str(RUNBOOK_LIB), str(state), str(calls)],
                 capture_output=True,
                 text=True,
                 check=False,
             )
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual("3", state.read_text())
+            self.assertTrue(all("--subscription proof-sub" in line for line in calls.read_text().splitlines()))
 
     def test_group_cleanup_waits_through_slow_scheduled_deletion(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -754,7 +760,7 @@ az() {
   (( count < 4 )) && printf 'true\n' || printf 'false\n'
 }
 sleep() { :; }
-wait_for_resource_group_absence proof-rg 5 0
+wait_for_resource_group_absence proof-sub proof-rg 5 0
 '''
             result = subprocess.run(
                 ["bash", "-c", script, "test", str(RUNBOOK_LIB), str(state)],
@@ -770,7 +776,7 @@ wait_for_resource_group_absence proof-rg 5 0
 source "$1"
 az() { printf 'true\n'; }
 sleep() { :; }
-wait_for_resource_group_absence proof-rg 2 0
+wait_for_resource_group_absence proof-sub proof-rg 2 0
 '''
         result = subprocess.run(
             ["bash", "-c", script, "test", str(RUNBOOK_LIB)],
@@ -786,7 +792,7 @@ wait_for_resource_group_absence proof-rg 2 0
 source "$1"
 az() { return 1; }
 sleep() { :; }
-wait_for_resource_group_absence proof-rg 2 0
+wait_for_resource_group_absence proof-sub proof-rg 2 0
 '''
         result = subprocess.run(
             ["bash", "-c", script, "test", str(RUNBOOK_LIB)],
@@ -794,15 +800,30 @@ wait_for_resource_group_absence proof-rg 2 0
             text=True,
             check=False,
         )
-        self.assertEqual(1, result.returncode)
-        self.assertIn("bounded deletion window", result.stderr)
+        self.assertEqual(2, result.returncode)
+        self.assertIn("Azure CLI read failed", result.stderr)
+
+    def test_group_cleanup_does_not_confuse_provider_not_found_with_absence(self) -> None:
+        script = r'''
+source "$1"
+az() { printf 'ResourceGroupNotFound\n' >&2; return 1; }
+wait_for_resource_group_absence proof-sub proof-rg 2 0
+'''
+        result = subprocess.run(
+            ["bash", "-c", script, "test", str(RUNBOOK_LIB)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(2, result.returncode)
+        self.assertIn("Azure CLI read failed", result.stderr)
 
     def test_vault_cleanup_api_errors_fail_closed(self) -> None:
         script = r'''
 source "$1"
 az() { return 1; }
 sleep() { :; }
-purge_and_verify_deleted_vault proof-kv westeurope 2 0
+purge_and_verify_deleted_vault proof-sub proof-kv westeurope 2 0
 '''
         result = subprocess.run(
             ["bash", "-c", script, "test", str(RUNBOOK_LIB)],
@@ -810,8 +831,23 @@ purge_and_verify_deleted_vault proof-kv westeurope 2 0
             text=True,
             check=False,
         )
-        self.assertEqual(1, result.returncode)
-        self.assertIn("absence could not be verified", result.stderr)
+        self.assertEqual(2, result.returncode)
+        self.assertIn("Azure CLI read failed", result.stderr)
+
+    def test_vault_cleanup_does_not_confuse_provider_not_found_with_absence(self) -> None:
+        script = r'''
+source "$1"
+az() { printf 'ResourceNotFound\n' >&2; return 1; }
+purge_and_verify_deleted_vault proof-sub proof-kv westeurope 2 0
+'''
+        result = subprocess.run(
+            ["bash", "-c", script, "test", str(RUNBOOK_LIB)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(2, result.returncode)
+        self.assertIn("Azure CLI read failed", result.stderr)
 
     def test_vault_cleanup_purges_then_verifies_absence(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -832,7 +868,7 @@ az() {
   fi
 }
 sleep() { :; }
-purge_and_verify_deleted_vault proof-kv westeurope 4 0
+purge_and_verify_deleted_vault proof-sub proof-kv westeurope 4 0
 '''
             result = subprocess.run(
                 ["bash", "-c", script, "test", str(RUNBOOK_LIB), str(state)],

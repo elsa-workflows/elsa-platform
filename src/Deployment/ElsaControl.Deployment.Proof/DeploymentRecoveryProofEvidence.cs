@@ -32,11 +32,13 @@ public static class DeploymentRecoveryProofEvidence
                 safePoint.SourceQuiescedAt,
                 safePoint.RestorePointAt,
                 SourceLifecycle = SafeIdentity(safePoint.SourceLifecycle),
-                ManifestDigest = SafeDigest(safePoint.ManifestDigest),
+                ManifestDigest = SafeManifestDigest(safePoint),
                 DesiredRevisionId = SafeIdentity(safePoint.DesiredRevisionId),
                 DesiredRevisionHash = SafeDigest(safePoint.DesiredRevisionHash),
                 ResolvedPlanReference = SafeReference(safePoint.ResolvedPlanReference),
                 ResolvedPlanDigest = SafeDigest(safePoint.ResolvedPlanDigest),
+                ReleaseManifestReference = SafeReference(safePoint.ReleaseManifestReference),
+                ReleaseManifestDigest = SafeDigest(safePoint.ReleaseManifestDigest),
                 Artifacts = safePoint.Artifacts.Where(artifact =>
                     artifact is not null &&
                     DeploymentRecoveryProofContract.IsSafeReference(artifact.Reference) &&
@@ -84,6 +86,12 @@ public static class DeploymentRecoveryProofEvidence
     private static string SafeDigest(string? value) =>
         DeploymentRecoveryProofContract.IsStrictSha256Digest(value) ? value! : string.Empty;
 
+    private static string SafeManifestDigest(DeploymentRecoveryPoint point) =>
+        DeploymentRecoveryProofContract.IsStrictSha256Digest(point.ManifestDigest) &&
+        string.Equals(point.ManifestDigest, DeploymentRecoveryProofContract.ComputeManifestDigest(point), StringComparison.Ordinal)
+            ? point.ManifestDigest
+            : string.Empty;
+
     private static string SafeReference(string? value) =>
         DeploymentRecoveryProofContract.IsSafeReference(value) ? Safe(value) : string.Empty;
 
@@ -97,8 +105,8 @@ public static class DeploymentRecoveryProofEvidence
                 "sourceInstanceId" or "organizationId" or "workspaceId" or "recoveryPointId" or
                     "sourceLifecycle" or "desiredRevisionId" or "targetInstanceId" => SafeIdentity(pair.Value),
                 "manifestDigest" or "desiredRevisionHash" or "resolvedPlanDigest" or
-                    "providerSnapshotDigest" => SafeDigest(pair.Value),
-                "resolvedPlanReference" or "providerSnapshotReference" => SafeReference(pair.Value),
+                    "releaseManifestDigest" or "providerSnapshotDigest" => SafeDigest(pair.Value),
+                "resolvedPlanReference" or "releaseManifestReference" or "providerSnapshotReference" => SafeReference(pair.Value),
                 "artifactCount" or "secretReferenceKeyCount" when
                     int.TryParse(pair.Value, NumberStyles.None, CultureInfo.InvariantCulture, out var count) && count >= 0 =>
                     count.ToString(CultureInfo.InvariantCulture),

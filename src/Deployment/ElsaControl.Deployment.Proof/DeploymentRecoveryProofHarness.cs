@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace ElsaControl.Deployment.Proof;
@@ -40,7 +43,8 @@ public sealed partial class DeploymentRecoveryProofHarness
         var startedAt = _timeProvider.GetUtcNow();
         var stages = new List<DeploymentRecoveryStageResult>();
         DeploymentRecoveryTarget? target = null;
-        var cleanupAllowed = false;
+        DeploymentRecoveryCleanupHandle? cleanupHandle = null;
+        var cleanupRequired = false;
         var failed = false;
         var cutoverEligible = false;
         DateTimeOffset? eligibilityAt = null;
@@ -82,6 +86,8 @@ public sealed partial class DeploymentRecoveryProofHarness
                     ["desiredRevisionHash"] = recoveryPoint.DesiredRevisionHash,
                     ["resolvedPlanReference"] = recoveryPoint.ResolvedPlanReference,
                     ["resolvedPlanDigest"] = recoveryPoint.ResolvedPlanDigest,
+                    ["releaseManifestReference"] = recoveryPoint.ReleaseManifestReference,
+                    ["releaseManifestDigest"] = recoveryPoint.ReleaseManifestDigest,
                     ["artifactCount"] = recoveryPoint.Artifacts.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     ["providerSnapshotReference"] = recoveryPoint.ProviderSnapshotReference,
                     ["providerSnapshotDigest"] = recoveryPoint.ProviderSnapshotDigest,
@@ -92,10 +98,12 @@ public sealed partial class DeploymentRecoveryProofHarness
 
         if (!failed)
         {
+            cleanupHandle = new DeploymentRecoveryCleanupHandle();
+            cleanupRequired = true;
             target = await ExecuteAsync(
                 DeploymentRecoveryStage.CreateIsolatedTarget,
                 stages,
-                () => provider.CreateIsolatedTargetAsync(recoveryPoint, cancellationToken),
+                () => provider.CreateIsolatedTargetAsync(recoveryPoint, cleanupHandle!, cancellationToken),
                 cancellationToken);
             failed = target is null;
             if (target is null && stages[^1].Status != DeploymentRecoveryStageStatus.Failed)
@@ -116,10 +124,6 @@ public sealed partial class DeploymentRecoveryProofHarness
                     "recovery.target.identityReuse",
                     "The isolated target must have a different logical identity from the source.");
                 failed = true;
-            }
-            else if (target is not null)
-            {
-                cleanupAllowed = true;
             }
         }
 
@@ -275,8 +279,8 @@ public sealed partial class DeploymentRecoveryProofHarness
             }
         }
 
-        AddSkippedStages(stages, cleanupAllowed);
-        if (cleanupAllowed)
+        AddSkippedStages(stages, cleanupRequired);
+        if (cleanupRequired)
         {
             using var cleanupCancellation = cancellationToken.IsCancellationRequested
                 ? new CancellationTokenSource()
@@ -286,7 +290,7 @@ public sealed partial class DeploymentRecoveryProofHarness
             var cleanup = await ExecuteAsync(
                 DeploymentRecoveryStage.Cleanup,
                 stages,
-                () => provider.CleanupAsync(target!, cleanupCancellation.Token),
+                () => provider.CleanupAsync(cleanupHandle!, cleanupCancellation.Token),
                 cleanupCancellation.Token);
             if (cleanup is null || !cleanup.Succeeded)
             {
@@ -363,6 +367,8 @@ public sealed partial class DeploymentRecoveryProofHarness
                 ["desiredRevisionHash"] = restored.DesiredRevisionHash,
                 ["resolvedPlanReference"] = restored.ResolvedPlanReference,
                 ["resolvedPlanDigest"] = restored.ResolvedPlanDigest,
+                ["releaseManifestReference"] = restored.ReleaseManifestReference,
+                ["releaseManifestDigest"] = restored.ReleaseManifestDigest,
                 ["artifactCount"] = restored.Artifacts.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["providerSnapshotReference"] = restored.ProviderSnapshotReference,
                 ["providerSnapshotDigest"] = restored.ProviderSnapshotDigest
@@ -427,13 +433,22 @@ public sealed partial class DeploymentRecoveryProofHarness
         if (!DeploymentRecoveryProofContract.IsStrictSha256Digest(point.ManifestDigest) ||
             !DeploymentRecoveryProofContract.IsStrictSha256Digest(point.DesiredRevisionHash) ||
             !DeploymentRecoveryProofContract.IsStrictSha256Digest(point.ResolvedPlanDigest) ||
+            !DeploymentRecoveryProofContract.IsStrictSha256Digest(point.ReleaseManifestDigest) ||
             !DeploymentRecoveryProofContract.IsStrictSha256Digest(point.ProviderSnapshotDigest) ||
             !DeploymentRecoveryProofContract.IsSafeReference(point.ResolvedPlanReference) ||
             !DeploymentRecoveryProofContract.ReferenceMatchesDigest(point.ResolvedPlanReference, point.ResolvedPlanDigest) ||
+            !DeploymentRecoveryProofContract.IsSafeReference(point.ReleaseManifestReference) ||
+            !DeploymentRecoveryProofContract.ReferenceMatchesDigest(point.ReleaseManifestReference, point.ReleaseManifestDigest) ||
             !DeploymentRecoveryProofContract.IsSafeReference(point.ProviderSnapshotReference) ||
             !DeploymentRecoveryProofContract.ReferenceMatchesDigest(point.ProviderSnapshotReference, point.ProviderSnapshotDigest))
         {
             code = "recovery.point.digestOrReferenceInvalid";
+            return false;
+        }
+
+        if (!string.Equals(point.ManifestDigest, DeploymentRecoveryProofContract.ComputeManifestDigest(point), StringComparison.Ordinal))
+        {
+            code = "recovery.point.manifestBindingInvalid";
             return false;
         }
 
@@ -471,6 +486,8 @@ public sealed partial class DeploymentRecoveryProofHarness
             && string.Equals(restored.DesiredRevisionHash, point.DesiredRevisionHash, StringComparison.Ordinal)
             && string.Equals(restored.ResolvedPlanReference, point.ResolvedPlanReference, StringComparison.Ordinal)
             && string.Equals(restored.ResolvedPlanDigest, point.ResolvedPlanDigest, StringComparison.Ordinal)
+            && string.Equals(restored.ReleaseManifestReference, point.ReleaseManifestReference, StringComparison.Ordinal)
+            && string.Equals(restored.ReleaseManifestDigest, point.ReleaseManifestDigest, StringComparison.Ordinal)
             && restored.Artifacts.SequenceEqual(point.Artifacts)
             && string.Equals(restored.ProviderSnapshotReference, point.ProviderSnapshotReference, StringComparison.Ordinal)
             && string.Equals(restored.ProviderSnapshotDigest, point.ProviderSnapshotDigest, StringComparison.Ordinal);
@@ -481,14 +498,14 @@ public sealed partial class DeploymentRecoveryProofHarness
         rebound.Count == rebound.Distinct(StringComparer.Ordinal).Count() &&
         required.ToHashSet(StringComparer.Ordinal).SetEquals(rebound);
 
-    private static void AddSkippedStages(List<DeploymentRecoveryStageResult> stages, bool cleanupAllowed)
+    private static void AddSkippedStages(List<DeploymentRecoveryStageResult> stages, bool cleanupRequired)
     {
         var existing = stages.Select(stage => stage.Stage).ToHashSet();
         foreach (var stage in Enum.GetValues<DeploymentRecoveryStage>())
         {
             if (existing.Contains(stage))
                 continue;
-            if (cleanupAllowed && stage == DeploymentRecoveryStage.Cleanup)
+            if (cleanupRequired && stage == DeploymentRecoveryStage.Cleanup)
                 continue;
 
             stages.Add(new DeploymentRecoveryStageResult(
@@ -581,6 +598,7 @@ public sealed partial class DeploymentRecoveryProofHarness
         "recovery.point.stale" => "The recovery point is older than the proof RPO objective.",
         "recovery.point.future" => "The recovery point timestamp is not valid.",
         "recovery.point.digestOrReferenceInvalid" => "The recovery point contains an invalid immutable digest or reference.",
+        "recovery.point.manifestBindingInvalid" => "The recovery point manifest digest does not bind its immutable contents.",
         "recovery.point.artifactInvalid" => "The recovery point contains an invalid artifact identity.",
         "recovery.point.secretKeysInvalid" => "The recovery point contains invalid secret reference keys.",
         _ => "The recovery point is invalid."
@@ -606,6 +624,50 @@ public sealed partial class DeploymentRecoveryProofHarness
 /// <summary>Shared safety predicates for provider-neutral recovery identities.</summary>
 public static class DeploymentRecoveryProofContract
 {
+    /// <summary>
+    /// Computes the canonical digest of the immutable recovery envelope. The canonical form
+    /// uses length-prefixed UTF-8 fields, UTC timestamps, and ordinal ordering for secret-slot
+    /// keys so delimiters or locale-specific formatting cannot produce ambiguous identities.
+    /// The recovery point's own <see cref="DeploymentRecoveryPoint.ManifestDigest"/> is not
+    /// included, which makes this method suitable for sealing and for validating a sealed point.
+    /// </summary>
+    public static string ComputeManifestDigest(DeploymentRecoveryPoint point)
+    {
+        ArgumentNullException.ThrowIfNull(point);
+
+        var canonical = new StringBuilder(1024).Append("elsa-recovery-manifest-v1\n");
+        Append(canonical, point.OrganizationId);
+        Append(canonical, point.WorkspaceId);
+        Append(canonical, point.SourceInstanceId);
+        Append(canonical, point.RecoveryPointId);
+        Append(canonical, point.CapturedAt);
+        Append(canonical, point.SourceQuiescedAt);
+        Append(canonical, point.RestorePointAt);
+        Append(canonical, point.SourceLifecycle);
+        Append(canonical, point.DesiredRevisionId);
+        Append(canonical, point.DesiredRevisionHash);
+        Append(canonical, point.ResolvedPlanReference);
+        Append(canonical, point.ResolvedPlanDigest);
+        Append(canonical, point.ReleaseManifestReference);
+        Append(canonical, point.ReleaseManifestDigest);
+        Append(canonical, point.ProviderSnapshotReference);
+        Append(canonical, point.ProviderSnapshotDigest);
+
+        Append(canonical, point.Artifacts.Count.ToString(CultureInfo.InvariantCulture));
+        foreach (var artifact in point.Artifacts)
+        {
+            Append(canonical, artifact?.Reference);
+            Append(canonical, artifact?.Digest);
+        }
+
+        var keys = point.RequiredSecretReferenceKeys.Order(StringComparer.Ordinal).ToArray();
+        Append(canonical, keys.Length.ToString(CultureInfo.InvariantCulture));
+        foreach (var key in keys)
+            Append(canonical, key);
+
+        return $"sha256:{Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())))}";
+    }
+
     public static bool IsStrictSha256Digest(string? value) =>
         value is { Length: 71 } &&
         value.StartsWith("sha256:", StringComparison.Ordinal) &&
@@ -623,6 +685,7 @@ public static class DeploymentRecoveryProofContract
         if (string.IsNullOrWhiteSpace(value) || value.Length > 2048 ||
             value.Any(char.IsControl) || value.Any(char.IsWhiteSpace) || value.Contains('%') ||
             value.Contains('\\') || value.Contains('?') || value.Contains('#') ||
+            value[0] == '/' ||
             value.Contains("/../", StringComparison.Ordinal) || value.EndsWith("/..", StringComparison.Ordinal) ||
             value.Contains("/./", StringComparison.Ordinal) || value.EndsWith("/.", StringComparison.Ordinal))
             return false;
@@ -630,10 +693,15 @@ public static class DeploymentRecoveryProofContract
         if (value.Contains("://", StringComparison.Ordinal))
         {
             if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+                uri.Scheme is not ("https" or "oci" or "snapshot") ||
                 string.IsNullOrWhiteSpace(uri.Host) ||
                 !string.IsNullOrEmpty(uri.UserInfo) ||
                 !string.IsNullOrEmpty(uri.Query) ||
                 !string.IsNullOrEmpty(uri.Fragment))
+                return false;
+
+            if (string.Equals(uri.Host, "management.azure.com", StringComparison.OrdinalIgnoreCase) &&
+                uri.AbsolutePath.StartsWith("/subscriptions/", StringComparison.OrdinalIgnoreCase))
                 return false;
 
             var path = Uri.UnescapeDataString(uri.AbsolutePath);
@@ -674,4 +742,16 @@ public static class DeploymentRecoveryProofContract
 
     private static bool IsLowerHex(char value) =>
         value is >= '0' and <= '9' or >= 'a' and <= 'f';
+
+    private static void Append(StringBuilder builder, string? value)
+    {
+        value ??= string.Empty;
+        builder.Append(Encoding.UTF8.GetByteCount(value).ToString(CultureInfo.InvariantCulture))
+            .Append(':')
+            .Append(value)
+            .Append('\n');
+    }
+
+    private static void Append(StringBuilder builder, DateTimeOffset value) =>
+        Append(builder, value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
 }

@@ -92,7 +92,7 @@ public sealed class DeploymentRecoveryProofHarnessTests
 
         Assert.False(report.Passed);
         Assert.Equal("recovery.target.identityReuse", report.Failure?.Code);
-        Assert.Equal(0, provider.CleanupCalls);
+        Assert.Equal(1, provider.CleanupCalls);
         Assert.False(report.CutoverEligible);
     }
 
@@ -107,7 +107,7 @@ public sealed class DeploymentRecoveryProofHarnessTests
 
         Assert.False(report.Passed);
         Assert.Equal("recovery.target.invalid", report.Failure?.Code);
-        Assert.Equal(0, provider.CleanupCalls);
+        Assert.Equal(1, provider.CleanupCalls);
         Assert.DoesNotContain(invalidTargetIdentity, json, StringComparison.Ordinal);
         Assert.DoesNotContain("do-not-leak", json, StringComparison.Ordinal);
     }
@@ -228,9 +228,65 @@ public sealed class DeploymentRecoveryProofHarnessTests
         Assert.Contains("recovery.restore.failed", json, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Create_failure_still_attempts_cleanup_with_the_issued_handle()
+    {
+        var provider = new RecoveryFakeProvider(createFailure: true, partialTargetIdentity: "partial-target");
+
+        var report = await RunAsync(provider);
+
+        Assert.False(report.Passed);
+        Assert.Equal("recovery.target.failed", report.Failure?.Code);
+        Assert.Equal(1, provider.CleanupCalls);
+        Assert.Equal(["partial-target"], provider.CleanedTargetIds);
+        Assert.Same(provider.CreateCleanupHandle, provider.CleanupHandle);
+        Assert.Null(report.Target);
+    }
+
+    [Fact]
+    public async Task Sealed_manifest_digest_binds_desired_release_artifact_and_provider_identities()
+    {
+        var provider = new RecoveryFakeProvider();
+        var point = RecoveryPoint();
+
+        Assert.Equal(point.ManifestDigest, DeploymentRecoveryProofContract.ComputeManifestDigest(point));
+        Assert.True((await RunAsync(provider, point)).Passed);
+
+        var altered = new DeploymentRecoveryPoint(
+            point.OrganizationId,
+            point.WorkspaceId,
+            point.SourceInstanceId,
+            point.RecoveryPointId,
+            point.CapturedAt,
+            point.SourceQuiescedAt,
+            point.RestorePointAt,
+            point.SourceLifecycle,
+            point.ManifestDigest,
+            "desired-revision-altered",
+            point.DesiredRevisionHash,
+            point.ResolvedPlanReference,
+            point.ResolvedPlanDigest,
+            point.Artifacts,
+            point.ProviderSnapshotReference,
+            point.ProviderSnapshotDigest,
+            point.RequiredSecretReferenceKeys,
+            point.ReleaseManifestReference,
+            point.ReleaseManifestDigest);
+
+        var alteredProvider = new RecoveryFakeProvider();
+        var report = await RunAsync(alteredProvider, altered);
+
+        Assert.False(report.Passed);
+        Assert.Equal("recovery.point.manifestBindingInvalid", report.Failure?.Code);
+        Assert.Equal(0, alteredProvider.CreateCalls);
+        Assert.DoesNotContain(point.ManifestDigest, report.ToJson(), StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("https://user:password@registry.example/artifact")]
     [InlineData("https://registry.example/artifact?token=secret")]
+    [InlineData("/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/proof/providers/Microsoft.Sql/servers/proof")]
+    [InlineData("https://management.azure.com/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/proof")]
     [InlineData("https://registry.example/artifact#secret")]
     [InlineData("https://registry.example/artifact\n")]
     public async Task Unsafe_references_fail_before_any_provider_operation(string reference)
@@ -255,8 +311,9 @@ public sealed class DeploymentRecoveryProofHarnessTests
 
     private static DeploymentRecoveryPoint RecoveryPoint(
         DateTimeOffset? capturedAt = null,
-        string? resolvedPlanReference = null) =>
-        new(
+        string? resolvedPlanReference = null)
+    {
+        var point = new DeploymentRecoveryPoint(
             "organization-proof",
             "workspace-proof",
             "source-instance",
@@ -273,12 +330,17 @@ public sealed class DeploymentRecoveryProofHarnessTests
             [new DeploymentRecoveryArtifact("oci://artifacts/workflow-42", Digest('3'))],
             "snapshot://relational/20260901",
             Digest('4'),
-            ["sql-connection", "identity-signing-key", "admin-password"]);
+            ["sql-connection", "identity-signing-key", "admin-password"],
+            "oci://manifests/elsa-3.8",
+            Digest('5'));
+        return point.Seal();
+    }
 
     private static string Digest(char value) => $"sha256:{new string(value, 64)}";
 
     public enum RecoveryFailure
     {
+        Create,
         SecretRebind,
         Restore,
         Immutable,
@@ -306,7 +368,9 @@ public sealed class DeploymentRecoveryProofHarnessTests
         ManualTimeProvider? clock = null,
         CancellationTokenSource? cancelDuringRestore = null,
         bool hangCleanup = false,
-        string? throwingMessage = null) : IDeploymentRecoveryProvider
+        string? throwingMessage = null,
+        bool createFailure = false,
+        string? partialTargetIdentity = null) : IDeploymentRecoveryProvider
     {
         private readonly RecoveryFailure? _failure = failure;
         private readonly bool _targetIdentityReuse = targetIdentityReuse;
@@ -318,6 +382,8 @@ public sealed class DeploymentRecoveryProofHarnessTests
         private readonly CancellationTokenSource? _cancelDuringRestore = cancelDuringRestore;
         private readonly bool _hangCleanup = hangCleanup;
         private readonly string? _throwingMessage = throwingMessage;
+        private readonly bool _createFailure = createFailure;
+        private readonly string? _partialTargetIdentity = partialTargetIdentity;
 
         public List<string> Calls { get; } = [];
 
@@ -329,14 +395,24 @@ public sealed class DeploymentRecoveryProofHarnessTests
 
         public int CutoverCalls { get; private set; }
 
-        public Task<DeploymentRecoveryTarget> CreateIsolatedTargetAsync(DeploymentRecoveryPoint recoveryPoint, CancellationToken cancellationToken = default)
+        public DeploymentRecoveryCleanupHandle? CreateCleanupHandle { get; private set; }
+
+        public DeploymentRecoveryCleanupHandle? CleanupHandle { get; private set; }
+
+        public Task<DeploymentRecoveryTarget> CreateIsolatedTargetAsync(DeploymentRecoveryPoint recoveryPoint, DeploymentRecoveryCleanupHandle cleanupHandle, CancellationToken cancellationToken = default)
         {
             Calls.Add("target");
             CreateCalls++;
+            CreateCleanupHandle = cleanupHandle;
+            _createdTargetIdentity = _createFailure
+                ? _partialTargetIdentity ?? "target-instance"
+                : _targetIdentityReuse ? recoveryPoint.SourceInstanceId : _targetIdentity ?? "target-instance";
             ThrowIf(DeploymentRecoveryStage.CreateIsolatedTarget);
             return Task.FromResult(new DeploymentRecoveryTarget(
-                _targetIdentityReuse ? recoveryPoint.SourceInstanceId : _targetIdentity ?? "target-instance"));
+                _createdTargetIdentity));
         }
+
+        private string? _createdTargetIdentity;
 
         public Task<DeploymentRecoveryRestoredState> RestoreRelationalStateAsync(DeploymentRecoveryPoint recoveryPoint, DeploymentRecoveryTarget target, CancellationToken cancellationToken = default)
         {
@@ -359,7 +435,9 @@ public sealed class DeploymentRecoveryProofHarnessTests
                 recoveryPoint.ResolvedPlanDigest,
                 recoveryPoint.Artifacts,
                 recoveryPoint.ProviderSnapshotReference,
-                recoveryPoint.ProviderSnapshotDigest));
+                recoveryPoint.ProviderSnapshotDigest,
+                recoveryPoint.ReleaseManifestReference,
+                recoveryPoint.ReleaseManifestDigest));
         }
 
         public Task<DeploymentRecoverySecretRebind> RebindExternalSecretsAsync(DeploymentRecoveryPoint recoveryPoint, DeploymentRecoveryTarget target, CancellationToken cancellationToken = default)
@@ -400,11 +478,13 @@ public sealed class DeploymentRecoveryProofHarnessTests
             return Task.FromResult(new DeploymentRecoveryCutoverEligibility(_failure != RecoveryFailure.Cutover));
         }
 
-        public async Task<DeploymentRecoveryCleanup> CleanupAsync(DeploymentRecoveryTarget target, CancellationToken cancellationToken = default)
+        public async Task<DeploymentRecoveryCleanup> CleanupAsync(DeploymentRecoveryCleanupHandle cleanupHandle, CancellationToken cancellationToken = default)
         {
             Calls.Add("cleanup");
             CleanupCalls++;
-            CleanedTargetIds.Add(target.InstanceId);
+            CleanupHandle = cleanupHandle;
+            if (_createdTargetIdentity is not null)
+                CleanedTargetIds.Add(_createdTargetIdentity);
             if (_hangCleanup)
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             _clock?.Advance(_advanceDuringCleanup);
@@ -416,6 +496,7 @@ public sealed class DeploymentRecoveryProofHarnessTests
             if ((_throwingMessage is not null && stage == DeploymentRecoveryStage.RestoreRelationalState) ||
                 stage switch
                 {
+                    DeploymentRecoveryStage.CreateIsolatedTarget => _createFailure || _failure == RecoveryFailure.Create,
                     DeploymentRecoveryStage.RebindExternalSecrets => _failure == RecoveryFailure.SecretRebind,
                     DeploymentRecoveryStage.RestoreRelationalState => _failure == RecoveryFailure.Restore,
                     _ => false

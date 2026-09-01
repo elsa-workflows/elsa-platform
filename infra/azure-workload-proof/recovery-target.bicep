@@ -53,7 +53,16 @@ param signingKeySecretName string = 'identity-signing-key'
 @maxLength(127)
 param adminPasswordSecretName string = 'admin-password'
 
-var planInput = 'proof=129|template=${toLower(templateFingerprint)}|target=${targetName}|location=${location}|image=${imageRepository}@sha256:${toLower(imageDigest)}|database=${toLower(restoredDatabaseId)}|point=${toLower(recoveryPointDigest)}|elsa=${elsaVersion}|sql-workflow=${sqlWorkflowPackageVersion}|sql-quartz=${sqlQuartzPackageVersion}'
+@description('Immutable Key Vault secret reference for the restored Elsa identity signing key. Required when deployWorkload is true.')
+param signingKeySecretUri string = ''
+
+@description('Immutable Key Vault secret reference for the restored administrator credential. Required when deployWorkload is true.')
+param adminPasswordSecretUri string = ''
+
+@description('Immutable Key Vault secret reference for the rebound target SQL connection. Required when deployWorkload is true.')
+param sqlConnectionSecretUri string = ''
+
+var planInput = 'proof=129|template=${toLower(templateFingerprint)}|target=${targetName}|location=${location}|image=${imageRepository}@sha256:${toLower(imageDigest)}|database=${toLower(restoredDatabaseId)}|point=${toLower(recoveryPointDigest)}|secret-refs=${uniqueString(adminPasswordSecretUri, signingKeySecretUri, sqlConnectionSecretUri)}|elsa=${elsaVersion}|sql-workflow=${sqlWorkflowPackageVersion}|sql-quartz=${sqlQuartzPackageVersion}'
 var planFingerprint = uniqueString(planInput)
 var tags = {
   proof: '129'
@@ -119,9 +128,9 @@ module workload 'modules/container-app.bicep' = if (deployWorkload) {
     imageRepository: imageRepository
     imageDigest: imageDigest
     workloadIdentityId: workloadIdentity.outputs.id
-    sqlConnectionSecretUri: vault.outputs.sqlConnectionSecretUri
-    signingKeySecretUri: vault.outputs.signingKeySecretUri
-    adminPasswordSecretUri: vault.outputs.adminCredentialUri
+    sqlConnectionSecretUri: sqlConnectionSecretUri
+    signingKeySecretUri: signingKeySecretUri
+    adminPasswordSecretUri: adminPasswordSecretUri
     sqlRef: take(sqlConnectionSecretName, 63)
     signingRef: take(signingKeySecretName, 63)
     adminCredentialRef: take(adminPasswordSecretName, 63)
