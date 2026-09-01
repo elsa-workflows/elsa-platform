@@ -291,6 +291,8 @@ public sealed class DeploymentRecoveryProofHarnessTests
     [InlineData("https://registry.example/artifact\n")]
     [InlineData("oci://registry.example/artifact:latest")]
     [InlineData("oci://registry.example/artifact:latest@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("registry.example/artifact:latest")]
+    [InlineData("registry.example:5000/artifact:latest@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
     public async Task Unsafe_references_fail_before_any_provider_operation(string reference)
     {
         var provider = new RecoveryFakeProvider();

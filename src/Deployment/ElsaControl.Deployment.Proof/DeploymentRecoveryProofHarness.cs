@@ -718,6 +718,15 @@ public static class DeploymentRecoveryProofContract
         if (at >= 0 && (slash < 0 || at < slash))
             return false;
 
+        // Scheme-less OCI locators are accepted for registry interoperability,
+        // but a colon after the final repository separator is a mutable tag.
+        // A registry port remains valid because it occurs before the first slash.
+        var schemeLessDigestMarker = value.LastIndexOf("@sha256:", StringComparison.OrdinalIgnoreCase);
+        var locator = schemeLessDigestMarker >= 0 ? value[..schemeLessDigestMarker] : value;
+        var lastSlash = locator.LastIndexOf('/');
+        if (lastSlash >= 0 && locator.AsSpan(lastSlash + 1).Contains(':'))
+            return false;
+
         return value.All(character => char.IsAsciiLetterOrDigit(character) || character is '.' or '_' or '-' or ':' or '/' or '@');
     }
 
