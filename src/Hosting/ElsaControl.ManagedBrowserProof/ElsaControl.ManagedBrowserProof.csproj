@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Deployment\ElsaControl.Deployment.Core\ElsaControl.Deployment.Core.csproj" />
+    <ProjectReference Include="..\..\PackageCatalog\ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore\ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="..\..\PackageCatalog\ElsaControl.PackageCatalog.Persistence.SqliteMigrations\ElsaControl.PackageCatalog.Persistence.SqliteMigrations.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+  </ItemGroup>
+</Project>

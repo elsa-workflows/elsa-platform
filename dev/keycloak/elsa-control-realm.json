@@ -76,6 +76,7 @@
   ],
   "users": [
     {
+      "id": "bacc0a50-652c-4bf9-a954-22b79121af92",
       "username": "ada",
       "enabled": true,
       "emailVerified": true,

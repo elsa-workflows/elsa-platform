@@ -2,16 +2,19 @@
 
 ## Status
 
-In progress. The identity, console, runtime image and Azure workload boundaries
-have executable evidence. The complete local and Azure instance journeys remain
-pending production lifecycle/API composition and the SQL Server migration fix
-tracked by #153, #157 and #188.
+Local candidate proof passed. The isolated browser run authenticates through
+Keycloak, issues and redeems the one-time handoff, opens Combined Studio without a
+second login, performs an authorized Elsa API operation, rejects callback replay,
+revokes the runtime session on logout, and covers unavailable, membership-revoked,
+and expired-state failures. The Combined host fix is production-image PR #38 at
+`59f326a45937f2fc7ef0740fa41884bad22b9021`; it remains a local candidate until
+reviewed, merged, published, admitted, and proven from an immutable digest on Azure.
 
 ## Immutable inputs
 
 | Item | Evidence |
 |---|---|
-| Control commit under proof | `d4c1d7308566c90190809c04e324b053af986f03` |
+| Control branch baseline under proof | `45fcbd58ac51da957c8217ff8ca327f3a6b93001` plus the unmerged #200 harness changes |
 | Control deployment workflow | `33349285200` (build/tests/publish passed; startup failure described below) |
 | Production-image merge | `d43865d8995f7ea6d6180a416f9322c904cbe9a4` |
 | Production-image workflow | `33348438992` |
@@ -26,11 +29,19 @@ tracked by #153, #157 and #188.
 | Scenario | Result | Evidence |
 |---|---|---|
 | Local Control login | Pass | Isolated Chromium completed the real Keycloak authorization-code flow for the documented local user and returned to `/admin/runtimes` without a second login. |
-| Local Managed Elsa console | Pass | Production console at Control commit `d4c1d73` rendered the signed-in customer and the empty managed-instance state. No cookies, authorization URLs, codes or tokens were retained. |
+| Local proof fixture | Pass | The fixture migrated an isolated catalog copy, seeded the same deterministic instance twice, rejected a conflicting runtime origin without changing the verified endpoint, and restored availability/membership state. |
+| Local Managed Elsa console | Pass | Production console rendered the signed-in customer and the healthy managed instance from real lifecycle and identity stores. The fixture projection is explicitly not provider/provisioning evidence. |
+| Local handoff protocol | Pass | Chromium completed runtime start, authenticated Control continuation, issue, form callback, server-to-server redemption and bounded runtime-session issuance. Only safe status outcomes and redirect key names were retained. |
+| Combined Studio landing | Pass (local candidate) | Production-image PR #38 shares the bounded ticket store with the host and bridges the valid managed session only to Studio Razor/Blazor endpoints. Chromium opened Studio without a second login. |
+| Authorized operation and logout | Pass (local candidate) | Chromium called the real Elsa workflow-definitions API with the managed runtime session (`200`), posted runtime logout (`204`), then the same protected API returned `401`. |
+| Callback replay | Pass (local candidate) | Replaying the already-consumed callback form returned the stable local rejection (`400`); no callback values were retained in evidence. |
+| Expired browser state | Pass (local candidate) | The live suite delayed issuance past the configured one-minute runtime state lifetime and the callback failed closed with `400`. |
+| Unavailable instance | Pass | After the fixture projected `Unknown` lifecycle/health, the real console rendered `Unavailable` and no Open action. |
+| Membership revocation before issue | Pass | The fixture disabled the organization membership after Open but before the real issue request; Control returned the stable account-unavailable outcome and did not navigate to the runtime. |
 | Azure Combined health | Pass | Container App revision `ca-elsa-managed-proof--0000001` is active/Healthy with one replica; `/health` returned 200. |
 | Azure runtime handoff start | Pass | `/managed-elsa/handoff/start` returned 302 to the configured Control continuation with only the expected `instanceId`, `state` and `codeChallenge` query keys. Query values were not retained. |
-| Control deployment safety | Failed safely | The new exact image pulled, but Azure SQL rejected an unsupported filtered-index predicate in migration `20260830191058_OperateElsaInstanceMigrations`. The migration transaction rolled back and the prior known-good Control image was restored; `/health` returned 200. Fix is #188. |
-| Full instance journey | Pending | Production lifecycle/API composition is not yet registered in the API host (#153/#157), so no authoritative ready instance can be created through a supported product path yet. |
+| Historical Control deployment safety | Failed safely, resolved | The first attempt rolled back after Azure SQL rejected an unsupported filtered-index predicate and restored the known-good Control image. #188 is now closed; this remains historical rollback evidence rather than a current blocker. |
+| Full instance journey | Local candidate passed; Azure pending | Publish and admit an immutable Combined image containing #37, rerun the same suite against that digest, and complete the Azure browser journey. |
 
 ## Azure resources
 
@@ -47,11 +58,8 @@ tracked by #153, #157 and #188.
 
 ## Required completion evidence
 
-- Local Control → issue → callback → redeem → runtime session journey.
-- One basic authorized workflow operation and runtime logout followed by 401.
-- Expired code, replay, membership revocation and unavailable-instance paths.
-- The same journey against the immutable Azure image above after #188 and the
-  lifecycle/API composition are deployed.
+- The complete journey against a newly admitted immutable Azure image containing
+  the Combined host-session fix.
 
 ## Redaction contract
 
