@@ -28,7 +28,7 @@ public static class Elsa38CombinedProofResolutionFactory
     private const string ReleaseLine = "3.8";
     private const string ImageRepository = "valenceruntimeimages.azurecr.io/runtime-combined";
     private const string ComponentDeclarationsFormat = "central-package-declarations-v1";
-    private const string ComponentDeclarationsDigest = "sha256:1b12815e61c57e538729dc99f7fde637e9576e889d67e58a5928a0380ce7b482";
+    private const string ComponentDeclarationsDigest = "sha256:de8c2ed6d667cfaa24038d097dba01a19e24fa4a3a6805c40c51f853a838b1c9";
     private const string SqlPackageVersion = "3.8.0-preview.5413";
 
     public static ElsaInstancePlanResolutionResult Create(Elsa38CombinedProofAdmission admission)
