@@ -565,22 +565,37 @@ internal static class ProducerReleaseManifestMapper
         string? policy,
         List<ReleaseManifestAdmissionFinding> findings)
     {
+        var normalizedReference = NormalizeEvidenceReference(reference);
         Required(reference, "evidence.reference.required", "Producer evidence reference is required.", "evidence.reference", findings);
         RequiredDigest(digest, "evidence.digest", findings);
         Required(subject, "evidence.subject.required", "Producer evidence subject is required.", "evidence.subject", findings);
         RequiredDigest(subjectDigest, "evidence.subjectDigest", findings);
         RequiredDigest(payloadDigest, "evidence.payloadDigest", findings);
         if (!string.IsNullOrWhiteSpace(reference)
-            && (!ReleaseManifestAdmissionService.IsSafeEvidenceReference(reference, digest)
-                || !string.Equals(ReleaseManifestAdmissionService.ExtractDigest(reference), digest, StringComparison.OrdinalIgnoreCase)))
+            && (normalizedReference is null
+                || !ReleaseManifestAdmissionService.IsSafeEvidenceReference(normalizedReference, digest)
+                || !string.Equals(ReleaseManifestAdmissionService.ExtractDigest(normalizedReference), digest, StringComparison.OrdinalIgnoreCase)))
             Add(findings, "evidence.reference.invalid", "Producer evidence references must be immutable safe locators bound to their digest.", "evidence.reference");
         if (!string.IsNullOrWhiteSpace(subject)
             && (!ReleaseManifestAdmissionService.IsSafeImageReference(subject)
                 || !ReleaseManifestServiceDigestMatches(subject, subjectDigest)))
             Add(findings, "evidence.subject.invalid", "Producer evidence subjects must be safe immutable image references.", "evidence.subject");
-        if (reference is null || digest is null || subject is null || subjectDigest is null || payloadDigest is null)
+        if (normalizedReference is null || digest is null || subject is null || subjectDigest is null || payloadDigest is null)
             return null;
-        return new(kind, reference, digest, subject, subjectDigest, payloadDigest, tool ?? EvidenceDescription, policy ?? EvidenceDescription);
+        return new(kind, normalizedReference, digest, subject, subjectDigest, payloadDigest, tool ?? EvidenceDescription, policy ?? EvidenceDescription);
+    }
+
+    private static string? NormalizeEvidenceReference(string? reference)
+    {
+        if (string.IsNullOrWhiteSpace(reference) || reference.Contains("://", StringComparison.Ordinal))
+            return reference;
+
+        // Producer manifests commonly omit the OCI scheme. Prefix only values that
+        // already pass the strict bare-image validator; arbitrary values must still
+        // be rejected at this trust boundary rather than made valid by normalization.
+        return ReleaseManifestAdmissionService.IsSafeImageReference(reference)
+            ? $"oci://{reference}"
+            : null;
     }
 
     private static IReadOnlyDictionary<string, string> ParseEndpoints(JsonElement parent, List<ReleaseManifestAdmissionFinding> findings)

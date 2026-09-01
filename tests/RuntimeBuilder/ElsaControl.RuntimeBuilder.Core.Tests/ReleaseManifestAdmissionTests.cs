@@ -53,6 +53,16 @@ public sealed class ReleaseManifestAdmissionTests
         Assert.Contains(projected.Evidence, x => x.Kind == ReleaseManifestEvidenceKinds.Sbom && x.PayloadDigest == "sha256:6e71a3cb3add948ebd219bd2e14c38276488a87a0da3267f4aeb89b5b24e307e");
         Assert.Contains(projected.Evidence, x => x.Kind == ReleaseManifestEvidenceKinds.Provenance && x.PayloadDigest == "sha256:9d71bdfffae9c73820cfcea1af2803bc24612cadffd109fe0ef6b7d82d66a00d");
         Assert.Contains(projected.Evidence, x => x.Kind == ReleaseManifestEvidenceKinds.VulnerabilityScan && x.PayloadDigest == "sha256:7273962ea21c67474dff90e662f8f6e44805e7ee0ed6e2eef73ead4355d95af5");
+        var persisted = ResolvedElsaApplicationPlanSerialization.Deserialize(
+            ResolvedElsaApplicationPlanSerialization.Serialize(projected)).Normalize();
+        Assert.All(
+            persisted.Evidence,
+            evidence => Assert.True(
+                ReleaseManifestEvidenceContract.IsSafe(evidence.Kind, evidence.Reference, evidence.Digest, evidence.Description),
+                $"Persisted evidence is not safe for retrieval: {evidence.Kind} {evidence.Reference}"));
+        Assert.All(
+            persisted.Evidence.Where(x => x.Kind is ReleaseManifestEvidenceKinds.Sbom or ReleaseManifestEvidenceKinds.Provenance or ReleaseManifestEvidenceKinds.VulnerabilityScan),
+            evidence => Assert.StartsWith("oci://", evidence.Reference, StringComparison.Ordinal));
     }
 
     [Fact]
