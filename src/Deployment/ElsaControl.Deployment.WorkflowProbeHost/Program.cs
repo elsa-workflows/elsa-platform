@@ -122,15 +122,23 @@ file sealed class PrivateFileCredentialSource : IElsaProofCredentialSource, IAsy
     public PrivateFileCredentialSource(string path)
     {
         this.path = path;
-        var info = new FileInfo(path);
-        if (!info.Exists || info.LinkTarget is not null || info.Length is <= 0 or > MaximumCharacters * 4)
-            throw new PrivateCredentialFileException();
-        if (!OperatingSystem.IsWindows())
+        try
         {
-            var unsafeBits = UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute |
-                             UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute;
-            if ((File.GetUnixFileMode(path) & unsafeBits) != 0)
+            var info = new FileInfo(path);
+            if (!info.Exists || info.LinkTarget is not null || info.Length is <= 0 or > MaximumCharacters * 4)
                 throw new PrivateCredentialFileException();
+            if (!OperatingSystem.IsWindows())
+            {
+                var unsafeBits = UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute |
+                                 UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute;
+                if ((File.GetUnixFileMode(path) & unsafeBits) != 0)
+                    throw new PrivateCredentialFileException();
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
+            NotSupportedException or PlatformNotSupportedException)
+        {
+            throw new PrivateCredentialFileException(exception);
         }
     }
 
