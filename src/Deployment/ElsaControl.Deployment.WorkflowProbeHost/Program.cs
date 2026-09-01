@@ -36,9 +36,16 @@ try
     }, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
     return result.Succeeded ? 0 : failedExitCode;
 }
+catch (DeploymentProofStageException exception)
+{
+    Console.WriteLine(DeploymentProofWorkflowProbeOutput.Failure(exception.Code, exception.Message));
+    return failedExitCode;
+}
 catch (Exception)
 {
-    Console.Error.WriteLine("workflow-probe.failed");
+    Console.WriteLine(DeploymentProofWorkflowProbeOutput.Failure(
+        "workflow-probe.failed",
+        "The workflow probe failed unexpectedly."));
     return failedExitCode;
 }
 
