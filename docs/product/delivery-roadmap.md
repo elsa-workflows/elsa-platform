@@ -73,7 +73,7 @@ completed: image/version authority
 
 active: real local/Azure browser proof (#185)
   -> capability-based multi-release/topology runtime integration
-     ([elsa-production-image#35](https://github.com/valence-works/elsa-production-image/issues/35))
+     (elsa-production-image#35, https://github.com/valence-works/elsa-production-image/issues/35)
   -> Elsa Cloud walking-skeleton completion
 ```
 
