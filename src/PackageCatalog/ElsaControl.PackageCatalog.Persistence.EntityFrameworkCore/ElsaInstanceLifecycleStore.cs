@@ -1750,18 +1750,17 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             try
             {
                 target.Validate();
-                pending.Add(new(
+                var candidate = new ElsaInstanceProviderSubmission(
                     operation.WorkspaceId,
+                    instanceId,
                     operation.Id,
-                    new ElsaInstanceProviderSubmission(
-                        operation.WorkspaceId,
-                        instanceId,
-                        operation.Id,
-                        operation.AttemptNumber,
-                        (ElsaDesiredLifecycle)instance.DesiredLifecycle,
-                        resolvedPlan,
-                        target,
-                        instance.RegionCode)));
+                    operation.AttemptNumber,
+                    (ElsaDesiredLifecycle)instance.DesiredLifecycle,
+                    resolvedPlan,
+                    target,
+                    instance.RegionCode);
+                candidate.Validate();
+                pending.Add(new(operation.WorkspaceId, operation.Id, candidate));
             }
             catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
             {

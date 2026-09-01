@@ -125,6 +125,46 @@ public sealed class ElsaInstanceLifecycleWorkerTests
     }
 
     [Fact]
+    public async Task Invalid_deleting_provider_submission_is_not_reconstructed_for_replay()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
+        var instance = ElsaInstance.Hydrate(
+            Guid.Parse("40000000-0000-0000-0000-000000000001"),
+            OrganizationId,
+            WorkspaceId,
+            "claims-provider-deleting",
+            "claims-provider-deleting",
+            Intent() with { DesiredLifecycle = ElsaDesiredLifecycle.Deleting },
+            ElsaObservedLifecycle.Unknown,
+            ElsaInstanceHealth.Unknown,
+            1);
+        var operation = ElsaInstanceOperation.Create(
+            instance.Id,
+            ElsaInstanceOperationAction.Create,
+            ElsaInstanceLifecycleService.CreateIdempotencyScope,
+            "create-provider-deleting",
+            instance.ComputeCanonicalIntentHash(),
+            instance.Version,
+            acceptedAt: Now);
+        var outbox = new ElsaInstanceLifecycleOutboxMessage(
+            Guid.NewGuid(), WorkspaceId, instance.Id, operation.Id,
+            ElsaInstanceOperationAction.Create, operation.RequestHash, Now);
+        var accepted = await store.CommitAcceptedAsync(null, instance, operation, outbox);
+        store.RegisterResolutionInput(accepted.Operation.Id, ResolutionInput(accepted.Instance));
+
+        await new ElsaInstanceLifecycleWorker(
+                store,
+                new RecordingResolver(SuccessfulResolution(WorkspaceId, accepted.Instance.Id)),
+                new StaticTimeProvider(Now),
+                new RecordingSubmissionPort(),
+                store)
+            .ProcessAvailableAsync("lifecycle-worker-1");
+
+        var pending = Assert.Single(await store.ListPendingProviderOperationsAsync(16));
+        Assert.Null(pending.Submission);
+    }
+
+    [Fact]
     public async Task In_memory_finalization_uses_store_clock_for_lease_expiry()
     {
         var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now.AddMinutes(6)));

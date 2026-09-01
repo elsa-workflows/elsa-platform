@@ -1358,6 +1358,34 @@ public sealed class ElsaInstanceLifecycleStoreTests
     }
 
     [Fact]
+    public async Task Invalid_deleting_provider_submission_is_not_reconstructed_for_replay()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var (workspace, accepted) = await QueueManagedLifecycleRunAsync(db, "Provider deleting replay");
+        var operationStore = new EfCoreElsaInstanceLifecycleStore(
+            db, EmptyResolutionInputSource.Instance, new FixedTimeProvider(Now));
+
+        await operationStore.CommitProviderSubmissionAsync(new(
+            workspace.Id,
+            accepted.Instance.Id,
+            accepted.Operation.Id,
+            accepted.Operation.AttemptNumber,
+            "provider-submission-uncertain",
+            Now));
+
+        var instance = await db.ElsaInstances.SingleAsync(x => x.Id == accepted.Instance.Id);
+        instance.DesiredLifecycle = ElsaDesiredLifecycle.Deleting;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var pending = Assert.Single(await operationStore.ListPendingProviderOperationsAsync(16));
+        Assert.Null(pending.Submission);
+    }
+
+    [Fact]
     public async Task Non_managed_actor_create_does_not_create_a_managed_deployment_shell()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

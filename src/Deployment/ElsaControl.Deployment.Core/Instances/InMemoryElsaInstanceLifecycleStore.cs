@@ -252,7 +252,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore(
                                 run.Run.ConfirmationId,
                                 run.Run.ActorAccountId);
                             target.Validate();
-                            submission = new ElsaInstanceProviderSubmission(
+                            var candidate = new ElsaInstanceProviderSubmission(
                                 instance.WorkspaceId,
                                 instance.Id,
                                 operation.Id,
@@ -261,6 +261,8 @@ public sealed class InMemoryElsaInstanceLifecycleStore(
                                 typedPlan,
                                 target,
                                 instance.PlacementIntent.RegionCode);
+                            candidate.Validate();
+                            submission = candidate;
                         }
                         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or FormatException or JsonException or NotSupportedException)
                         {
