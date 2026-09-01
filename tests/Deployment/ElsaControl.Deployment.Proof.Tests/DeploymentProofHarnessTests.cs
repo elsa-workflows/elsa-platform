@@ -98,6 +98,26 @@ public sealed class DeploymentProofHarnessTests
     }
 
     [Fact]
+    public async Task Cleanup_metadata_normalizes_case_collisions_without_throwing()
+    {
+        var provider = new FakeDeploymentProofProvider(
+            extraMetadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["ResourceId"] = "stale-resource-id",
+                ["resourceId"] = "other-stale-resource-id",
+                ["Succeeded"] = "false"
+            });
+
+        var report = await new DeploymentProofHarness().RunAsync(Input, Environment, provider);
+
+        Assert.True(report.Passed, report.Failure?.Message);
+        var cleanup = report.Stages.Single(stage => stage.Stage == DeploymentProofStage.Cleanup);
+        Assert.Equal("true", cleanup.Evidence["succeeded"]);
+        Assert.Equal("fake-resource-3.8-combined", cleanup.Evidence["resourceId"]);
+        Assert.Equal(2, cleanup.Evidence.Count);
+    }
+
+    [Fact]
     public async Task Repeat_runs_are_deterministic_for_selection_plan_and_safe_resource_identity()
     {
         var first = await RunAsync();

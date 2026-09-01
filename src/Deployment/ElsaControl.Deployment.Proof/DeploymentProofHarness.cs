@@ -288,11 +288,16 @@ public sealed class DeploymentProofHarness(
 
     private static Dictionary<string, string> CleanupMetadata(DeploymentProofCleanup value)
     {
-        var metadata = new Dictionary<string, string>(value.SafeMetadata, StringComparer.OrdinalIgnoreCase)
+        var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in value.SafeMetadata)
         {
-            ["succeeded"] = value.Succeeded.ToString().ToLowerInvariant()
-        };
-        metadata.Remove("resourceId");
+            if (string.Equals(pair.Key, "succeeded", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(pair.Key, "resourceId", StringComparison.OrdinalIgnoreCase))
+                continue;
+            metadata[pair.Key] = pair.Value;
+        }
+
+        metadata["succeeded"] = value.Succeeded.ToString().ToLowerInvariant();
         if (!string.IsNullOrWhiteSpace(value.ResourceId))
             metadata["resourceId"] = value.ResourceId;
         return metadata;
