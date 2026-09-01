@@ -163,6 +163,10 @@ file sealed class PrivateFileCredentialSource : IElsaProofCredentialSource, IAsy
                 throw new PrivateCredentialFileException();
             return new AzureSecretLease(buffer.AsSpan(0, count));
         }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DecoderFallbackException)
+        {
+            throw new PrivateCredentialFileException(exception);
+        }
         finally
         {
             Array.Clear(buffer);
@@ -175,4 +179,12 @@ file sealed class PrivateFileCredentialSource : IElsaProofCredentialSource, IAsy
 
 file sealed class PrivateCredentialFileException : Exception
 {
+    public PrivateCredentialFileException()
+    {
+    }
+
+    public PrivateCredentialFileException(Exception innerException)
+        : base("The private credential file is invalid.", innerException)
+    {
+    }
 }
