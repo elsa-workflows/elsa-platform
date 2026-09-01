@@ -11,6 +11,9 @@ param workloadIdentityId string
 @description('Principal ID of the workload user-assigned identity.')
 param workloadPrincipalId string
 
+@description('Recovery operation identity used to discover and reconcile the assignment independently of ARM deployment history.')
+param recoveryId string
+
 resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
   name: registryName
 }
@@ -27,6 +30,7 @@ resource acrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
     principalId: workloadPrincipalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRoleId)
+    description: 'elsa-control-recovery|${recoveryId}|${workloadIdentityId}'
   }
 }
 

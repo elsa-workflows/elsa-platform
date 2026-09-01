@@ -21,6 +21,31 @@ jobs:
       - name: Validate Azure deployment workflow contract
         run: python3 scripts/tests/test_azure_api_deploy_workflow.py
 
+      - name: Run Azure workload proof tests
+        run: |
+          python3 scripts/tests/test_azure_workload_proof.py
+          python3 scripts/tests/test_azure_workload_restore_proof.py
+
+      - name: Check Azure workload proof shell scripts
+        run: |
+          bash -n \
+            scripts/azure-workload-proof.sh \
+            scripts/azure-workload-restore-proof.sh \
+            scripts/lib/azure-workload-proof.sh \
+            scripts/validate-azure-workload-proof.sh
+          shellcheck \
+            scripts/azure-workload-proof.sh \
+            scripts/azure-workload-restore-proof.sh \
+            scripts/lib/azure-workload-proof.sh \
+            scripts/validate-azure-workload-proof.sh
+
+      - name: Compile Azure workload proof Bicep templates
+        run: |
+          az bicep build --file infra/azure-workload-proof/main.bicep --stdout >/dev/null
+          az bicep build --file infra/azure-workload-proof/recovery-target.bicep --stdout >/dev/null
+          az bicep build --file infra/azure-workload-proof/recovery-database.bicep --stdout >/dev/null
+          az bicep build --file infra/azure-workload-proof/acr-pull-role.bicep --stdout >/dev/null
+
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:

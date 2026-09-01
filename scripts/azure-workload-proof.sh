@@ -48,7 +48,7 @@ sql_bootstrap_login=""
 sql_bootstrap_ip=""
 subscription_id=""
 registry_subscription_id=""
-expiry_utc="2026-09-02"
+expiry_utc=""
 
 while (($#)); do
   case "$1" in
@@ -74,6 +74,7 @@ repo_root="$(cd -- "$script_dir/.." && pwd)"
 proof_dir="$repo_root/infra/azure-workload-proof"
 # shellcheck source=scripts/lib/azure-workload-proof.sh
 source "$script_dir/lib/azure-workload-proof.sh"
+expiry_utc="${expiry_utc:-$(default_expiry_utc)}"
 
 validate_name() {
   [[ "$1" =~ ^[a-z][a-z0-9-]{1,14}[a-z0-9]$ && "$1" != *--* ]] || {
@@ -198,15 +199,15 @@ if [[ "$mode" == cleanup ]]; then
   validate_registry_name "$registry_name"
   command -v jq >/dev/null || { echo "jq is required for ownership-safe cleanup" >&2; exit 2; }
   [[ -z "$subscription_id" ]] || az account set --subscription "$subscription_id"
-  group_tags="$(az group show --name "$resource_group" --query tags --output json --only-show-errors 2>/dev/null || true)"
+  proof_subscription_id="${subscription_id:-$(az account show --query id --output tsv --only-show-errors)}"
+  group_tags="$(az group show --subscription "$proof_subscription_id" --name "$resource_group" --query tags --output json --only-show-errors 2>/dev/null || true)"
   [[ "$(jq -r '.proof // empty' <<<"$group_tags")" == 108 && "$(jq -r '.owner // empty' <<<"$group_tags")" == elsa-control && "$(jq -r '."proof-name" // empty' <<<"$group_tags")" == "$proof_name" ]] || {
     echo "Refusing cleanup: resource group is absent or does not belong to this exact proof" >&2
     exit 3
   }
   cleanup_status=0
-  identity_principal_id="$(az identity show --resource-group "$resource_group" --name "${proof_name}-identity" --query principalId --output tsv --only-show-errors 2>/dev/null || true)"
+  identity_principal_id="$(az identity show --subscription "$proof_subscription_id" --resource-group "$resource_group" --name "${proof_name}-identity" --query principalId --output tsv --only-show-errors 2>/dev/null || true)"
   identity_principal_id="$(printf '%s' "$identity_principal_id" | tr '[:upper:]' '[:lower:]')"
-  proof_subscription_id="$(az account show --query id --output tsv --only-show-errors)"
   identity_principal_id_lower="$identity_principal_id"
   stored_bootstrap_object_id="$(jq -r '.sqlBootstrapObjectId // empty' <<<"$group_tags")"
   [[ "$stored_bootstrap_object_id" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || {
@@ -224,7 +225,7 @@ if [[ "$mode" == cleanup ]]; then
   }
   registry_subscription_id="${registry_subscription_id:-$proof_subscription_id}"
   az account set --subscription "$registry_subscription_id"
-  if ! registry_id="$(az acr show --resource-group "$registry_resource_group" --name "$registry_name" --query id --output tsv --only-show-errors)"; then
+  if ! registry_id="$(az acr show --subscription "$registry_subscription_id" --resource-group "$registry_resource_group" --name "$registry_name" --query id --output tsv --only-show-errors)"; then
     echo "Refusing resource-group deletion: the requested ACR scope could not be resolved" >&2
     exit 3
   fi
@@ -255,7 +256,7 @@ if [[ "$mode" == cleanup ]]; then
       echo "Refusing resource-group deletion: stored ACR deployment name does not match this exact proof context" >&2
       exit 3
     }
-    if ! deployment_list_json="$(az deployment group list --resource-group "$registry_resource_group" --output json --only-show-errors)"; then
+    if ! deployment_list_json="$(az deployment group list --subscription "$registry_subscription_id" --resource-group "$registry_resource_group" --output json --only-show-errors)"; then
       echo "Refusing resource-group deletion: ACR deployment records could not be read" >&2
       exit 3
     fi
@@ -266,7 +267,7 @@ if [[ "$mode" == cleanup ]]; then
     }
   fi
   if [[ -n "$role_assignment_id" ]]; then
-    if ! assignment_list_json="$(az role assignment list --all --output json --only-show-errors)"; then
+    if ! assignment_list_json="$(az role assignment list --subscription "$registry_subscription_id" --all --output json --only-show-errors)"; then
       echo "Refusing resource-group deletion: ACR role assignments could not be read" >&2
       exit 3
     fi
@@ -284,12 +285,12 @@ if [[ "$mode" == cleanup ]]; then
         exit 3
       }
     fi
-    delete_and_verify_role_assignment "$registry_id" "$role_assignment_id" || cleanup_status=1
+    delete_and_verify_role_assignment "$registry_subscription_id" "$registry_id" "$role_assignment_id" || cleanup_status=1
     if (( cleanup_status == 0 )); then
-      delete_and_verify_group_deployment "$registry_resource_group" "$stored_deployment_name" || cleanup_status=1
+      delete_and_verify_group_deployment "$registry_subscription_id" "$registry_resource_group" "$stored_deployment_name" || cleanup_status=1
     fi
   elif [[ -n "$cleanup_principal_id" && -n "$registry_id" ]]; then
-    if ! role_assignments_json="$(az role assignment list --all --assignee-object-id "$cleanup_principal_id" --role AcrPull --output json --only-show-errors)"; then
+    if ! role_assignments_json="$(az role assignment list --subscription "$registry_subscription_id" --all --assignee-object-id "$cleanup_principal_id" --output json --only-show-errors)"; then
       echo "Refusing resource-group deletion: identity-scoped ACR assignments could not be read" >&2
       exit 3
     fi
@@ -303,7 +304,7 @@ if [[ "$mode" == cleanup ]]; then
         echo "Refusing resource-group deletion: fallback ACR assignment is not directly scoped to the governed registry" >&2
         exit 3
       }
-      delete_and_verify_role_assignment "$registry_id" "$role_id" || cleanup_status=1
+      delete_and_verify_role_assignment "$registry_subscription_id" "$registry_id" "$role_id" || cleanup_status=1
     done < <(jq -c '.[]' <<<"$role_assignments_json")
   else
     echo "Refusing resource-group deletion: external ACR cleanup cannot be proven from the proof identity or deployment record" >&2
@@ -314,10 +315,10 @@ if [[ "$mode" == cleanup ]]; then
     echo "Refusing resource-group deletion because external ACR cleanup was incomplete" >&2
     exit 3
   fi
-  az group delete --name "$resource_group" --yes --no-wait --only-show-errors || cleanup_status=1
-  wait_for_resource_group_absence "$resource_group" || cleanup_status=1
+  az group delete --subscription "$proof_subscription_id" --name "$resource_group" --yes --no-wait --only-show-errors || cleanup_status=1
+  wait_for_resource_group_absence "$proof_subscription_id" "$resource_group" || cleanup_status=1
   vault_name="${proof_name}-kv"
-  purge_and_verify_deleted_vault "$vault_name" westeurope || cleanup_status=1
+  purge_and_verify_deleted_vault "$proof_subscription_id" "$vault_name" westeurope || cleanup_status=1
   (( cleanup_status == 0 )) && echo "Proof group deleted, external AcrPull removed, and proof vault purge verified." || echo "Cleanup incomplete; inspect exact proof targets." >&2
   exit "$cleanup_status"
 fi
@@ -497,7 +498,10 @@ az deployment group create \
 acr_role_ready=0
 registry_id="$(az acr show --resource-group "$registry_resource_group" --name "$registry_name" --query id --output tsv --only-show-errors)"
 for _ in {1..12}; do
-  if role_assignments_json="$(az role assignment list --all --assignee-object-id "$identity_principal_id" --role AcrPull --output json --only-show-errors 2>/dev/null)" &&
+  # Azure CLI 2.89 can fail while resolving a role name without an explicit
+  # scope. Read the assignee's assignments and validate the exact role ID and
+  # registry scope locally instead.
+  if role_assignments_json="$(az role assignment list --all --assignee-object-id "$identity_principal_id" --output json --only-show-errors 2>/dev/null)" &&
     has_direct_acr_pull_assignment "$registry_id" "$identity_principal_id" "$role_assignments_json"; then
     acr_role_ready=1
     break

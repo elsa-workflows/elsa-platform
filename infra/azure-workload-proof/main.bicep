@@ -210,6 +210,7 @@ output sqlServerId string = database.outputs.id
 output sqlServerName string = database.outputs.name
 output sqlDatabaseName string = database.outputs.databaseName
 output sqlServerFqdn string = database.outputs.fullyQualifiedDomainName
+output sqlShortTermRetentionDays int = database.outputs.shortTermRetentionDays
 output containerAppsEnvironmentId string = containerEnvironment.outputs.id
 output containerAppId string = deployWorkload ? workload!.outputs.id : ''
 output containerAppEndpoint string = deployWorkload ? workload!.outputs.endpoint : ''

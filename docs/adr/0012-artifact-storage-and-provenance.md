@@ -25,7 +25,11 @@ Elsa Control already validates artifact envelopes/digests and stores safe metada
 
 - Storage/tenant threat model and authorization tests.
 - Multi-instance upload/download and lifecycle proof.
-- Restore consistency and deletion/retention policy.
+- Restore consistency and deletion/retention policy. The provider-neutral recovery
+  boundary and initial 35-day restore-to-new policy are now defined by
+  [ADR-0014](0014-managed-instance-backup-and-restore.md); ADR-0012 remains Proposed
+  until the durable object-storage and held-artifact lifecycle are implemented and
+  proven.
 - Cost/scale evidence and commercial image/custom-code provenance mapping.
 
 ## Consequences if Accepted

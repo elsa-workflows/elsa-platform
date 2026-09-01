@@ -22,6 +22,18 @@ param bootstrapLogin string
 @description('Tags applied to SQL resources.')
 param tags object = {}
 
+@description('Point-in-time restore retention for the disposable proof database.')
+@minValue(1)
+@maxValue(35)
+param shortTermRetentionDays int = 35
+
+@description('Differential backup interval for the disposable proof database.')
+@allowed([
+  12
+  24
+])
+param differentialBackupIntervalHours int = 12
+
 resource server 'Microsoft.Sql/servers@2023-08-01' = {
   name: serverName
   location: location
@@ -60,6 +72,15 @@ resource database 'Microsoft.Sql/servers/databases@2023-08-01' = {
   }
 }
 
+resource shortTermRetention 'Microsoft.Sql/servers/databases/backupShortTermRetentionPolicies@2023-08-01' = {
+  parent: database
+  name: 'default'
+  properties: {
+    retentionDays: shortTermRetentionDays
+    diffBackupIntervalInHours: differentialBackupIntervalHours
+  }
+}
+
 // ACA has public egress in this no-VNet proof. The rule is removed with the proof RG.
 resource azureServicesFirewallRule 'Microsoft.Sql/servers/firewallRules@2023-08-01' = {
   parent: server
@@ -74,3 +95,4 @@ output id string = server.id
 output name string = server.name
 output fullyQualifiedDomainName string = server.properties.fullyQualifiedDomainName
 output databaseName string = database.name
+output shortTermRetentionDays int = shortTermRetention.properties.retentionDays

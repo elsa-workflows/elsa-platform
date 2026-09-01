@@ -80,6 +80,11 @@ Generated output, direct execution and continuous reconciliation are distinct pr
 - Key Vault and managed identities for platform-managed secrets.
 - Log Analytics as the proven proof-time diagnostics foundation; production Azure Monitor/Application Insights/OpenTelemetry, tenant scoping, retention and alerting remain a separate observability acceptance gate.
 - Artifact and backup storage remain provider/productization choices; backup/restore is a separate acceptance gate and was not accepted by the #108 proof.
+- [ADR-0014](../adr/0014-managed-instance-backup-and-restore.md) defines that gate as
+  a sealed cross-boundary recovery point and restore-to-new workflow. The initial
+  Azure adapter uses same-region SQL PITR, external secret-reference rebinding, and a
+  health/workflow gate before cutover eligibility; LTR and regional DR remain
+  separate evidence gates.
 - Checked-in Bicep driven by the provider; the initial West Europe Dedicated boundary is accepted, while multi-region, private-network, HA and broader stamp/cell behavior require separate evidence.
 - AKS remains a future provider/profile where requirements prove it necessary.
 
