@@ -64,6 +64,18 @@ public sealed class AzureElsaInstanceProvider(
         if (operation is null)
             return Unknown(request);
 
+        // The store lookup is intentionally broad enough to recover the latest
+        // operation after a restart, but the returned row is still untrusted at
+        // this boundary. Bind it to the exact lifecycle operation before exposing
+        // any provider state; otherwise a stale or cross-scope operation could be
+        // projected as the current instance's health.
+        if (operation.WorkspaceId != request.WorkspaceId ||
+            !string.Equals(operation.TargetKey, WorkloadName(request.InstanceId), StringComparison.OrdinalIgnoreCase) ||
+            operation.Action != AzureProviderOperationAction.Reconcile ||
+            !string.Equals(operation.IdempotencyKey, IdempotencyKey(request.OperationId), StringComparison.Ordinal) ||
+            !string.Equals(operation.ProviderScopeFingerprint, NormalizeScope(_options.ProviderScopeFingerprint), StringComparison.Ordinal))
+            return CorrelationMismatch(request);
+
         var correlation = operation.OperationIdentity;
         return operation.Status switch
         {
@@ -113,10 +125,17 @@ public sealed class AzureElsaInstanceProvider(
             ElsaInstanceProviderHealthGate.Unknown, request.OperationId, request.AttemptNumber,
             "provider-operation-unavailable");
 
+    private static ElsaInstanceProviderObservation CorrelationMismatch(ElsaInstanceProviderReconciliationRequest request) =>
+        new(ElsaInstanceProviderObservationKind.Ambiguous, ElsaObservedLifecycle.Unknown,
+            ElsaInstanceProviderHealthGate.Unknown, request.OperationId, request.AttemptNumber,
+            "provider-operation-correlation-mismatch");
+
     private static ElsaCurrentDeploymentReference? CurrentDeployment(AzureProviderOperation operation) =>
         new(operation.OperationIdentity, $"attempt-{operation.AttemptNumber}", operation.Endpoint);
 
     internal static string WorkloadName(Guid instanceId) => $"e{instanceId:N}"[..16];
 
     internal static string IdempotencyKey(Guid operationId) => $"elsa-instance-operation:{operationId:D}";
+
+    private static string? NormalizeScope(string? value) => value?.Trim().ToLowerInvariant();
 }

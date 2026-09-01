@@ -6,6 +6,8 @@ namespace ElsaControl.Deployment.Azure.Tests;
 
 public sealed class AzureElsaInstanceProviderTests
 {
+    private static readonly Guid TestInstanceId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+
     [Theory]
     [InlineData("3.8", "3.8.0-preview.5413")]
     [InlineData("3.10", "3.10.4")]
@@ -146,6 +148,49 @@ public sealed class AzureElsaInstanceProviderTests
         Assert.Equal(ElsaInstanceProviderHealthGate.Unknown, observation.HealthGate);
     }
 
+    [Theory]
+    [InlineData("workspace")]
+    [InlineData("target")]
+    [InlineData("action")]
+    [InlineData("idempotency")]
+    [InlineData("scope")]
+    public async Task Mismatched_provider_operation_identity_is_ambiguous_and_unknown(string mismatch)
+    {
+        var workspaceId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var operationId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        var plan = Translate("5.0", "5.0.0");
+        var operation = CreateOperation(workspaceId, plan, operationId) with
+        {
+            WorkspaceId = mismatch == "workspace" ? Guid.NewGuid() : workspaceId,
+            TargetKey = mismatch == "target" ? "different-target" : AzureElsaInstanceProvider.WorkloadName(TestInstanceId),
+            Action = mismatch == "action" ? AzureProviderOperationAction.Delete : AzureProviderOperationAction.Reconcile,
+            IdempotencyKey = mismatch == "idempotency" ? "elsa-instance-operation:different" : AzureElsaInstanceProvider.IdempotencyKey(operationId)
+        };
+        var provider = new AzureElsaInstanceProvider(
+            new CapturingOperationService(operation),
+            new CapturingOperationStore(operation),
+            new AzureElsaInstanceProviderOptions
+            {
+                Enabled = true,
+                ProviderScopeFingerprint = mismatch == "scope" ? new string('b', 64) : null
+            });
+
+        var observation = await provider.ObserveAsync(new(
+            workspaceId,
+            TestInstanceId,
+            operationId,
+            1,
+            ElsaDesiredLifecycle.Running,
+            null,
+            null));
+
+        Assert.Equal(ElsaInstanceProviderObservationKind.Ambiguous, observation.Kind);
+        Assert.Equal(ElsaObservedLifecycle.Unknown, observation.ObservedLifecycle);
+        Assert.Equal(ElsaInstanceProviderHealthGate.Unknown, observation.HealthGate);
+        Assert.Equal("provider-operation-correlation-mismatch", observation.CorrelationId);
+        Assert.Null(observation.CurrentDeploymentReference);
+    }
+
     [Fact]
     public async Task Disabled_provider_fails_closed_before_submission()
     {
@@ -191,7 +236,7 @@ public sealed class AzureElsaInstanceProviderTests
         new(
             operationId,
             workspaceId,
-            plan.WorkloadName,
+            AzureElsaInstanceProvider.WorkloadName(TestInstanceId),
             AzureProviderOperationAction.Reconcile,
             $"elsa-instance-operation:{operationId:D}",
             new string('a', 64),
