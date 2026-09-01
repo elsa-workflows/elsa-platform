@@ -272,7 +272,8 @@ target_deployment="elsa129-target-${target_name}-${recovery_id}"
 database_restore_deployment="elsa129-db-${target_name}-${recovery_id}"
 source_db_id="/subscriptions/${subscription_id}/resourceGroups/${source_resource_group}/providers/Microsoft.Sql/servers/${source_server}/databases/${source_database}"
 source_vault_id="/subscriptions/${subscription_id}/resourceGroups/${source_resource_group}/providers/Microsoft.KeyVault/vaults/${source_vault}"
-source_recovery_lock_id="/subscriptions/${subscription_id}/resourceGroups/${source_resource_group}/providers/Microsoft.Authorization/locks/elsa-control-recovery"
+source_app_id="/subscriptions/${subscription_id}/resourceGroups/${source_resource_group}/providers/Microsoft.App/containerApps/${source_app}"
+source_recovery_lock_id="${source_app_id}/providers/Microsoft.Authorization/locks/elsa-control-recovery"
 target_db_id="/subscriptions/${subscription_id}/resourceGroups/${source_resource_group}/providers/Microsoft.Sql/servers/${source_server}/databases/${target_database}"
 registry_id="/subscriptions/${registry_subscription_id}/resourceGroups/${registry_resource_group}/providers/Microsoft.ContainerRegistry/registries/${registry_name}"
 firewall_rule="elsa129-${recovery_id}"
@@ -453,6 +454,7 @@ quiesce_source() {
   for _ in {1..60}; do
     revisions_json="$(az containerapp revision list --subscription "$subscription_id" --resource-group "$source_resource_group" \
       --name "$source_app" --output json --only-show-errors)" || return 1
+    jq -e 'type == "array"' <<<"$revisions_json" >/dev/null || return 1
     active_count="$(jq -r '[.[] | select(.properties.active == true)] | length' <<<"$revisions_json")" || return 1
     replicas_empty=1
     for revision in $source_revisions_json; do
@@ -495,6 +497,7 @@ resume_source() {
   expected_revisions_json="$(printf '%s\n' "$source_revisions_json" | jq -Rsc 'split("\n") | map(select(length > 0)) | sort')" || return 1
   revisions_json="$(az containerapp revision list --subscription "$subscription_id" --resource-group "$source_resource_group" \
     --name "$source_app" --output json --only-show-errors)" || return 1
+  jq -e 'type == "array"' <<<"$revisions_json" >/dev/null || return 1
   foreign_active_count="$(jq -r --argjson expected "$expected_revisions_json" \
     '[.[] | select(.properties.active == true and ((.name as $name | $expected | index($name)) == null))] | length' \
     <<<"$revisions_json")" || return 1
@@ -518,6 +521,7 @@ resume_source() {
   for _ in {1..180}; do
     revisions_json="$(az containerapp revision list --subscription "$subscription_id" --resource-group "$source_resource_group" \
       --name "$source_app" --output json --only-show-errors)" || return 1
+    jq -e 'type == "array"' <<<"$revisions_json" >/dev/null || return 1
     active_exact="$(jq -r --argjson names "$expected_revisions_json" \
       '([.[] | select(.properties.active == true) | .name] | sort) == $names' <<<"$revisions_json")" || return 1
     if [[ "$active_exact" == true ]]; then
@@ -748,7 +752,7 @@ wait_for_target_group_absence() {
 }
 
 purge_and_verify_target_vault() {
-  local vault_name="$1" location="$2" expected_tombstone="$3" deleted_vaults_json vault_count attempt purge_requested=0 vault_id
+  local vault_name="$1" location="$2" expected_tombstone="$3" deleted_vaults_json vault_count attempt purge_requested=0 absence_observations=0 vault_id
   vault_id="/subscriptions/${subscription_id}/resourceGroups/${target_resource_group}/providers/Microsoft.KeyVault/vaults/${vault_name}"
   for attempt in {1..30}; do
     if deleted_vaults_json="$(az keyvault list-deleted --subscription "$subscription_id" --resource-type vault \
@@ -758,12 +762,17 @@ purge_and_verify_target_vault() {
           ((.properties.vaultId // .id // "") | ascii_downcase) == ($id | ascii_downcase))] | length' \
         <<<"$deleted_vaults_json")" || return 1
       if (( vault_count == 0 )); then
-        if (( expected_tombstone == 0 || purge_requested == 1 )); then
+        if (( purge_requested == 1 )); then
           return 0
+        fi
+        if (( expected_tombstone == 0 )); then
+          (( absence_observations += 1 ))
+          (( absence_observations >= 6 )) && return 0
         fi
         (( attempt == 30 )) || sleep 5
         continue
       fi
+      absence_observations=0
       (( vault_count == 1 )) || { echo "Expected at most one deleted target vault" >&2; return 1; }
       if (( purge_requested == 0 )); then
         az keyvault purge --subscription "$subscription_id" --name "$vault_name" --location "$location" \
@@ -781,6 +790,7 @@ cleanup_owned_role_assignment() {
   local assignment_id="$1" expected_principal="$2" assignments_json assignment_json attempt
   assignments_json="$(az role assignment list --all --subscription "$registry_subscription_id" \
     --output json --only-show-errors 2>/dev/null)" || return 1
+  jq -e 'type == "array"' <<<"$assignments_json" >/dev/null || return 1
   assignment_json="$(jq -c --arg id "$assignment_id" '[.[] | select((.id | ascii_downcase) == ($id | ascii_downcase))] | first // empty' \
     <<<"$assignments_json")" || return 1
   [[ -z "$assignment_json" ]] && return 0
@@ -790,7 +800,7 @@ cleanup_owned_role_assignment() {
   for attempt in {1..24}; do
     if assignments_json="$(az role assignment list --all --subscription "$registry_subscription_id" \
       --output json --only-show-errors 2>/dev/null)" &&
-      jq -e --arg id "$assignment_id" '[.[] | select((.id | ascii_downcase) == ($id | ascii_downcase))] | length == 0' <<<"$assignments_json" >/dev/null; then
+      jq -e --arg id "$assignment_id" 'type == "array" and ([.[] | select((.id | ascii_downcase) == ($id | ascii_downcase))] | length == 0)' <<<"$assignments_json" >/dev/null; then
       return 0
     fi
     (( attempt == 24 )) || sleep 5
@@ -806,7 +816,7 @@ cleanup_owned_acr_deployment() {
   for attempt in {1..24}; do
     if deployments_json="$(az deployment group list --subscription "$registry_subscription_id" \
       --resource-group "$registry_resource_group" --output json --only-show-errors 2>/dev/null)" &&
-      jq -e --arg name "$acr_deployment" '[.[] | select(.name == $name)] | length == 0' <<<"$deployments_json" >/dev/null; then
+      jq -e --arg name "$acr_deployment" 'type == "array" and ([.[] | select(.name == $name)] | length == 0)' <<<"$deployments_json" >/dev/null; then
       return 0
     fi
     (( attempt == 24 )) || sleep 5
@@ -821,6 +831,7 @@ cleanup_source_secret_assignment() {
     echo "Refusing to delete source-vault access: role-assignment inventory could not be read" >&2
     return 1
   }
+  jq -e 'type == "array"' <<<"$assignments_json" >/dev/null || return 1
   assignment_json="$(jq -c --arg id "$source_secret_assignment_id" '[.[] | select((.id | ascii_downcase) == ($id | ascii_downcase))] | first // empty' <<<"$assignments_json")"
   if [[ -z "$assignment_json" ]]; then
     return 0
@@ -853,7 +864,7 @@ cleanup_source_secret_assignment() {
   az role assignment delete --subscription "$subscription_id" --ids "$source_secret_assignment_id" --only-show-errors >/dev/null 2>&1 || true
   for attempt in {1..24}; do
     if assignments_json="$(az role assignment list --all --subscription "$subscription_id" --output json --only-show-errors 2>/dev/null)" &&
-      jq -e --arg id "$source_secret_assignment_id" '[.[] | select((.id | ascii_downcase) == ($id | ascii_downcase))] | length == 0' <<<"$assignments_json" >/dev/null; then
+      jq -e --arg id "$source_secret_assignment_id" 'type == "array" and ([.[] | select((.id | ascii_downcase) == ($id | ascii_downcase))] | length == 0)' <<<"$assignments_json" >/dev/null; then
       return 0
     fi
     (( attempt == 24 )) || sleep 5
@@ -865,6 +876,7 @@ cleanup_source_secret_assignment() {
 ensure_source_secret_assignment() {
   local assignments_json existing_json assignment_json
   assignments_json="$(az role assignment list --all --subscription "$subscription_id" --output json --only-show-errors 2>/dev/null)" || fail "source-vault role-assignment inventory could not be read"
+  jq -e 'type == "array"' <<<"$assignments_json" >/dev/null || fail "source-vault role-assignment inventory is invalid"
   existing_json="$(jq -c --arg id "$source_secret_assignment_id" '[.[] | select((.id | ascii_downcase) == ($id | ascii_downcase))] | first // empty' <<<"$assignments_json")"
   [[ -z "$existing_json" ]] || fail "refusing to reuse a pre-existing source-vault role assignment"
   az role assignment create --subscription "$subscription_id" --name "${source_secret_assignment_id##*/}" \
@@ -916,9 +928,17 @@ lookup_owned_acr_assignment() {
     --resource-group "$registry_resource_group" --name "$acr_deployment" --output json --only-show-errors 2>/dev/null)"; then
     acr_deployment_present=1
     assignment_id="$(jq -r '.properties.outputs.roleAssignmentId.value // empty' <<<"$deployment_json")"
+    if [[ -z "${target_principal_id:-}" ]]; then
+      jq -e --arg identity "/subscriptions/${subscription_id}/resourceGroups/${target_resource_group}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/${target_identity}" '
+        ((.properties.parameters.workloadIdentityId.value // "") | ascii_downcase) == ($identity | ascii_downcase)
+      ' <<<"$deployment_json" >/dev/null || fail "ACR deployment target identity is invalid"
+      target_principal_id="$(jq -r '.properties.parameters.workloadPrincipalId.value // empty' <<<"$deployment_json")"
+      valid_guid "$target_principal_id" || fail "ACR deployment target principal is invalid"
+    fi
   else
     deployments_json="$(az deployment group list --subscription "$registry_subscription_id" --resource-group "$registry_resource_group" \
       --output json --only-show-errors 2>/dev/null)" || fail "ACR deployment records could not be read"
+    jq -e 'type == "array"' <<<"$deployments_json" >/dev/null || fail "ACR deployment records are invalid"
     if jq -e --arg name "$acr_deployment" 'any(.[]; .name == $name)' <<<"$deployments_json" >/dev/null; then
       acr_deployment_present=1
     fi
@@ -930,6 +950,7 @@ lookup_owned_acr_assignment() {
     valid_guid "$target_principal_id" || fail "target principal is unavailable for ACR reconciliation"
     assignments_json="$(az role assignment list --subscription "$registry_subscription_id" --all \
       --assignee-object-id "$target_principal_id" --output json --only-show-errors 2>/dev/null)" || fail "target ACR assignment inventory could not be read"
+    jq -e 'type == "array"' <<<"$assignments_json" >/dev/null || fail "target ACR assignment inventory is invalid"
     matching_json="$(jq -c --arg scope "$registry_id" --arg role "7f951dda-4ed3-4680-a7ca-43fe172d538d" '
       [.[] | select(((.scope // "") | ascii_downcase) == ($scope | ascii_downcase) and
         (((.roleDefinitionId // "") | split("/") | last) | ascii_downcase) == $role)]' <<<"$assignments_json")" || \
@@ -940,6 +961,7 @@ lookup_owned_acr_assignment() {
   if [[ -n "$assignment_id" && -z "${target_principal_id:-}" ]]; then
     assignments_json="$(az role assignment list --subscription "$registry_subscription_id" --all \
       --output json --only-show-errors 2>/dev/null)" || fail "target ACR assignment inventory could not be read"
+    jq -e 'type == "array"' <<<"$assignments_json" >/dev/null || fail "target ACR assignment inventory is invalid"
     assignment_json="$(jq -c --arg id "$assignment_id" \
       '[.[] | select((.id | ascii_downcase) == ($id | ascii_downcase))] |
         if length > 1 then error("ambiguous assignment") else first // empty end' <<<"$assignments_json")" || \
@@ -965,25 +987,29 @@ verify_no_target_state_without_manifest() {
   [[ -z "$target_db_json" ]] || return 1
   deployments_json="$(az deployment group list --subscription "$subscription_id" --resource-group "$source_resource_group" \
     --output json --only-show-errors)" || return 1
+  jq -e 'type == "array"' <<<"$deployments_json" >/dev/null || return 1
   jq -e --arg name "$database_restore_deployment" '[.[] | select(.name == $name)] | length == 0' \
     <<<"$deployments_json" >/dev/null || return 1
   deployments_json="$(az deployment group list --subscription "$registry_subscription_id" --resource-group "$registry_resource_group" \
     --output json --only-show-errors)" || return 1
+  jq -e 'type == "array"' <<<"$deployments_json" >/dev/null || return 1
   jq -e --arg name "$acr_deployment" '[.[] | select(.name == $name)] | length == 0' \
     <<<"$deployments_json" >/dev/null || return 1
   assignments_json="$(az role assignment list --subscription "$subscription_id" --all \
     --output json --only-show-errors)" || return 1
+  jq -e 'type == "array"' <<<"$assignments_json" >/dev/null || return 1
   jq -e --arg id "$source_secret_assignment_id" \
     '[.[] | select((.id | ascii_downcase) == ($id | ascii_downcase))] | length == 0' \
     <<<"$assignments_json" >/dev/null || return 1
   deleted_vaults_json="$(az keyvault list-deleted --subscription "$subscription_id" --resource-type vault \
     --output json --only-show-errors)" || return 1
+  jq -e 'type == "array"' <<<"$deleted_vaults_json" >/dev/null || return 1
   jq -e --arg name "$target_vault" '[.[] | select(.name == $name)] | length == 0' \
     <<<"$deleted_vaults_json" >/dev/null
 }
 
 cleanup_target() {
-  local group_exists group_json assignment_id="" vault_location cleanup_manifest_tag observed_target_principal identities_json vaults_json vault_count=0
+  local group_exists group_json assignment_id="" vault_location cleanup_manifest_tag observed_target_principal identities_json vaults_json vault_count=0 vault_tombstone_expected=1
   local restore_deployments_json restore_deployment_count
   cleanup_manifest_tag="${manifest_tag:-sha256:${expected_manifest_digest:-}}"
   group_exists="$(az group exists --name "$target_resource_group" --subscription "$subscription_id" --output tsv --only-show-errors)"
@@ -1022,6 +1048,7 @@ cleanup_target() {
 
   restore_deployments_json="$(az deployment group list --subscription "$subscription_id" --resource-group "$source_resource_group" \
     --output json --only-show-errors)" || fail "restore deployment inventory could not be read during cleanup"
+  jq -e 'type == "array"' <<<"$restore_deployments_json" >/dev/null || fail "restore deployment inventory is invalid"
   restore_deployment_count="$(jq -r --arg name "$database_restore_deployment" \
     '[.[] | select(.name == $name)] | length' <<<"$restore_deployments_json")" || fail "restore deployment inventory is invalid"
   (( restore_deployment_count <= 1 )) || fail "restore deployment inventory is ambiguous"
@@ -1055,6 +1082,7 @@ cleanup_target() {
     vault_count="$(jq -r --arg name "$target_vault" '[.[] | select(.name == $name)] | length' <<<"$vaults_json")" || \
       fail "target vault inventory is invalid"
     (( vault_count <= 1 )) || fail "target vault inventory is ambiguous"
+    vault_tombstone_expected="$vault_count"
     if (( vault_count == 1 )); then
       vault_location="$(jq -r --arg name "$target_vault" '[.[] | select(.name == $name)][0].location // empty' <<<"$vaults_json")"
       [[ -n "$vault_location" ]] || fail "target vault location is invalid"
@@ -1063,9 +1091,10 @@ cleanup_target() {
       fail "target resource group deletion was not accepted"
     wait_for_target_group_absence || fail "target resource group absence was not verified"
   fi
-  # A sealed-manifest cleanup must never treat an eventually visible tombstone
-  # as absence, even when the resource group disappeared before this process began.
-  purge_and_verify_target_vault "$target_vault" "${vault_location:-westeurope}" 1 || fail "target vault purge was not verified"
+  # If this process observed no vault before group deletion, require repeated
+  # post-delete absence. If the group was already gone, require and purge the tombstone.
+  purge_and_verify_target_vault "$target_vault" "${vault_location:-westeurope}" "$vault_tombstone_expected" || \
+    fail "target vault purge was not verified"
   cleanup_source_secret_assignment || fail "source-vault access cleanup was not verified"
   target_scope_started=0
 }

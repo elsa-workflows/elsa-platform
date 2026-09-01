@@ -206,9 +206,10 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
         source = self.source
         purge = source[source.index("purge_and_verify_target_vault()") : source.index("cleanup_owned_role_assignment()")]
         self.assertIn('expected_tombstone="$3"', purge)
-        self.assertIn("expected_tombstone == 0 || purge_requested == 1", purge)
+        self.assertIn("absence_observations >= 6", purge)
+        self.assertIn("expected_tombstone == 0", purge)
         self.assertIn("continue", purge)
-        self.assertIn('purge_and_verify_target_vault "$target_vault" "${vault_location:-westeurope}" 1', source)
+        self.assertIn('purge_and_verify_target_vault "$target_vault" "${vault_location:-westeurope}" "$vault_tombstone_expected"', source)
 
     def test_manifest_is_safe_and_sealed(self) -> None:
         source = self.source
