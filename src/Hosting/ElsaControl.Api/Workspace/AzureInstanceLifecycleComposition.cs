@@ -2,7 +2,6 @@ using ElsaControl.Deployment.Azure;
 using ElsaControl.Deployment.Core.Instances;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 
 namespace ElsaControl.Api.Workspace;
 
@@ -13,31 +12,33 @@ namespace ElsaControl.Api.Workspace;
 /// </summary>
 internal static class AzureInstanceLifecycleComposition
 {
-    public static bool AddProviderPorts(IServiceCollection services, IConfiguration configuration)
+    public static bool AddProviderPorts(
+        IServiceCollection services,
+        IConfiguration configuration,
+        AzureProviderRunnerAuthority? runnerAuthority)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
         var section = configuration.GetSection(AzureElsaInstanceProviderOptions.ConfigurationSection);
-        services.Configure<AzureElsaInstanceProviderOptions>(section);
-        services.AddScoped<AzureElsaInstanceProviderOptions>(provider =>
-            provider.GetRequiredService<IOptions<AzureElsaInstanceProviderOptions>>().Value);
-
         var enabled = section.GetValue<bool>(nameof(AzureElsaInstanceProviderOptions.Enabled));
         if (!enabled)
             return false;
+        if (runnerAuthority is null)
+            throw new InvalidOperationException(
+                "Managed instance lifecycle requires the enabled concrete Azure provider worker authority.");
 
-        // Do not let a partially configured provider reach the lifecycle worker.
-        // The fingerprint binds each durable operation to the exact provider
-        // authority; without it startup must fail closed.
-        new AzureElsaInstanceProviderOptions
+        // Derive, rather than duplicate, both fingerprints from the validated
+        // runner authority so lifecycle reservations cannot drift from execution.
+        var options = new AzureElsaInstanceProviderOptions
         {
             Enabled = true,
-            TemplateFingerprint = section.GetValue<string>(nameof(AzureElsaInstanceProviderOptions.TemplateFingerprint))
-                ?? AzureElsaInstanceProviderOptions.DefaultTemplateFingerprint,
-            ProviderScopeFingerprint = section.GetValue<string>(nameof(AzureElsaInstanceProviderOptions.ProviderScopeFingerprint))
-        }.Validate();
+            TemplateFingerprint = runnerAuthority.TemplateFingerprint,
+            ProviderScopeFingerprint = runnerAuthority.ProviderScopeFingerprint
+        };
+        options.Validate();
 
+        services.AddSingleton(options);
         services.AddScoped<AzureElsaInstanceProvider>();
         services.AddScoped<IElsaInstanceProviderSubmissionPort>(provider =>
             provider.GetRequiredService<AzureElsaInstanceProvider>());

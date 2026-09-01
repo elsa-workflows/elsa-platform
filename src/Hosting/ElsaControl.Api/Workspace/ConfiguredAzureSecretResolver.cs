@@ -45,7 +45,7 @@ internal sealed class ConfiguredAzureSecretResolver : IAzureSecretResolver
     }
 
     private static bool IsSafeConfiguredValue(string? value) =>
-        !string.IsNullOrEmpty(value) &&
+        !string.IsNullOrWhiteSpace(value) &&
         value.Length <= MaximumConfiguredSecretLength &&
         !value.Contains('\0');
 }

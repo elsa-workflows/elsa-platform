@@ -105,6 +105,25 @@ public sealed class AzureWorkloadPlanTranslatorTests
     }
 
     [Fact]
+    public void Rejects_provider_package_metadata_that_is_not_an_exact_NuGet_version()
+    {
+        var plan = CreatePlan();
+        var result = AzureWorkloadPlanTranslator.Translate(
+            plan with
+            {
+                Packages = plan.Packages.Select(package =>
+                    string.Equals(package.PackageId, AzureWorkloadPlanTranslator.SqlWorkflowPackageId,
+                        StringComparison.OrdinalIgnoreCase)
+                        ? package with { Version = "3.8.0] || injected" }
+                        : package).ToArray()
+            },
+            new("workload-a", "westeurope"));
+
+        Assert.False(result.IsAccepted);
+        Assert.Contains(result.Findings, x => x.Code == "azure.packageMetadata.invalid");
+    }
+
+    [Fact]
     public void Requires_the_secret_references_used_by_the_workload_template()
     {
         var result = AzureWorkloadPlanTranslator.Translate(

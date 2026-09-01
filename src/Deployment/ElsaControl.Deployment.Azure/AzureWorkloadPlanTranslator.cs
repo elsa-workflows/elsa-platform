@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using System.Collections.ObjectModel;
 using ElsaControl.RuntimeBuilder.Abstractions.Plans;
 using ElsaControl.RuntimeBuilder.Abstractions.ReleaseManifests;
+using NuGet.Versioning;
 
 namespace ElsaControl.Deployment.Azure;
 
@@ -153,7 +154,8 @@ public static class AzureWorkloadPlanTranslator
         }
         if (matches.Length != 1 || string.IsNullOrWhiteSpace(matches[0].Version) ||
             matches[0].Version.Length > 128 || matches[0].Version.Any(char.IsControl) ||
-            matches[0].Version.Any(char.IsWhiteSpace))
+            matches[0].Version.Any(char.IsWhiteSpace) ||
+            !NuGetVersion.TryParse(matches[0].Version, out _))
         {
             findings.Add(new("azure.packageMetadata.invalid", "The admitted plan contains ambiguous or invalid provider package metadata.", $"packages:{packageId}"));
             return null;

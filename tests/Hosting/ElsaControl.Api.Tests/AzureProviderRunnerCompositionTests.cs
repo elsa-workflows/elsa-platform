@@ -15,12 +15,13 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
     {
         var services = new ServiceCollection();
 
-        AzureProviderRunnerComposition.AddRunner(services, Configuration(new Dictionary<string, string?>
+        var authority = AzureProviderRunnerComposition.AddRunner(services, Configuration(new Dictionary<string, string?>
         {
             ["Deployment:AzureProvider:WorkerEnabled"] = "false",
             ["Deployment:AzureProvider:Runner:Enabled"] = "true"
         }));
 
+        Assert.Null(authority);
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
         Assert.IsType<UnconfiguredAzureProviderRunner>(scope.ServiceProvider.GetRequiredService<IAzureProviderRunner>());
@@ -61,8 +62,11 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
         });
         var services = new ServiceCollection();
 
-        AzureProviderRunnerComposition.AddRunner(services, configuration);
+        var authority = AzureProviderRunnerComposition.AddRunner(services, configuration);
 
+        Assert.NotNull(authority);
+        Assert.Equal(authority.Options.ComputeTemplateAuthorityFingerprint(), authority.TemplateFingerprint);
+        Assert.Equal(authority.Options.ComputeProviderScopeFingerprint(authority.Scope), authority.ProviderScopeFingerprint);
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
         Assert.IsType<AzureBicepProviderRunner>(scope.ServiceProvider.GetRequiredService<IAzureProviderRunner>());
@@ -103,9 +107,9 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
     }
 
     [Fact]
-    public void Configured_resolver_rejects_empty_oversized_and_nul_values()
+    public void Configured_resolver_rejects_empty_whitespace_oversized_and_nul_values()
     {
-        foreach (var value in new[] { "", new string('x', 4097), "secret\0value" })
+        foreach (var value in new[] { "", " \t ", new string('x', 4097), "secret\0value" })
         {
             Assert.Throws<InvalidOperationException>(() => ConfiguredAzureSecretResolver.Create(
                 Configuration(new Dictionary<string, string?>

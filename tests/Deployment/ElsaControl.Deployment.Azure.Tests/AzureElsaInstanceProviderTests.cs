@@ -172,6 +172,7 @@ public sealed class AzureElsaInstanceProviderTests
             new AzureElsaInstanceProviderOptions
             {
                 Enabled = true,
+                TemplateFingerprint = new string('b', 64),
                 ProviderScopeFingerprint = mismatch == "scope" ? new string('b', 64) : new string('a', 64)
             });
 
@@ -220,7 +221,12 @@ public sealed class AzureElsaInstanceProviderTests
     }
 
     private static AzureElsaInstanceProviderOptions EnabledOptions() =>
-        new() { Enabled = true, ProviderScopeFingerprint = new string('a', 64) };
+        new()
+        {
+            Enabled = true,
+            TemplateFingerprint = new string('b', 64),
+            ProviderScopeFingerprint = new string('a', 64)
+        };
 
     private static AzureWorkloadPlan Translate(string releaseLine, string version) =>
         AzureWorkloadPlanTranslator.Translate(
@@ -258,7 +264,7 @@ public sealed class AzureElsaInstanceProviderTests
             new string('a', 64),
             $"azure-operation-{operationId:N}",
             plan.Fingerprint,
-            AzureElsaInstanceProviderOptions.DefaultTemplateFingerprint,
+            new string('b', 64),
             plan.ElsaVersion,
             plan.ReleaseLine,
             plan.Topology,

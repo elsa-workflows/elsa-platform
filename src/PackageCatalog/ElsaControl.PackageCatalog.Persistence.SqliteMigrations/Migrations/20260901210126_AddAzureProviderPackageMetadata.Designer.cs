@@ -1043,6 +1043,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("SqlQuartzPackageVersion")
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("SqlServerFqdn")
@@ -1054,6 +1055,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("SqlWorkflowPackageVersion")
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("StableTrafficRevisionName")

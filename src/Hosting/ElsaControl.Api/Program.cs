@@ -254,11 +254,16 @@ builder.Services.AddScoped<IElsaInstanceLifecycleResolutionInputSource>(services
 builder.Services.AddScoped<IElsaInstancePlanResolver, ElsaInstancePlanResolver>();
 builder.Services.AddScoped<ElsaInstanceLifecycleService>();
 builder.Services.AddScoped<ElsaInstanceLifecycleWorker>();
-var azureInstanceLifecycleEnabled = AzureInstanceLifecycleComposition.AddProviderPorts(
+var azureProviderRunnerAuthority = AzureProviderRunnerComposition.AddRunner(
     builder.Services, builder.Configuration);
-builder.Services.AddScoped<ElsaInstanceProviderReconciliationService>();
-builder.Services.AddScoped<IElsaInstanceProviderReconciliationService>(services =>
-    services.GetRequiredService<ElsaInstanceProviderReconciliationService>());
+var azureInstanceLifecycleEnabled = AzureInstanceLifecycleComposition.AddProviderPorts(
+    builder.Services, builder.Configuration, azureProviderRunnerAuthority);
+if (azureInstanceLifecycleEnabled)
+{
+    builder.Services.AddScoped<ElsaInstanceProviderReconciliationService>();
+    builder.Services.AddScoped<IElsaInstanceProviderReconciliationService>(services =>
+        services.GetRequiredService<ElsaInstanceProviderReconciliationService>());
+}
 builder.Services.AddScoped<IManagedElsaInstanceApiStore, EfCoreManagedElsaInstanceApiStore>();
 builder.Services.Configure<ElsaInstanceLifecycleWorkerOptions>(builder.Configuration.GetSection(ElsaInstanceLifecycleWorkerOptions.ConfigurationSection));
 builder.Services.AddScoped<ICatalogStore, EfCoreCatalogStore>();
@@ -313,7 +318,6 @@ builder.Services.AddScoped<IWorkspaceDeploymentMutationStore, DeploymentWorkspac
 builder.Services.AddScoped<IWorkspaceDeploymentCommandStore, DeploymentWorkspaceStore>();
 builder.Services.AddScoped<WorkspaceDeploymentService>();
 builder.Services.AddScoped<IAzureProviderOperationStore, AzureProviderOperationStore>();
-AzureProviderRunnerComposition.AddRunner(builder.Services, builder.Configuration);
 builder.Services.AddScoped<AzureProviderExecutor>();
 builder.Services.AddScoped<IAzureProviderOperationService, AzureProviderOperationService>();
 builder.Services.AddScoped<AzureProviderOperationWorker>();

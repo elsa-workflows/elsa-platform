@@ -10,6 +10,10 @@ An enabled worker host must provide absolute, non-symbolic paths for the pinned
 root. It must also provide the exact target subscription/resource-group/registry
 scope under `Deployment:AzureProvider:Runner:TargetScope`. Startup rejects
 partial configuration; it never silently falls back to an unconfigured runner.
+When managed-instance lifecycle integration is enabled, its template and
+provider-scope fingerprints are derived directly from this validated runner
+authority. The host rejects lifecycle enablement without the concrete worker;
+there is no duplicated or shipped fallback fingerprint that can become stale.
 
 The worker receives only admitted immutable plan identities and safe secret
 references. Secret aliases are configured under

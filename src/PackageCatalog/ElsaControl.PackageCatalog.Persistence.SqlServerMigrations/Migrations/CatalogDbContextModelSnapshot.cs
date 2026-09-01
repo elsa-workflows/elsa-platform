@@ -1045,7 +1045,8 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("SqlQuartzPackageVersion")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<string>("SqlServerFqdn")
                         .HasMaxLength(512)
@@ -1056,7 +1057,8 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .HasColumnType("nvarchar(1024)");
 
                     b.Property<string>("SqlWorkflowPackageVersion")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<string>("StableTrafficRevisionName")
                         .HasMaxLength(128)

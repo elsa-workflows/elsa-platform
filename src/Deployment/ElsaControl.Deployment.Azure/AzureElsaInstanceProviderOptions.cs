@@ -11,13 +11,10 @@ public sealed record AzureElsaInstanceProviderOptions
     public bool Enabled { get; init; }
 
     /// <summary>Fingerprint of the checked-in template authority.</summary>
-    public string TemplateFingerprint { get; init; } = DefaultTemplateFingerprint;
+    public string TemplateFingerprint { get; init; } = "";
 
     /// <summary>Provider scope fingerprint bound by the runner.</summary>
     public string? ProviderScopeFingerprint { get; init; }
-
-    public const string DefaultTemplateFingerprint =
-        "d7e6e42f2a3a0c705f5e1bfbb6d83c47aa5f2db94f7f35d7ba2c9b93f5d93f09";
 
     public void Validate()
     {

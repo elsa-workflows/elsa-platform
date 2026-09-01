@@ -4,6 +4,14 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace ElsaControl.Api.Workspace;
 
+internal sealed record AzureProviderRunnerAuthority(
+    AzureProviderRunnerOptions Options,
+    AzureProviderTargetScope Scope)
+{
+    public string TemplateFingerprint => Options.ComputeTemplateAuthorityFingerprint();
+    public string ProviderScopeFingerprint => Options.ComputeProviderScopeFingerprint(Scope);
+}
+
 /// <summary>
 /// Composes the concrete Azure Bicep runner only for an explicitly enabled and
 /// fully validated provider worker. The default API image remains fail-closed;
@@ -12,7 +20,9 @@ namespace ElsaControl.Api.Workspace;
 /// </summary>
 internal static class AzureProviderRunnerComposition
 {
-    public static void AddRunner(IServiceCollection services, IConfiguration configuration)
+    public static AzureProviderRunnerAuthority? AddRunner(
+        IServiceCollection services,
+        IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -23,7 +33,7 @@ internal static class AzureProviderRunnerComposition
         {
             services.AddScoped<IAzureProviderRunner>(_ => new UnconfiguredAzureProviderRunner());
             services.AddScoped<IAzureSecretResolver>(_ => new UnconfiguredAzureSecretResolver());
-            return;
+            return null;
         }
 
         var options = runnerSection.Get<AzureProviderRunnerOptions>() ?? new();
@@ -43,5 +53,6 @@ internal static class AzureProviderRunnerComposition
         var secretResolver = ConfiguredAzureSecretResolver.Create(configuration);
         services.AddScoped<IAzureSecretResolver>(_ => secretResolver);
         services.AddScoped<IAzureProviderRunner>(_ => new AzureBicepProviderRunner(options, scope, secretResolver));
+        return new(options, scope);
     }
 }

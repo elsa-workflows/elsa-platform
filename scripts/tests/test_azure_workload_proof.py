@@ -174,8 +174,13 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("secretRef: adminCredentialRef", source)
         self.assertIn("stableTrafficRevisionName", source)
         self.assertIn("revisionName: stableTrafficRevisionName", source)
-        self.assertIn("3.8.0-preview.5413", MAIN.read_text())
-        self.assertIn("3.8.0-preview.342", MAIN.read_text())
+        main_source = MAIN.read_text()
+        self.assertIn("param sqlWorkflowPackageVersion string", main_source)
+        self.assertIn("param sqlQuartzPackageVersion string", main_source)
+        self.assertIn("sqlWorkflowPackageVersion: sqlWorkflowPackageVersion", main_source)
+        self.assertIn("sqlQuartzPackageVersion: sqlQuartzPackageVersion", main_source)
+        self.assertNotIn("param sqlWorkflowPackageVersion string =", main_source)
+        self.assertNotIn("param sqlQuartzPackageVersion string =", main_source)
 
     def test_deterministic_fingerprint_and_required_tags(self) -> None:
         source = MAIN.read_text()
