@@ -131,6 +131,23 @@ public sealed class ReleaseManifestAdmissionTests
     }
 
     [Fact]
+    public async Task Producer_image_signature_subject_allows_the_optional_oci_scheme()
+    {
+        var producer = JsonNode.Parse(ProducerFixture())!;
+        var paid = producer["distributions"]![0]!["images"]!["paid"]!;
+        paid["signature"]!["subject"] = "oci://" + paid["reference"]!.GetValue<string>();
+        RefreshProducerCanonicalDigest(producer);
+        var artifact = ProducerArtifact(producer.ToJsonString());
+
+        var admission = await new ReleaseManifestAdmissionService(
+                new StubSignatureVerifier(ProducerVerification(artifact)))
+            .AdmitAsync(artifact, new(ProducerSigner, "paid", "combined"));
+
+        Assert.True(admission.Accepted, string.Join("; ", admission.Findings.Select(x => x.Code)));
+        Assert.DoesNotContain(admission.Findings, x => x.Code == "image.signature.subject.mismatch");
+    }
+
+    [Fact]
     public async Task Producer_fixture_flows_through_resolver_to_azure_translator()
     {
         var payload = ProducerFixture();
@@ -689,6 +706,20 @@ public sealed class ReleaseManifestAdmissionTests
 
     private static string ProducerFixture() =>
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "producer-release-manifest-2.0.0.json"));
+
+    private static void RefreshProducerCanonicalDigest(JsonNode producer)
+    {
+        using var document = JsonDocument.Parse(producer.ToJsonString());
+        var mapper = typeof(ReleaseManifestAdmissionService).Assembly.GetType(
+            "ElsaControl.RuntimeBuilder.Core.ReleaseManifests.ProducerReleaseManifestMapper",
+            throwOnError: true)!;
+        var method = mapper.GetMethod(
+            "CanonicalDigest",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        producer["integrity"]!["canonicalContentDigest"] = (string)method.Invoke(
+            null,
+            [document.RootElement, true])!;
+    }
 
     private static ReleaseManifestArtifact ProducerArtifact(string payload)
     {

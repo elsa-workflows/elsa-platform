@@ -512,8 +512,22 @@ internal static class ProducerReleaseManifestMapper
         if (!string.Equals(identity, expectedSigner, StringComparison.Ordinal))
             Add(findings, "image.signature.identity.mismatch", "The producer image signer is not approved.", "image.signature.identity");
         var signedSubject = StringAny(signature, ["subject"], "image.signature.subject", findings);
-        if (!string.Equals(signedSubject, reference, StringComparison.Ordinal))
+        if (!EquivalentImageReference(signedSubject, reference))
             Add(findings, "image.signature.subject.mismatch", "The producer image signature must bind the declared immutable image reference.", "image.signature.subject");
+    }
+
+    private static bool EquivalentImageReference(string? left, string? right)
+    {
+        if (string.IsNullOrWhiteSpace(left)
+            || string.IsNullOrWhiteSpace(right)
+            || !ReleaseManifestAdmissionService.IsSafeImageReference(left)
+            || !ReleaseManifestAdmissionService.IsSafeImageReference(right))
+            return false;
+
+        return string.Equals(
+            left.StartsWith("oci://", StringComparison.OrdinalIgnoreCase) ? left["oci://".Length..] : left,
+            right.StartsWith("oci://", StringComparison.OrdinalIgnoreCase) ? right["oci://".Length..] : right,
+            StringComparison.Ordinal);
     }
 
     private static IReadOnlyList<ProducerEvidence> ParseEvidence(JsonElement parent, string propertyName, List<ReleaseManifestAdmissionFinding> findings)
