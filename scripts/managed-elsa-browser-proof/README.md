@@ -33,3 +33,29 @@ The script creates a unique temporary directory, Docker network, containers, Com
 Runtime and Control signing material is generated per run and is never printed. The live Playwright spec disables trace capture because the callback form contains one-time security material. It retains only test names and pass/fail outcomes; it does not inspect or print token, verifier, cookie, callback form, credential, workflow payload, or browser storage values.
 
 Playwright ignores local HTTPS errors because its bundled Chromium does not consume the macOS `mkcert` trust state reliably. Browser traffic remains HTTPS, the runtime requires Secure cookies, and the runtime-to-Control redemption client validates the fixture CA through a derived image. Azure proof must use publicly trusted TLS and must not enable this browser exception.
+
+## Azure public-TLS journey
+
+The Azure mode reuses the production console and runtime without fixture-only database
+mutations. It launches an isolated headed Chromium window and waits for an operator to
+complete the real Microsoft Entra sign-in and MFA flow. It does not reuse a personal
+browser profile, automate credentials, or retain browser storage, callback values,
+tokens, screenshots, traces, or video.
+
+```bash
+ADMIN_UI_BASE_URL=https://control.example.test \
+MANAGED_ELSA_PROOF_RUNTIME_ORIGIN=https://runtime.example.test \
+  ./scripts/managed-elsa-browser-proof/run-azure.sh
+```
+
+The wrapper stores Playwright's transient failure context in a unique temporary
+directory and deletes it on exit, whether the proof passes or fails.
+
+After the interactive sign-in, the test opens the verified healthy instance, performs
+an authorized Elsa API operation, rejects callback replay, logs out and observes a
+`401` from the protected API, then delays a second issue request beyond the bounded
+browser-state lifetime and requires the callback to fail closed with `400`.
+
+Unavailable-instance and membership-revocation simulations remain fixture-only checks:
+mutating production catalog state is not part of the Azure proof. Evidence must report
+those local checks separately from the Azure public-TLS journey.
