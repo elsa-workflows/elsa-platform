@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using ElsaControl.RuntimeBuilder.Abstractions.ReleaseCatalog;
 
 namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models;
 
@@ -145,24 +146,24 @@ internal sealed class GovernedReleaseCatalogConfiguration : IEntityTypeConfigura
         builder.HasKey(x => x.Id);
         builder.Property(x => x.CatalogIdentityHash).HasMaxLength(64).IsRequired();
         builder.Property(x => x.ProjectionFingerprint).HasMaxLength(64).IsRequired();
-        builder.Property(x => x.SchemaVersion).HasMaxLength(64).IsRequired();
-        builder.Property(x => x.ManifestReference).HasMaxLength(2048).IsRequired();
-        builder.Property(x => x.ManifestDigest).HasMaxLength(71).IsRequired();
-        builder.Property(x => x.PayloadDigest).HasMaxLength(71).IsRequired();
-        builder.Property(x => x.SignatureEvidenceReference).HasMaxLength(2048).IsRequired();
-        builder.Property(x => x.SignatureEvidenceDigest).HasMaxLength(71).IsRequired();
-        builder.Property(x => x.RegistryClass).HasMaxLength(64).IsRequired();
-        builder.Property(x => x.DistributionId).HasMaxLength(200).IsRequired();
-        builder.Property(x => x.Generation).HasMaxLength(200).IsRequired();
-        builder.Property(x => x.ReleaseLine).HasMaxLength(100).IsRequired();
-        builder.Property(x => x.ReleaseVersion).HasMaxLength(128).IsRequired();
-        builder.Property(x => x.Channel).HasMaxLength(64).IsRequired();
-        builder.Property(x => x.ProducerLifecycle).HasMaxLength(64).IsRequired();
-        builder.Property(x => x.Edition).HasMaxLength(64);
-        builder.Property(x => x.SourceRepository).HasMaxLength(2048).IsRequired();
-        builder.Property(x => x.SourceCommit).HasMaxLength(128).IsRequired();
-        builder.Property(x => x.SourceRunId).HasMaxLength(128).IsRequired();
-        builder.Property(x => x.CatalogLifecycle).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.SchemaVersion).HasMaxLength(GovernedReleaseCatalogFieldLimits.SchemaVersion).IsRequired();
+        builder.Property(x => x.ManifestReference).HasMaxLength(GovernedReleaseCatalogFieldLimits.ManifestReference).IsRequired();
+        builder.Property(x => x.ManifestDigest).HasMaxLength(GovernedReleaseCatalogFieldLimits.ManifestDigest).IsRequired();
+        builder.Property(x => x.PayloadDigest).HasMaxLength(GovernedReleaseCatalogFieldLimits.PayloadDigest).IsRequired();
+        builder.Property(x => x.SignatureEvidenceReference).HasMaxLength(GovernedReleaseCatalogFieldLimits.SignatureEvidenceReference).IsRequired();
+        builder.Property(x => x.SignatureEvidenceDigest).HasMaxLength(GovernedReleaseCatalogFieldLimits.SignatureEvidenceDigest).IsRequired();
+        builder.Property(x => x.RegistryClass).HasMaxLength(GovernedReleaseCatalogFieldLimits.RegistryClass).IsRequired();
+        builder.Property(x => x.DistributionId).HasMaxLength(GovernedReleaseCatalogFieldLimits.DistributionId).IsRequired();
+        builder.Property(x => x.Generation).HasMaxLength(GovernedReleaseCatalogFieldLimits.Generation).IsRequired();
+        builder.Property(x => x.ReleaseLine).HasMaxLength(GovernedReleaseCatalogFieldLimits.ReleaseLine).IsRequired();
+        builder.Property(x => x.ReleaseVersion).HasMaxLength(GovernedReleaseCatalogFieldLimits.ReleaseVersion).IsRequired();
+        builder.Property(x => x.Channel).HasMaxLength(GovernedReleaseCatalogFieldLimits.Channel).IsRequired();
+        builder.Property(x => x.ProducerLifecycle).HasMaxLength(GovernedReleaseCatalogFieldLimits.ProducerLifecycle).IsRequired();
+        builder.Property(x => x.Edition).HasMaxLength(GovernedReleaseCatalogFieldLimits.Edition);
+        builder.Property(x => x.SourceRepository).HasMaxLength(GovernedReleaseCatalogFieldLimits.SourceRepository).IsRequired();
+        builder.Property(x => x.SourceCommit).HasMaxLength(GovernedReleaseCatalogFieldLimits.SourceCommit).IsRequired();
+        builder.Property(x => x.SourceRunId).HasMaxLength(GovernedReleaseCatalogFieldLimits.SourceRunId).IsRequired();
+        builder.Property(x => x.CatalogLifecycle).HasMaxLength(GovernedReleaseCatalogFieldLimits.CatalogLifecycle).IsRequired();
         builder.HasIndex(x => x.CatalogIdentityHash).IsUnique();
         builder.HasIndex(x => new { x.ManifestDigest, x.RegistryClass }).IsUnique();
         builder.HasIndex(x => new { x.DistributionId, x.Generation, x.ReleaseLine, x.ReleaseVersion, x.RegistryClass }).IsUnique();
@@ -177,8 +178,8 @@ internal sealed class GovernedReleaseCatalogTopologyConfiguration : IEntityTypeC
     {
         builder.ToTable("GovernedReleaseCatalogTopologies");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.TopologyId).HasMaxLength(200).IsRequired();
-        builder.Property(x => x.PackageManifestSchema).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.TopologyId).HasMaxLength(GovernedReleaseCatalogFieldLimits.TopologyId).IsRequired();
+        builder.Property(x => x.PackageManifestSchema).HasMaxLength(GovernedReleaseCatalogFieldLimits.PackageManifestSchema).IsRequired();
         builder.HasIndex(x => new { x.ReleaseId, x.TopologyId }).IsUnique();
         builder.HasIndex(x => new { x.TopologyId, x.ReleaseId });
         builder.HasMany(x => x.RuntimeKinds).WithOne(x => x.Topology).HasForeignKey(x => x.TopologyId).OnDelete(DeleteBehavior.Restrict);
@@ -195,7 +196,7 @@ internal sealed class GovernedReleaseCatalogRuntimeKindConfiguration : IEntityTy
     {
         builder.ToTable("GovernedReleaseCatalogRuntimeKinds");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.RuntimeKind).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.RuntimeKind).HasMaxLength(GovernedReleaseCatalogFieldLimits.RuntimeKind).IsRequired();
         builder.HasIndex(x => new { x.TopologyId, x.RuntimeKind }).IsUnique();
         builder.HasIndex(x => new { x.RuntimeKind, x.TopologyId });
     }
@@ -207,7 +208,7 @@ internal sealed class GovernedReleaseCatalogCapabilityConfiguration : IEntityTyp
     {
         builder.ToTable("GovernedReleaseCatalogCapabilities");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Capability).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Capability).HasMaxLength(GovernedReleaseCatalogFieldLimits.Capability).IsRequired();
         builder.HasIndex(x => new { x.TopologyId, x.Capability }).IsUnique();
         builder.HasIndex(x => new { x.Capability, x.TopologyId });
     }
@@ -219,8 +220,8 @@ internal sealed class GovernedReleaseCatalogComponentVersionConfiguration : IEnt
     {
         builder.ToTable("GovernedReleaseCatalogComponentVersions");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.ComponentId).HasMaxLength(200).IsRequired();
-        builder.Property(x => x.Version).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.ComponentId).HasMaxLength(GovernedReleaseCatalogFieldLimits.ComponentId).IsRequired();
+        builder.Property(x => x.Version).HasMaxLength(GovernedReleaseCatalogFieldLimits.ComponentVersion).IsRequired();
         builder.HasIndex(x => new { x.TopologyId, x.ComponentId }).IsUnique();
     }
 }
@@ -231,10 +232,10 @@ internal sealed class GovernedReleaseCatalogComponentConfiguration : IEntityType
     {
         builder.ToTable("GovernedReleaseCatalogComponents");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.ComponentId).HasMaxLength(200).IsRequired();
-        builder.Property(x => x.ImageReference).HasMaxLength(2048).IsRequired();
-        builder.Property(x => x.ImageDigest).HasMaxLength(71).IsRequired();
-        builder.Property(x => x.CompanionComponentId).HasMaxLength(200);
+        builder.Property(x => x.ComponentId).HasMaxLength(GovernedReleaseCatalogFieldLimits.ComponentId).IsRequired();
+        builder.Property(x => x.ImageReference).HasMaxLength(GovernedReleaseCatalogFieldLimits.ImageReference).IsRequired();
+        builder.Property(x => x.ImageDigest).HasMaxLength(GovernedReleaseCatalogFieldLimits.ImageDigest).IsRequired();
+        builder.Property(x => x.CompanionComponentId).HasMaxLength(GovernedReleaseCatalogFieldLimits.CompanionComponentId);
         builder.HasIndex(x => new { x.TopologyId, x.ComponentId }).IsUnique();
         builder.HasMany(x => x.PlatformDigests).WithOne(x => x.Component).HasForeignKey(x => x.ComponentId).OnDelete(DeleteBehavior.Restrict);
         builder.HasMany(x => x.Roles).WithOne(x => x.Component).HasForeignKey(x => x.ComponentId).OnDelete(DeleteBehavior.Restrict);
@@ -249,8 +250,8 @@ internal sealed class GovernedReleaseCatalogPlatformDigestConfiguration : IEntit
     {
         builder.ToTable("GovernedReleaseCatalogPlatformDigests");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Platform).HasMaxLength(128).IsRequired();
-        builder.Property(x => x.Digest).HasMaxLength(71).IsRequired();
+        builder.Property(x => x.Platform).HasMaxLength(GovernedReleaseCatalogFieldLimits.Platform).IsRequired();
+        builder.Property(x => x.Digest).HasMaxLength(GovernedReleaseCatalogFieldLimits.PlatformDigest).IsRequired();
         builder.HasIndex(x => new { x.ComponentId, x.Platform }).IsUnique();
     }
 }
@@ -261,7 +262,7 @@ internal sealed class GovernedReleaseCatalogRoleConfiguration : IEntityTypeConfi
     {
         builder.ToTable("GovernedReleaseCatalogRoles");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Role).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Role).HasMaxLength(GovernedReleaseCatalogFieldLimits.Role).IsRequired();
         builder.HasIndex(x => new { x.ComponentId, x.Role }).IsUnique();
     }
 }
@@ -272,7 +273,7 @@ internal sealed class GovernedReleaseCatalogComponentCapabilityConfiguration : I
     {
         builder.ToTable("GovernedReleaseCatalogComponentCapabilities");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Capability).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Capability).HasMaxLength(GovernedReleaseCatalogFieldLimits.Capability).IsRequired();
         builder.HasIndex(x => new { x.ComponentId, x.Capability }).IsUnique();
         builder.HasIndex(x => new { x.Capability, x.ComponentId });
     }
@@ -284,10 +285,10 @@ internal sealed class GovernedReleaseCatalogEndpointConfiguration : IEntityTypeC
     {
         builder.ToTable("GovernedReleaseCatalogEndpoints");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Name).HasMaxLength(200).IsRequired();
-        builder.Property(x => x.Protocol).HasMaxLength(32).IsRequired();
-        builder.Property(x => x.Visibility).HasMaxLength(64).IsRequired();
-        builder.Property(x => x.Path).HasMaxLength(2048);
+        builder.Property(x => x.Name).HasMaxLength(GovernedReleaseCatalogFieldLimits.EndpointName).IsRequired();
+        builder.Property(x => x.Protocol).HasMaxLength(GovernedReleaseCatalogFieldLimits.EndpointProtocol).IsRequired();
+        builder.Property(x => x.Visibility).HasMaxLength(GovernedReleaseCatalogFieldLimits.EndpointVisibility).IsRequired();
+        builder.Property(x => x.Path).HasMaxLength(GovernedReleaseCatalogFieldLimits.EndpointPath);
         builder.HasIndex(x => new { x.ComponentId, x.Name }).IsUnique();
     }
 }
@@ -298,9 +299,9 @@ internal sealed class GovernedReleaseCatalogEvidenceConfiguration : IEntityTypeC
     {
         builder.ToTable("GovernedReleaseCatalogEvidence");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Kind).HasMaxLength(64).IsRequired();
-        builder.Property(x => x.Reference).HasMaxLength(2048).IsRequired();
-        builder.Property(x => x.Digest).HasMaxLength(71).IsRequired();
+        builder.Property(x => x.Kind).HasMaxLength(GovernedReleaseCatalogFieldLimits.EvidenceKind).IsRequired();
+        builder.Property(x => x.Reference).HasMaxLength(GovernedReleaseCatalogFieldLimits.EvidenceReference).IsRequired();
+        builder.Property(x => x.Digest).HasMaxLength(GovernedReleaseCatalogFieldLimits.EvidenceDigest).IsRequired();
         builder.HasIndex(x => new { x.TopologyId, x.Kind }).IsUnique();
     }
 }

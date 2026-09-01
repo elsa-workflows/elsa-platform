@@ -57,8 +57,11 @@ public sealed class GovernedReleaseCatalogIngestionService(
         try
         {
             entries = Project(admission, catalogLifecycle, timeProvider.GetUtcNow());
+            foreach (var entry in entries)
+                GovernedReleaseCatalogStorageContract.ValidateLengths(entry);
         }
-        catch (ReleaseManifestProjectionValidationException)
+        catch (Exception exception) when (exception is ReleaseManifestProjectionValidationException
+            or GovernedReleaseCatalogStorageValidationException)
         {
             return Rejected("catalog.projection.invalid", "Admitted release facts cannot be projected safely.", "admission");
         }

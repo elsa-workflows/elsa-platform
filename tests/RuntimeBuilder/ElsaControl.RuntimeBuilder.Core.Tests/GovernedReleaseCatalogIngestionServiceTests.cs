@@ -145,6 +145,24 @@ public sealed class GovernedReleaseCatalogIngestionServiceTests
     }
 
     [Fact]
+    public async Task Admitted_values_exceeding_catalog_storage_limits_are_rejected_before_store()
+    {
+        var producer = JsonNode.Parse(ProducerFixture())!;
+        producer["release"]!["generation"] = new string('g', GovernedReleaseCatalogFieldLimits.Generation + 1);
+        RefreshProducerCanonicalDigest(producer);
+        var artifact = ProducerArtifact(producer.ToJsonString(), 'a');
+        var store = new RecordingStore();
+
+        var result = await CreateService(artifact, store).AdmitAsync(
+            artifact,
+            CatalogOptions("preview"));
+
+        Assert.False(result.Accepted);
+        Assert.Equal("catalog.projection.invalid", Assert.Single(result.Findings).Code);
+        Assert.Equal(0, store.Calls);
+    }
+
+    [Fact]
     public async Task Producer_identity_lists_are_canonicalized_before_store_validation()
     {
         var producer = JsonNode.Parse(ProducerFixture())!;

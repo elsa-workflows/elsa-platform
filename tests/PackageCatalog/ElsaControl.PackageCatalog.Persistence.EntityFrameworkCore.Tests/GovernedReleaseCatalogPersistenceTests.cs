@@ -160,6 +160,26 @@ public sealed class GovernedReleaseCatalogPersistenceTests
     }
 
     [Fact]
+    public async Task Values_exceeding_shared_storage_limits_are_rejected_for_every_provider()
+    {
+        await using var database = await CreateMigratedDatabaseAsync();
+        var entries = CreateEntries()
+            .Select(entry => entry with
+            {
+                Distribution = entry.Distribution with
+                {
+                    ReleaseLine = new string('x', GovernedReleaseCatalogFieldLimits.ReleaseLine + 1)
+                }
+            })
+            .ToArray();
+
+        await Assert.ThrowsAsync<GovernedReleaseCatalogStorageValidationException>(() =>
+            database.Store.StoreAsync(entries));
+
+        Assert.Empty(await database.Context.GovernedReleaseCatalog.ToListAsync());
+    }
+
+    [Fact]
     public async Task Arbitrary_release_lines_share_the_same_durable_query_path()
     {
         await using var database = await CreateMigratedDatabaseAsync();
@@ -224,6 +244,9 @@ public sealed class GovernedReleaseCatalogPersistenceTests
             Assert.Equal(entry.Distribution.Id.ToLowerInvariant(), entry.Distribution.Id);
             Assert.Equal(entry.Topology.Id.ToLowerInvariant(), entry.Topology.Id);
         });
+        Assert.Equal(
+            GovernedReleaseCatalogWriteStatus.Unchanged,
+            (await database.Store.StoreAsync(write.Entries)).Status);
 
         var previousCulture = CultureInfo.CurrentCulture;
         try
@@ -246,6 +269,21 @@ public sealed class GovernedReleaseCatalogPersistenceTests
         {
             CultureInfo.CurrentCulture = previousCulture;
         }
+    }
+
+    [Fact]
+    public async Task Whitespace_only_topology_filters_have_the_same_no_filter_semantics()
+    {
+        await using var database = await CreateMigratedDatabaseAsync();
+        await database.Store.StoreAsync(CreateEntries());
+
+        var result = await database.Store.QueryAsync(new GovernedReleaseCatalogQuery(
+            TopologyId: "  ",
+            RuntimeKind: "\t",
+            Capability: "\r\n"));
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(["server", "studio"], result.Select(x => x.Topology.Id).ToArray());
     }
 
     private static async Task<TestCatalogDatabase> CreateMigratedDatabaseAsync()

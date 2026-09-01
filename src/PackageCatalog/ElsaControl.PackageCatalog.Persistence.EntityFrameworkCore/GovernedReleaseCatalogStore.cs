@@ -79,6 +79,7 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
+        query = NormalizeQuery(query);
         await using var db = new CatalogDbContext(dbOptions);
         var roots = db.GovernedReleaseCatalog.AsNoTracking();
         roots = Exact(roots, query.DistributionId, x => x.DistributionId);
@@ -89,22 +90,22 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
         roots = Exact(roots, query.CatalogLifecycle, x => x.CatalogLifecycle);
         roots = Exact(roots, query.RegistryClass, x => x.RegistryClass);
 
-        if (!string.IsNullOrWhiteSpace(query.TopologyId))
+        if (query.TopologyId is not null)
         {
-            var topologyId = query.TopologyId.Trim().ToLowerInvariant();
+            var topologyId = query.TopologyId;
             roots = roots.Where(x => x.Topologies.Any(topology => topology.TopologyId == topologyId));
         }
 
-        if (!string.IsNullOrWhiteSpace(query.RuntimeKind))
+        if (query.RuntimeKind is not null)
         {
-            var runtimeKind = query.RuntimeKind.Trim().ToLowerInvariant();
+            var runtimeKind = query.RuntimeKind;
             roots = roots.Where(x => x.Topologies.Any(topology =>
                 topology.RuntimeKinds.Any(kind => kind.RuntimeKind == runtimeKind)));
         }
 
-        if (!string.IsNullOrWhiteSpace(query.Capability))
+        if (query.Capability is not null)
         {
-            var capability = query.Capability.Trim().ToLowerInvariant();
+            var capability = query.Capability;
             roots = roots.Where(x => x.Topologies.Any(topology =>
                 topology.Capabilities.Any(item => item.Capability == capability)
                 || topology.Components.Any(component => component.Capabilities.Any(item => item.Capability == capability))));
@@ -309,20 +310,35 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
             .ToArray();
 
     private static bool Matches(GovernedReleaseCatalogEntry entry, GovernedReleaseCatalogQuery query) =>
-        (query.TopologyId is null || string.Equals(entry.Topology.Id, query.TopologyId.Trim(), StringComparison.OrdinalIgnoreCase))
-        && (query.RuntimeKind is null || entry.Topology.RuntimeKinds.Any(x => string.Equals(x, query.RuntimeKind.Trim(), StringComparison.OrdinalIgnoreCase)))
-        && (query.Capability is null || entry.Topology.Capabilities.Concat(entry.Topology.Components.SelectMany(x => x.Capabilities)).Any(x => string.Equals(x, query.Capability.Trim(), StringComparison.OrdinalIgnoreCase)));
+        (query.TopologyId is null || string.Equals(entry.Topology.Id, query.TopologyId, StringComparison.Ordinal))
+        && (query.RuntimeKind is null || entry.Topology.RuntimeKinds.Contains(query.RuntimeKind, StringComparer.Ordinal))
+        && (query.Capability is null || entry.Topology.Capabilities
+            .Concat(entry.Topology.Components.SelectMany(x => x.Capabilities))
+            .Contains(query.Capability, StringComparer.Ordinal));
+
+    private static GovernedReleaseCatalogQuery NormalizeQuery(GovernedReleaseCatalogQuery query) => query with
+    {
+        DistributionId = NormalizeOptional(query.DistributionId),
+        ReleaseLine = NormalizeOptional(query.ReleaseLine),
+        ReleaseVersion = NormalizeOptional(query.ReleaseVersion),
+        Channel = NormalizeOptional(query.Channel),
+        ProducerLifecycle = NormalizeOptional(query.ProducerLifecycle),
+        CatalogLifecycle = NormalizeOptional(query.CatalogLifecycle),
+        RegistryClass = NormalizeOptional(query.RegistryClass),
+        TopologyId = NormalizeOptional(query.TopologyId),
+        RuntimeKind = NormalizeOptional(query.RuntimeKind),
+        Capability = NormalizeOptional(query.Capability)
+    };
 
     private static IQueryable<GovernedReleaseCatalogEntity> Exact(
         IQueryable<GovernedReleaseCatalogEntity> rows,
         string? value,
         Expression<Func<GovernedReleaseCatalogEntity, string>> selector)
     {
-        if (string.IsNullOrWhiteSpace(value))
+        if (value is null)
             return rows;
-        var normalized = value.Trim().ToLowerInvariant();
         return rows.Where(Expression.Lambda<Func<GovernedReleaseCatalogEntity, bool>>(
-            Expression.Equal(selector.Body, Expression.Constant(normalized)), selector.Parameters));
+            Expression.Equal(selector.Body, Expression.Constant(value)), selector.Parameters));
     }
 
     private static string CatalogIdentity(GovernedReleaseCatalogEntry entry) => Fingerprint(string.Join('\n',
@@ -343,11 +359,26 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
 
     private static GovernedReleaseCatalogEntry Canonicalize(GovernedReleaseCatalogEntry entry) => entry with
     {
+        ManifestDigest = Normalize(entry.ManifestDigest),
+        PayloadDigest = Normalize(entry.PayloadDigest),
+        SignatureEvidenceDigest = Normalize(entry.SignatureEvidenceDigest),
+        RegistryClass = Normalize(entry.RegistryClass),
+        Distribution = entry.Distribution with
+        {
+            Id = Normalize(entry.Distribution.Id),
+            Generation = Normalize(entry.Distribution.Generation),
+            ReleaseLine = Normalize(entry.Distribution.ReleaseLine),
+            ReleaseVersion = Normalize(entry.Distribution.ReleaseVersion),
+            Channel = Normalize(entry.Distribution.Channel),
+            ProducerLifecycle = Normalize(entry.Distribution.ProducerLifecycle)
+        },
+        CatalogLifecycle = Normalize(entry.CatalogLifecycle),
         AdmittedAt = DateTimeOffset.UnixEpoch,
         Topology = entry.Topology with
         {
-            RuntimeKinds = entry.Topology.RuntimeKinds.Order(StringComparer.OrdinalIgnoreCase).ToArray(),
-            Capabilities = entry.Topology.Capabilities.Order(StringComparer.OrdinalIgnoreCase).ToArray(),
+            Id = Normalize(entry.Topology.Id),
+            RuntimeKinds = entry.Topology.RuntimeKinds.Select(Normalize).Order(StringComparer.Ordinal).ToArray(),
+            Capabilities = entry.Topology.Capabilities.Select(Normalize).Order(StringComparer.Ordinal).ToArray(),
             ComponentVersions = entry.Topology.ComponentVersions
                 .OrderBy(x => x.Id, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(x => x.Version, StringComparer.OrdinalIgnoreCase)
@@ -355,16 +386,18 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
             Components = entry.Topology.Components
                 .Select(component => component with
                 {
+                    ImageDigest = Normalize(component.ImageDigest),
                     PlatformDigests = new SortedDictionary<string, string>(
-                        component.PlatformDigests.ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase),
+                        component.PlatformDigests.ToDictionary(x => x.Key, x => Normalize(x.Value), StringComparer.OrdinalIgnoreCase),
                         StringComparer.OrdinalIgnoreCase),
                     Roles = component.Roles.Order(StringComparer.OrdinalIgnoreCase).ToArray(),
-                    Capabilities = component.Capabilities.Order(StringComparer.OrdinalIgnoreCase).ToArray(),
+                    Capabilities = component.Capabilities.Select(Normalize).Order(StringComparer.Ordinal).ToArray(),
                     Endpoints = component.Endpoints.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToArray()
                 })
                 .OrderBy(x => x.Id, StringComparer.OrdinalIgnoreCase)
                 .ToArray(),
             Evidence = entry.Topology.Evidence
+                .Select(evidence => evidence with { Digest = Normalize(evidence.Digest) })
                 .OrderBy(x => x.Kind, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(x => x.Reference, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(x => x.Digest, StringComparer.OrdinalIgnoreCase)
@@ -374,6 +407,9 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
 
     private static string Normalize(string value) => value.Trim().ToLowerInvariant();
 
+    private static string? NormalizeOptional(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : Normalize(value);
+
     private static string Fingerprint(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 
@@ -381,6 +417,7 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
     {
         if (entry.Distribution is null || entry.Topology is null)
             throw new ArgumentException("Catalog release and topology are required.", nameof(entry));
+        GovernedReleaseCatalogStorageContract.ValidateLengths(entry);
         Required(entry.SchemaVersion, nameof(entry.SchemaVersion));
         Required(entry.ManifestReference, nameof(entry.ManifestReference));
         Digest(entry.ManifestDigest, nameof(entry.ManifestDigest));
