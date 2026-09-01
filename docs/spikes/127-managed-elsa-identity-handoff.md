@@ -1,6 +1,6 @@
 # Spike 127 — Managed Elsa identity handoff
 
-**Status:** Prototype contract accepted; production integration remains follow-up work.
+**Status:** Contract implemented; end-to-end browser evidence remains follow-up work.
 
 ## Decision
 
@@ -47,10 +47,13 @@ The browser's callback `state` remains a separate CSRF/callback-correlation valu
 it is generated and checked by the console/runtime and is not an authorization
 claim or a substitute for PKCE.
 
-They are disabled by default and the application registers an explicit deny-all
-authorizer until the Elsa Instance aggregate supplies a real implementation. The
-test application substitutes an in-memory target authorizer to exercise the
-complete protocol without inventing a parallel identity system.
+They remain disabled until production signing and issuer configuration is present.
+When enabled, the application registers the instance-aware production authorizer.
+It resolves the persisted instance scope and current identity binding, requires
+workspace access plus the `instances.open` permission, and rechecks access, health,
+audience, callback and binding version during redemption. The explicit deny-all
+authorizer remains available as a safe fallback for hosts that do not register the
+production adapter.
 
 ## Token contract
 
@@ -87,13 +90,12 @@ the exact target, audience, redirect URI and scopes for the currently authentica
 redemption. This second check is required because an organization or instance
 membership can be revoked after issue and before callback.
 
-The current Control repository does not yet contain the Elsa Instance aggregate
-or its persistence/API boundary (#114). Therefore no production authorizer is
-guessed here: the default is fail-closed. Once #114 exists, its adapter should
-resolve `instance_id` and canonical callback URI from the instance record, verify
-that the organization owns the instance, and require the appropriate instance
-open/session permission. Existing workspace access may be an input to that rule,
-but must not be silently treated as a permanent instance identity.
+The production `ManagedElsaInstanceHandoffAuthorizer` resolves `instance_id` and
+the canonical callback URI from persisted Elsa Instance state, verifies the
+organization/workspace boundary, and requires the `instances.open` permission.
+An instance is openable only while its desired/observed lifecycle and health are
+Running/Ready/Healthy and its identity binding remains valid. Existing workspace
+access is an input to that decision, never a permanent instance identity.
 
 ## Threats and controls
 
@@ -159,9 +161,9 @@ tests cover valid issue/redeem, missing and wrong PKCE verifier, concurrent repl
 wrong audience, expiry, revoked membership, cross-organization authorization,
 redirect mismatch, strict token type/key ID and audit outcomes.
 
-This spike does not claim a production-ready Elsa 3.8 runtime hook, durable
-cross-instance replay storage, instance persistence, distributed key management,
-browser E2E, or an actual Azure-hosted Combined callback. Those are decomposed into
-follow-up Tasks so the walking skeleton cannot silently ship the prototype's
-in-memory boundaries. The in-process replay race is executable evidence only for
-concurrency inside one process; #143 owns the shared durable replay guarantee.
+The repository now includes durable replay/audit persistence, the Elsa Instance
+identity binding and production authorizer, and the Combined-runtime callback and
+local-session hook. Distributed signing-key operations and executable real-browser
+evidence remain deployment concerns. Task #185 records the local and Azure browser
+journeys, immutable release/image identity, failure paths and safe evidence without
+retaining codes, verifiers, cookies, tokens or workflow payloads.

@@ -1,0 +1,10 @@
+ARG RUNTIME_IMAGE=valenceruntimeimages.azurecr.io/runtime-combined@sha256:19baefc562e5146fb62fc0024d9582dfba8ed7b94ef714da3e26a25bbff28177
+
+FROM debian:bookworm-slim AS trust
+COPY local-root-ca.crt /usr/local/share/ca-certificates/elsa-managed-browser-proof.crt
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM ${RUNTIME_IMAGE}
+COPY --from=trust /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
