@@ -82,7 +82,12 @@ public sealed class GovernedReleaseCatalogIngestionService(
         return manifest.Topologies.Select(topology =>
         {
             var components = ReleaseManifestPlanProjector.SelectComponents(topology, registryClass);
-            var evidence = ReleaseManifestPlanProjector.ProjectEvidence(admission, topology, []);
+            // Manifest and signature identities are catalog-level facts retained in
+            // the dedicated fields below. Topology evidence contains only the
+            // topology-selected supply-chain evidence.
+            var evidence = ReleaseManifestPlanProjector.ProjectEvidence(admission, topology, [])
+                .Where(x => x.Kind is not ReleaseManifestEvidenceKinds.Manifest
+                    and not ReleaseManifestEvidenceKinds.Signature);
             return new GovernedReleaseCatalogEntry(
                 manifest.SchemaVersion,
                 admission.Reference!,

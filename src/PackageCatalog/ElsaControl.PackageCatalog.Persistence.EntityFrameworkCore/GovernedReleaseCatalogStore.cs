@@ -194,8 +194,8 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
             SourceRepository = first.Distribution.SourceRepository,
             SourceCommit = first.Distribution.SourceCommit,
             SourceRunId = first.Distribution.SourceRunId,
-            // The application supplies the initial Control policy. Future policy
-            // transitions update CatalogLifecycle only, never the producer fact.
+            // The application supplies immutable Control policy for this admitted
+            // catalog identity; a policy change requires a separate transition path.
             CatalogLifecycle = Normalize(first.CatalogLifecycle),
             AdmittedAtUtcTicks = first.AdmittedAt.UtcTicks
         };

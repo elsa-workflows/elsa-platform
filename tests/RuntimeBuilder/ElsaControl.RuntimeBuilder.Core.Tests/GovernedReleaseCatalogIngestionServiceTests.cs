@@ -35,6 +35,12 @@ public sealed class GovernedReleaseCatalogIngestionServiceTests
             Assert.Equal("supported", entry.CatalogLifecycle);
             Assert.NotEmpty(entry.Topology.Components);
             Assert.NotEmpty(entry.Topology.Evidence);
+            Assert.DoesNotContain(entry.Topology.Evidence, evidence =>
+                evidence.Kind is ReleaseManifestEvidenceKinds.Manifest
+                    or ReleaseManifestEvidenceKinds.Signature);
+            Assert.Contains(entry.Topology.Evidence, evidence => evidence.Kind == ReleaseManifestEvidenceKinds.Sbom);
+            Assert.Contains(entry.Topology.Evidence, evidence => evidence.Kind == ReleaseManifestEvidenceKinds.Provenance);
+            Assert.Contains(entry.Topology.Evidence, evidence => evidence.Kind == ReleaseManifestEvidenceKinds.VulnerabilityScan);
         });
 
         var serialized = JsonSerializer.Serialize(result.Entries);
