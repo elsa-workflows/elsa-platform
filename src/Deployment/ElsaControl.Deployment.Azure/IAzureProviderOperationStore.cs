@@ -15,14 +15,13 @@ public interface IAzureProviderOperationStore
 
     /// <summary>
     /// Atomically creates or gets an operation and reports whether the durable reservation was
-    /// already present. Implementations that only support the legacy operation result receive a
-    /// conservative non-replayed result; durable stores should override this member.
+    /// already present. The replay bit is part of the persistence contract and must be assigned
+    /// by the implementation that owns the create-or-get race.
     /// </summary>
-    async Task<AzureProviderOperationCreateResult> CreateOrGetWithResultAsync(
+    Task<AzureProviderOperationCreateResult> CreateOrGetWithResultAsync(
         AzureProviderOperationRequest request,
         DateTimeOffset now,
-        CancellationToken cancellationToken = default) =>
-        new(await CreateOrGetAsync(request, now, cancellationToken), Replayed: false);
+        CancellationToken cancellationToken = default);
 
     Task<AzureProviderOperation?> GetAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<AzureProviderOperation>> ListRunnableAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken = default);

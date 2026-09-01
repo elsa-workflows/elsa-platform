@@ -871,6 +871,12 @@ public sealed class AzureProviderExecutorTests
         public bool LoseLeaseOnHeartbeat { get; init; }
         public AzureProviderResourceReferences? LatestReconcileResources { get; init; }
 
+        public async Task<AzureProviderOperationCreateResult> CreateOrGetWithResultAsync(
+            AzureProviderOperationRequest request,
+            DateTimeOffset now,
+            CancellationToken cancellationToken = default) =>
+            new(await CreateOrGetAsync(request, now, cancellationToken), Replayed: false);
+
         public Task<AzureProviderOperation> CreateOrGetAsync(AzureProviderOperationRequest request, DateTimeOffset now, CancellationToken cancellationToken = default)
         {
             var normalized = AzureProviderOperationValidation.Normalize(request);

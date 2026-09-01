@@ -286,6 +286,12 @@ public sealed class AzureProviderOperationWorkerTests
         public List<AzureProviderOperationTransition> Transitions { get; } = [];
         public int MarkUnrestorableCount { get; private set; }
 
+        public async Task<AzureProviderOperationCreateResult> CreateOrGetWithResultAsync(
+            AzureProviderOperationRequest request,
+            DateTimeOffset now,
+            CancellationToken cancellationToken = default) =>
+            new(await CreateOrGetAsync(request, now, cancellationToken), Replayed: false);
+
         public Task<AzureProviderOperation> CreateOrGetAsync(AzureProviderOperationRequest request, DateTimeOffset now, CancellationToken cancellationToken = default) =>
             Task.FromResult(Operation);
 
@@ -340,6 +346,12 @@ public sealed class AzureProviderOperationWorkerTests
     {
         public List<AzureProviderOperation> Operations { get; } = operations.ToList();
         public int MarkUnrestorableCount { get; private set; }
+
+        public async Task<AzureProviderOperationCreateResult> CreateOrGetWithResultAsync(
+            AzureProviderOperationRequest request,
+            DateTimeOffset now,
+            CancellationToken cancellationToken = default) =>
+            new(await CreateOrGetAsync(request, now, cancellationToken), Replayed: false);
 
         public Task<AzureProviderOperation> CreateOrGetAsync(AzureProviderOperationRequest request, DateTimeOffset now, CancellationToken cancellationToken = default) =>
             Task.FromResult(Operations.Single(operation => operation.TargetKey == request.TargetKey));
