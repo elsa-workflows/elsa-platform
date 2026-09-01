@@ -58,12 +58,14 @@ Do not echo, log or persist that variable. Cleanup deletes and purges the dispos
 | --- | --- |
 | User-assigned managed identity | ACR pull, Key Vault secret read, SQL contained user |
 | Key Vault | RBAC, soft delete, public access for this no-VNet proof, 7-day retention |
-| Azure SQL | Entra-only bootstrap, no proof-managed SQL credentials, contained managed-identity runtime access; GP serverless 0.5 minimum, 60-minute auto-pause, local backup redundancy |
+| Azure SQL | Entra-only bootstrap, no proof-managed SQL credentials, contained managed-identity runtime access; GP serverless 0.5 minimum, 60-minute auto-pause, local backup redundancy, 35-day point-in-time restore retention |
 | Log Analytics | PerGB2018, minimum 30-day retention; ACA console/system logs and metrics |
 | Container Apps environment | Selected governed proof region, consumption-backed, no zone redundancy |
 | Container App | External HTTPS-only ingress, port 8080, multiple revisions, latest revision at 100%, 0–1 replicas, startup/readiness/liveness probes |
 
 Front Door, custom domains, private networking, VNet integration and production HA are intentionally excluded from this proof. They are separate provider/edge decisions.
+
+The configured retention is a prerequisite for the restore exercise, not proof that a recovery point is usable. Issue #129 separately restores a selected point into a new database and validates the recovered workload before it can become cutover-eligible.
 
 ## Determinism, cost and cleanup
 

@@ -245,7 +245,10 @@ delete_and_verify_group_deployment() {
 
 wait_for_resource_group_absence() {
   local resource_group="$1"
-  local max_attempts="${2:-240}"
+  # Container Apps managed-environment deletion has exceeded twenty minutes in
+  # live proof runs. Keep the wait bounded while allowing the provider's
+  # observed tail latency to complete before reporting cleanup failure.
+  local max_attempts="${2:-300}"
   local delay_seconds="${3:-5}"
   local group_exists attempt
 

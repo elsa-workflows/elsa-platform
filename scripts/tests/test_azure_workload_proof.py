@@ -15,12 +15,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PROOF = ROOT / "infra" / "azure-workload-proof"
 MAIN = PROOF / "main.bicep"
+RECOVERY_TARGET = PROOF / "recovery-target.bicep"
 APP = PROOF / "modules" / "container-app.bicep"
 ENVIRONMENT = PROOF / "modules" / "container-apps-environment.bicep"
 ACR_ROLE = PROOF / "acr-pull-role.bicep"
 VAULT = PROOF / "modules" / "key-vault.bicep"
 SQL = PROOF / "modules" / "sql.bicep"
 RUNBOOK = ROOT / "scripts" / "azure-workload-proof.sh"
+RESTORE_RUNBOOK = ROOT / "scripts" / "azure-workload-restore-proof.sh"
 RUNBOOK_LIB = ROOT / "scripts" / "lib" / "azure-workload-proof.sh"
 REGENERATE_INFRA = ROOT / "dev" / "regenerate-infra.sh"
 
@@ -29,6 +31,7 @@ class AzureWorkloadProofTests(unittest.TestCase):
     def test_checked_in_shape(self) -> None:
         expected = {
             "main.bicep",
+            "recovery-target.bicep",
             "acr-pull-role.bicep",
             "sql-bootstrap.sql",
             "modules/identity.bicep",
@@ -64,6 +67,57 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertNotIn("__WORKLOAD_IDENTITY_OBJECT_ID__", bootstrap)
         self.assertNotIn("Directory Readers", bootstrap)
         self.assertIn("db_ddladmin", bootstrap)
+
+    def test_sql_restore_retention_is_explicit(self) -> None:
+        source = SQL.read_text()
+        main = MAIN.read_text()
+        self.assertIn("backupShortTermRetentionPolicies@2023-08-01", source)
+        self.assertIn("param shortTermRetentionDays int = 35", source)
+        self.assertIn("param differentialBackupIntervalHours int = 12", source)
+        self.assertIn("retentionDays: shortTermRetentionDays", source)
+        self.assertIn("diffBackupIntervalInHours: differentialBackupIntervalHours", source)
+        self.assertIn("output sqlShortTermRetentionDays int", main)
+
+    def test_recovery_target_is_new_isolated_compute_without_a_second_source_database(self) -> None:
+        source = RECOVERY_TARGET.read_text()
+        self.assertIn("proof: '129'", source)
+        self.assertIn("'recovery-role': 'target'", source)
+        self.assertIn("param restoredDatabaseId string", source)
+        self.assertIn("param recoveryPointDigest string", source)
+        self.assertIn("module workloadIdentity", source)
+        self.assertIn("module vault", source)
+        self.assertIn("module containerEnvironment", source)
+        self.assertIn("module workload", source)
+        self.assertNotIn("modules/sql.bicep", source)
+        self.assertNotIn("listKeys", source)
+        output_lines = [line.lower() for line in source.splitlines() if line.lstrip().startswith("output ")]
+        self.assertTrue(output_lines)
+        for line in output_lines:
+            self.assertFalse(any(token in line for token in ("secret", "password", "sharedkey", "connectionstring")))
+
+    def test_restore_runbook_is_opt_in_restore_to_new_and_health_gated(self) -> None:
+        source = RESTORE_RUNBOOK.read_text()
+        self.assertIn("set -Eeuo pipefail", source)
+        self.assertIn("umask 077", source)
+        self.assertIn("DISPOSABLE_PROOF_APPLY", source)
+        self.assertIn("mktemp -d", source)
+        self.assertIn("az sql db restore", source)
+        self.assertIn("--dest-name", source)
+        self.assertIn("--tags proof=129", source)
+        self.assertIn("earliestRestoreDate", source)
+        self.assertIn("selected recovery point does not contain the pre-point workflow", source)
+        self.assertNotIn("recoverableDatabases", source)
+        self.assertIn("--mode verify --absent-workflow-id", source)
+        self.assertIn("healthBeforeEligibility:true", source)
+        self.assertIn("trafficMutated:false", source)
+        self.assertIn("delete_and_verify_role_assignment", source)
+        self.assertNotIn("az role assignment show", source)
+        self.assertIn("az sql db delete", source)
+        self.assertIn("wait_for_resource_group_absence", source)
+        self.assertIn("sourcePreserved:true", source)
+        self.assertIn("source_healthy", source)
+        self.assertNotIn("set -x", source)
+        self.assertNotRegex(source, r"--password(?:=|\s)")
 
     def test_managed_identity_roles_are_narrow(self) -> None:
         acr = ACR_ROLE.read_text()
@@ -180,6 +234,7 @@ class AzureWorkloadProofTests(unittest.TestCase):
         self.assertIn("registry-subscription", source)
         self.assertIn('proof-name="$proof_name"', source)
         self.assertIn("acr_role_ready", source)
+        self.assertNotIn('--role AcrPull --output json', source)
         self.assertIn("external_context=", source)
         self.assertIn('external_deployment_suffix="$(sha256_text', source)
         self.assertIn("tags.acrDeployment", source)

@@ -289,7 +289,7 @@ if [[ "$mode" == cleanup ]]; then
       delete_and_verify_group_deployment "$registry_resource_group" "$stored_deployment_name" || cleanup_status=1
     fi
   elif [[ -n "$cleanup_principal_id" && -n "$registry_id" ]]; then
-    if ! role_assignments_json="$(az role assignment list --all --assignee-object-id "$cleanup_principal_id" --role AcrPull --output json --only-show-errors)"; then
+    if ! role_assignments_json="$(az role assignment list --all --assignee-object-id "$cleanup_principal_id" --output json --only-show-errors)"; then
       echo "Refusing resource-group deletion: identity-scoped ACR assignments could not be read" >&2
       exit 3
     fi
@@ -497,7 +497,10 @@ az deployment group create \
 acr_role_ready=0
 registry_id="$(az acr show --resource-group "$registry_resource_group" --name "$registry_name" --query id --output tsv --only-show-errors)"
 for _ in {1..12}; do
-  if role_assignments_json="$(az role assignment list --all --assignee-object-id "$identity_principal_id" --role AcrPull --output json --only-show-errors 2>/dev/null)" &&
+  # Azure CLI 2.89 can fail while resolving a role name without an explicit
+  # scope. Read the assignee's assignments and validate the exact role ID and
+  # registry scope locally instead.
+  if role_assignments_json="$(az role assignment list --all --assignee-object-id "$identity_principal_id" --output json --only-show-errors 2>/dev/null)" &&
     has_direct_acr_pull_assignment "$registry_id" "$identity_principal_id" "$role_assignments_json"; then
     acr_role_ready=1
     break

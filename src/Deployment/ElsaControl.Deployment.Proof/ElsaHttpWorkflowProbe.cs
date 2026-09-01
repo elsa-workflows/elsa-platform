@@ -13,6 +13,12 @@ namespace ElsaControl.Deployment.Proof;
 /// Options for the opt-in live workflow smoke test. Credential values are accepted only by the
 /// in-process host and are never copied into a proof model or returned as evidence.
 /// </summary>
+public enum ElsaHttpWorkflowProbeMode
+{
+    CreatePublishAndExecute,
+    VerifyExistingAndExecute
+}
+
 public sealed class ElsaHttpWorkflowProbeOptions
 {
     public ElsaHttpWorkflowProbeOptions(
@@ -20,13 +26,21 @@ public sealed class ElsaHttpWorkflowProbeOptions
         string workflowDefinitionId = "elsa-control-disposable-proof",
         TimeSpan? requestTimeout = null,
         TimeSpan? workflowTimeout = null,
-        TimeSpan? pollInterval = null)
+        TimeSpan? pollInterval = null,
+        ElsaHttpWorkflowProbeMode mode = ElsaHttpWorkflowProbeMode.CreatePublishAndExecute,
+        string? expectedAbsentWorkflowDefinitionId = null)
     {
         Username = RequireCredential(username, nameof(username));
         WorkflowDefinitionId = ValidateIdentifier(workflowDefinitionId, nameof(workflowDefinitionId));
         RequestTimeout = ValidateTimeout(requestTimeout ?? TimeSpan.FromSeconds(30), nameof(requestTimeout));
         WorkflowTimeout = ValidateTimeout(workflowTimeout ?? TimeSpan.FromMinutes(2), nameof(workflowTimeout));
         PollInterval = ValidateTimeout(pollInterval ?? TimeSpan.FromSeconds(2), nameof(pollInterval));
+        Mode = mode;
+        ExpectedAbsentWorkflowDefinitionId = expectedAbsentWorkflowDefinitionId is null
+            ? null
+            : ValidateIdentifier(expectedAbsentWorkflowDefinitionId, nameof(expectedAbsentWorkflowDefinitionId));
+        if (string.Equals(WorkflowDefinitionId, ExpectedAbsentWorkflowDefinitionId, StringComparison.Ordinal))
+            throw new ArgumentException("The expected-absent workflow must differ from the workflow under test.", nameof(expectedAbsentWorkflowDefinitionId));
     }
 
     /// <summary>
@@ -44,6 +58,13 @@ public sealed class ElsaHttpWorkflowProbeOptions
     public TimeSpan WorkflowTimeout { get; }
 
     public TimeSpan PollInterval { get; }
+
+    public ElsaHttpWorkflowProbeMode Mode { get; }
+
+    /// <summary>
+    /// Optional deterministic marker that must not exist in the probed database.
+    /// </summary>
+    public string? ExpectedAbsentWorkflowDefinitionId { get; }
 
     private static string RequireCredential(string? value, string parameterName) =>
         string.IsNullOrWhiteSpace(value)
@@ -126,9 +147,14 @@ public sealed class ElsaHttpWorkflowProbe : IAzureProviderProofWorkflowProbe, ID
             await GetProbeEndpointAsync(baseUri, "/health", workflowTimeout.Token);
 
             var token = await LoginAsync(baseUri, workflowTimeout.Token);
-            await SaveDraftAsync(baseUri, token, workflowTimeout.Token);
-            await PublishAsync(baseUri, token, workflowTimeout.Token);
+            if (options.Mode == ElsaHttpWorkflowProbeMode.CreatePublishAndExecute)
+            {
+                await SaveDraftAsync(baseUri, token, workflowTimeout.Token);
+                await PublishAsync(baseUri, token, workflowTimeout.Token);
+            }
             await VerifyPublishedAsync(baseUri, token, workflowTimeout.Token);
+            if (options.ExpectedAbsentWorkflowDefinitionId is not null)
+                await VerifyAbsentAsync(baseUri, token, options.ExpectedAbsentWorkflowDefinitionId, workflowTimeout.Token);
 
             var workflowId = await ExecuteAsync(baseUri, token, workflowTimeout.Token);
             return await PollInstanceAsync(baseUri, token, workflowId, workflowTimeout.Token);
@@ -240,6 +266,20 @@ public sealed class ElsaHttpWorkflowProbe : IAzureProviderProofWorkflowProbe, ID
         var published = ReadBoolean(document.RootElement, "isPublished");
         if (!string.Equals(definitionId, options.WorkflowDefinitionId, StringComparison.Ordinal) || published != true)
             throw Failure("azure.proof.workflow.publishedMissing", "Elsa did not return the published disposable workflow.");
+    }
+
+    private async Task VerifyAbsentAsync(
+        Uri baseUri,
+        string token,
+        string workflowDefinitionId,
+        CancellationToken cancellationToken)
+    {
+        var path = $"{ApiPrefix}/workflow-definitions/by-definition-id/{Uri.EscapeDataString(workflowDefinitionId)}?versionOptions=Published";
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(baseUri, path));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await SendAsync(request, cancellationToken);
+        if (response.StatusCode != HttpStatusCode.NotFound)
+            throw Failure("azure.proof.workflow.unexpectedMarker", "Elsa returned a workflow that must be absent from the recovery point.");
     }
 
     private async Task<string> ExecuteAsync(Uri baseUri, string token, CancellationToken cancellationToken)
