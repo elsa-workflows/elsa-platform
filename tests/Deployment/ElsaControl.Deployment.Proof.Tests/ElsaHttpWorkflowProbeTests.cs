@@ -124,6 +124,34 @@ public sealed class ElsaHttpWorkflowProbeTests
             request.Path == "/elsa/api/workflow-definitions/by-definition-id/post-recovery-point-marker?versionOptions=Published");
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    public async Task Recovery_absence_check_reports_non_success_as_validation_failure(HttpStatusCode status)
+    {
+        var handler = RecoverySetupHandler(Json(status));
+        using var client = new HttpClient(handler);
+        using var probe = CreateRecoveryProbe(client);
+
+        var exception = await Assert.ThrowsAsync<DeploymentProofStageException>(() =>
+            probe.RunAsync("https://disposable-proof-app.hash.azurecontainerapps.io", Environment));
+
+        Assert.Equal("azure.proof.workflow.absenceCheckFailed", exception.Code);
+    }
+
+    [Fact]
+    public async Task Recovery_absence_check_reports_successful_marker_as_unexpected()
+    {
+        var handler = RecoverySetupHandler(Json(HttpStatusCode.OK, "{\"definitionId\":\"post-recovery-point-marker\"}"));
+        using var client = new HttpClient(handler);
+        using var probe = CreateRecoveryProbe(client);
+
+        var exception = await Assert.ThrowsAsync<DeploymentProofStageException>(() =>
+            probe.RunAsync("https://disposable-proof-app.hash.azurecontainerapps.io", Environment));
+
+        Assert.Equal("azure.proof.workflow.unexpectedMarker", exception.Code);
+    }
+
     [Fact]
     public async Task Missing_instance_header_fails_with_stable_code_without_response_body()
     {
@@ -273,6 +301,26 @@ public sealed class ElsaHttpWorkflowProbeTests
             workflowTimeout: TimeSpan.FromSeconds(1),
             pollInterval: TimeSpan.FromMilliseconds(1)),
         new StaticCredentialSource("proof-password"));
+
+    private static ElsaHttpWorkflowProbe CreateRecoveryProbe(HttpClient client) => new(
+        client,
+        new ElsaHttpWorkflowProbeOptions(
+            "proof-user",
+            requestTimeout: TimeSpan.FromSeconds(1),
+            workflowTimeout: TimeSpan.FromSeconds(1),
+            pollInterval: TimeSpan.FromMilliseconds(1),
+            mode: ElsaHttpWorkflowProbeMode.VerifyExistingAndExecute,
+            expectedAbsentWorkflowDefinitionId: "post-recovery-point-marker"),
+        new StaticCredentialSource("proof-password"));
+
+    private static RecordingHandler RecoverySetupHandler(HttpResponseMessage absenceResponse) =>
+        new(_ =>
+        [
+            Json(HttpStatusCode.OK), Json(HttpStatusCode.OK),
+            Json(HttpStatusCode.OK, "{\"isAuthenticated\":true,\"accessToken\":\"token\"}"),
+            Json(HttpStatusCode.OK, "{\"definitionId\":\"elsa-control-disposable-proof\",\"isPublished\":true}"),
+            absenceResponse
+        ]);
 
     private static RecordingHandler SuccessfulSetupHandler(HttpResponseMessage finalPoll) =>
         new(_ =>

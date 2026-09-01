@@ -278,8 +278,12 @@ public sealed class ElsaHttpWorkflowProbe : IAzureProviderProofWorkflowProbe, ID
         using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(baseUri, path));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         using var response = await SendAsync(request, cancellationToken);
-        if (response.StatusCode != HttpStatusCode.NotFound)
-            throw Failure("azure.proof.workflow.unexpectedMarker", "Elsa returned a workflow that must be absent from the recovery point.");
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return;
+        if (!response.IsSuccessStatusCode)
+            throw Failure("azure.proof.workflow.absenceCheckFailed", "Elsa could not complete workflow absence validation.");
+
+        throw Failure("azure.proof.workflow.unexpectedMarker", "Elsa returned a workflow that must be absent from the recovery point.");
     }
 
     private async Task<string> ExecuteAsync(Uri baseUri, string token, CancellationToken cancellationToken)

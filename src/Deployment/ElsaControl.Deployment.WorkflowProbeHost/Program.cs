@@ -132,6 +132,9 @@ file sealed class PrivateFileCredentialSource : IElsaProofCredentialSource, IAsy
             }
             if (count is 0 or > MaximumCharacters)
                 throw new InvalidOperationException("The private credential file is invalid.");
+            count = DeploymentProofCredentialText.TrimSingleTrailingLineEnding(buffer.AsSpan(), count);
+            if (count == 0)
+                throw new InvalidOperationException("The private credential file is invalid.");
             return new AzureSecretLease(buffer.AsSpan(0, count));
         }
         finally
