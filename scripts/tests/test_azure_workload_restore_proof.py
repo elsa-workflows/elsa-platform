@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 RUNBOOK = ROOT / "scripts" / "azure-workload-restore-proof.sh"
 TARGET_TEMPLATE = ROOT / "infra" / "azure-workload-proof" / "recovery-target.bicep"
 DATABASE_TEMPLATE = ROOT / "infra" / "azure-workload-proof" / "recovery-database.bicep"
+ACR_ROLE_TEMPLATE = ROOT / "infra" / "azure-workload-proof" / "acr-pull-role.bicep"
 
 
 class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
@@ -21,6 +22,7 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
         cls.source = RUNBOOK.read_text()
         cls.target_template = TARGET_TEMPLATE.read_text()
         cls.database_template = DATABASE_TEMPLATE.read_text()
+        cls.acr_role_template = ACR_ROLE_TEMPLATE.read_text()
 
     def test_cutoff_is_provider_observed_after_real_quiescence(self) -> None:
         source = self.source
@@ -42,10 +44,8 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
         self.assertNotIn("timedelta", source)
         self.assertNotIn("AZURE_RECOVERY_POINT_SETTLE_SECONDS", source)
         self.assertNotIn("proof-grade-quiescence", source)
-        self.assertLess(
-            source.index("quiesce_source ||"),
-            source.index('manifest_file="$temp_dir/recovery-manifest.json"'),
-        )
+        fresh = source[source.index('else\n  [[ "$target_group_exists" == false ]]') :]
+        self.assertLess(fresh.index("quiesce_source ||"), fresh.index("recovery manifest could not be sealed"))
 
     def test_source_resume_is_idempotent_and_waits_for_external_health(self) -> None:
         source = self.source
@@ -158,16 +158,17 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
         ):
             self.assertIn(expected, source)
         self.assertLess(
-            source.index('verify_owned_target_database "$target_db_json" "$manifest_tag"'),
+            source.index('[[ -z "$target_db_json" ]] || fail "target database appeared before the sealed restore request"'),
             source.index("deploy_target false"),
         )
-        self.assertIn('.tags["restore-started-utc"] // empty', source)
+        self.assertIn(".restoreStartedUtc // empty", source)
         self.assertNotIn("az sql db restore", source)
         for expected in (
             "createMode: 'PointInTimeRestore'",
             "sourceDatabaseId: sourceDatabaseId",
             "restorePointInTime: restorePointUtc",
             "output recoveryManifestDigest",
+            "output templateFingerprint",
         ):
             self.assertIn(expected, self.database_template)
 
@@ -201,6 +202,25 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
         self.assertNotIn("purge_and_verify_deleted_vault", source)
         self.assertIn("verify_no_target_state_without_manifest", source)
         self.assertIn('target_principal_id="$assignment_principal"', source)
+        no_manifest = source[source.index("verify_no_target_state_without_manifest()") : source.index("cleanup_target()")]
+        self.assertIn("az acr repository list", no_manifest)
+        self.assertIn("az acr repository show-tags", no_manifest)
+        self.assertIn('manifest-${recovery_id}-', no_manifest)
+        self.assertIn('acr_assignment_description', no_manifest)
+        self.assertIn('az role assignment list --subscription "$registry_subscription_id" --all --scope "$registry_id"', no_manifest)
+        self.assertNotIn('select(startswith($prefix))] == [$expected]', no_manifest)
+
+    def test_acr_assignment_has_a_durable_recovery_identity(self) -> None:
+        self.assertIn("param recoveryId string", self.acr_role_template)
+        self.assertIn("description: 'elsa-control-recovery|${recoveryId}|${workloadIdentityId}'", self.acr_role_template)
+        source = self.source
+        self.assertIn('acr_assignment_description="elsa-control-recovery|${recovery_id}|${target_identity_id}"', source)
+        self.assertIn('.description == $description', source)
+        self.assertIn('recoveryId="$recovery_id"', source)
+        lookup = source[source.index("lookup_owned_acr_assignment()") : source.index("verify_no_target_state_without_manifest()")]
+        self.assertIn('azure_cli_error_is_not_found "$error_text"', lookup)
+        self.assertIn("ACR deployment record lookup is inconsistent", lookup)
+        self.assertNotIn("any(.[]; .name == $name)", lookup)
 
     def test_vault_cleanup_waits_for_an_expected_tombstone_before_claiming_purge(self) -> None:
         source = self.source
@@ -214,8 +234,8 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
     def test_manifest_is_safe_and_sealed(self) -> None:
         source = self.source
         manifest = source[
-            source.index('manifest_file="$temp_dir/recovery-manifest.json"'):
-            source.index('manifest_tag="sha256:${manifest_digest}"')
+            source.index('jq -n -cS \\\n    --arg sourceProofName "$source_proof_name"'):
+            source.index('manifest_reference="$published_oci_reference"')
         ]
         for expected in (
             "jq -n -cS",
@@ -229,8 +249,14 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
             "releaseManifestReference",
             'artifacts:[{kind:"runtime-image"',
             "requiredSecretReferenceKeys",
+            "secretReferences",
+            "adminSecretReference",
+            "signingSecretReference",
+            "restoreStartedUtc",
+            "templateFingerprints",
             "chmod 400 \"$manifest_file\"",
             'manifest_digest="$(sha256_stream <"$manifest_file")"',
+            '"application/vnd.elsa-control.recovery-manifest.v1+json"',
         ):
             self.assertIn(expected, manifest)
         for forbidden in ("connectionString", "signingKey", "token", "secretValue", "source_password_file"):
@@ -245,25 +271,106 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
         self.assertIn("provider_restore_deployment_record", verifier)
         self.assertIn(".properties.provisioningState == \"Succeeded\"", verifier)
         self.assertIn(".properties.outputs.recoveryManifestDigest.value", verifier)
+        self.assertIn(".properties.outputs.templateFingerprint.value", verifier)
         self.assertIn("az deployment operation group list", verifier)
         self.assertIn("providerOperation", verifier)
 
         evidence = source[
-            source.index('provider_restore_evidence_record="$(jq -n -cS'):
+            source.index('>"$temp_dir/provider-restore-evidence.json"') - 500:
             source.index('cutover_eligible_at="$(utc_now)"')
         ]
         for expected in (
             '--argjson deployment "$provider_restore_deployment_record"',
             'database:{id:$databaseId,status:$databaseStatus}',
             'workflowBoundary:{prePoint:$preDefinition,postPointAbsent:$postDefinition,status:"Finished"}',
-            'provider_restore_evidence_digest="sha256:$(sha256_text "$provider_restore_evidence_record")"',
+            'publish_bound_oci_json "$temp_dir/provider-restore-evidence.json"',
+            'provider_restore_evidence_digest="$published_oci_digest"',
         ):
             self.assertIn(expected, evidence)
-        final_evidence = source[source.index("cleanup_target\ncurl"):]
+        final_evidence = source[source.index("cleanup_target\npost_cleanup_source_endpoint"):]
         self.assertNotIn("providerSnapshotPlan", final_evidence)
         self.assertNotIn("providerRestoreEvidenceRecord", final_evidence)
         self.assertNotIn("sourceDatabaseId", final_evidence)
         self.assertNotIn("targetDatabaseId", final_evidence)
+
+    def test_retry_loads_the_same_durable_manifest_before_source_mutation(self) -> None:
+        source = self.source
+        retry_start = source.index('if [[ -n "$expected_manifest_reference" ]]', source.index('target_group_exists="$(az group exists'))
+        retry = source[
+            retry_start:
+            source.index('else\n  [[ "$target_group_exists" == false ]]')
+        ]
+        for expected in (
+            'fetch_bound_oci_json "$expected_manifest_reference" "recovery-manifest.json"',
+            '"application/vnd.elsa-control.recovery-manifest.v1+json"',
+            '[[ "$(sha256_stream <"$manifest_file")" == "$expected_manifest_digest" ]]',
+            'source.secretReferences.adminPassword',
+            'source.secretReferences.identitySigningKey',
+            'templateFingerprints.target',
+            'templateFingerprints.database',
+            'provider_snapshot_reference',
+            '"${provider_snapshot_reference%@sha256:*}" == "$recovery_evidence_repository"',
+            'same_instant "$source_quiesced_at" "$restore_point_utc"',
+            'cleanup_target',
+            'verify_no_target_state_without_manifest',
+            'if ! verify_no_target_state_without_manifest "$manifest_digest"',
+        ):
+            self.assertIn(expected, retry)
+        self.assertNotIn('--mode create', retry)
+        self.assertNotIn('quiesce_source', retry)
+
+    def test_retry_reconciles_only_an_exact_terminal_restore_request(self) -> None:
+        source = self.source
+        verifier = source[
+            source.index("verify_provider_restore_request_identity()"):
+            source.index("verify_owned_target_database()")
+        ]
+        for expected in (
+            ".properties.parameters.sourceDatabaseId.value",
+            ".properties.parameters.targetDatabaseName.value",
+            ".properties.parameters.restorePointUtc.value",
+            ".properties.parameters.recoveryManifestDigest.value",
+            ".properties.parameters.recoveryId.value",
+            ".properties.parameters.templateFingerprint.value",
+            "wait_for_owned_restore_deployment_terminal",
+            "Succeeded|Failed|Canceled",
+            "Accepted|Running|Creating|Updating|Canceling",
+        ):
+            self.assertIn(expected, verifier)
+        cleanup_start = source.index("cleanup_target()")
+        cleanup = source[cleanup_start : source.index('if [[ "$mode" == cleanup ]]', cleanup_start)]
+        self.assertIn('wait_for_owned_restore_deployment_terminal "$cleanup_manifest_tag"', cleanup)
+        self.assertIn('if [[ "$provider_restore_cleanup_state" == Succeeded ]]', cleanup)
+        cleanup_execution = source.index('if [[ "$mode" == cleanup ]]', cleanup_start)
+        self.assertLess(
+            source.index('database_template_fingerprint="$(az bicep build'),
+            cleanup_execution,
+        )
+
+    def test_provider_and_manifest_evidence_are_private_immutable_oci_artifacts(self) -> None:
+        source = self.source
+        for expected in (
+            'recovery_evidence_repository="${registry_name}.azurecr.io/control-proof/recovery-evidence"',
+            'publish_bound_oci_json()',
+            'oras push --no-tty --artifact-type',
+            'fetch_bound_oci_json "$immutable_reference"',
+            'application/vnd.elsa-control.recovery-provider-snapshot.v1+json',
+            'application/vnd.elsa-control.recovery-provider-restore-evidence.v1+json',
+            'recoveryManifest:{reference:$manifestReference,digest:$manifestArtifactDigest,contentDigest:$manifestDigest}',
+            'kind:"recovery-manifest-sealed"',
+        ):
+            self.assertIn(expected, source)
+        self.assertNotIn("snapshot://", source)
+        self.assertLess(
+            source.index('publish_bound_oci_json "$temp_dir/provider-restore-evidence.json"'),
+            source.index("cleanup_target\npost_cleanup_source_endpoint"),
+        )
+
+    def test_final_source_health_uses_bounded_full_source_verification(self) -> None:
+        final = self.source[self.source.index("cleanup_target\npost_cleanup_source_endpoint"):]
+        self.assertIn('post_cleanup_source_endpoint="$(verify_source)"', final)
+        self.assertIn('[[ "$post_cleanup_source_endpoint" == "$source_endpoint" ]]', final)
+        self.assertNotIn('curl --fail --silent --show-error --max-time 30 "$source_endpoint/health"', final)
 
     def test_oci_subjects_are_content_bound_and_reported(self) -> None:
         source = self.source

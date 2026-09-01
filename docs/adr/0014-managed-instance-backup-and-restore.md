@@ -95,9 +95,16 @@ Choose option B.
    organization/workspace/instance identity, capture time, source lifecycle and
    quiescence evidence, immutable desired-state revision and hash, resolved-plan URI
    and digest, artifact references and digests, safe provider snapshot reference and
-   digest, the names of secret-reference slots that must be rebound, and a canonical
-   manifest digest. It contains no secret value, connection string, token, workflow
-   payload, local path, or provider credential.
+   digest, exact immutable provider-owned references for the secret slots that must be
+   rebound, and a canonical manifest digest. The provider snapshot record, sealed
+   manifest and verified restore record are retained as private immutable OCI
+   artifacts so retries and audits do not depend on disposable ARM deployment history.
+   The manifest contains no secret value, connection string, token, workflow payload,
+   local path, or provider credential.
+   Manifest publication is the durable recovery-journal boundary: its immutable
+   reference and digests are emitted immediately, and failure after publication retains
+   the private artifacts for exact retry rather than treating them as disposable target
+   resources.
 2. The source must be quiesced and have no active or uncertain instance operation or
    deployment run before the relational recovery point is sealed. A timeout or an
    uncorrelated provider result cannot create a valid recovery point.

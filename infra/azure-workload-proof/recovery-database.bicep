@@ -17,6 +17,11 @@ param restorePointUtc string
 @maxLength(64)
 param recoveryManifestDigest string
 
+@description('SHA-256 fingerprint of this checked-in recovery template.')
+@minLength(64)
+@maxLength(64)
+param templateFingerprint string
+
 param recoveryId string
 param expiryUtc string
 param location string = resourceGroup().location
@@ -54,3 +59,4 @@ output sourceDatabaseId string = sourceDatabaseId
 output restorePointUtc string = restorePointUtc
 output createMode string = 'PointInTimeRestore'
 output recoveryManifestDigest string = 'sha256:${toLower(recoveryManifestDigest)}'
+output templateFingerprint string = toLower(templateFingerprint)

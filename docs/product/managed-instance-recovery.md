@@ -117,10 +117,22 @@ or destructive maintenance operation can pass its preflight gate.
 | Cleanup is uncertain | Recovery remains `RecoveryRequired`; source is never included in target cleanup scope |
 | RPO or RTO objective is exceeded | Exercise result is Failed even if technical restoration eventually succeeds |
 
-Retries use the same recovery-point identity and deterministic target scope. An
-uncertain provider operation is reconciled before another mutation. A retry never
-silently selects a newer backup, changes immutable inputs, or invents new secret
-bindings.
+Retries use the same recovery-point identity, deterministic target scope and immutable
+recovery-manifest OCI reference/content digest. The retry path loads and validates that
+sealed manifest before any source mutation, reuses its original cutoff and exact
+versioned secret references, and first reconciles any partial owned target to verified
+absence. An uncertain provider operation is reconciled before another mutation. A
+retry never silently selects a newer backup, creates new workflow markers, changes
+immutable inputs, or invents new secret bindings.
+
+Publishing the private, immutable recovery manifest is the durable recovery journal
+boundary. The runner emits its reference and both artifact/content digests immediately
+as a safe checkpoint. A failure after that boundary deliberately retains the manifest
+and provider snapshot evidence; an operator resumes with that exact checkpoint rather
+than deleting it or discovering a new recovery point. The deterministic
+`manifest-<recovery-id>-<content-digest>` registry tag is only a discovery aid: retry
+trust is anchored to the immutable digest reference and does not depend on the mutable
+tag remaining present.
 
 ## Retention, deletion, and legal hold
 
@@ -179,11 +191,13 @@ The proof has two layers:
 
 Azure SQL PITR does not expose a durable snapshot resource identity, and its database
 GET surface does not rehydrate the accepted source/restore-point fields after the
-restore completes. The Azure adapter therefore retains a canonical opaque recovery
-handle below the provider boundary. The executable confirmation combines the
-successful exact ARM resource operation with the restored pre-point/post-point
-workflow boundary. Portable and customer/audit evidence emits only the opaque safe
-references and digests, never the handle record or Azure resource identifiers.
+restore completes. The Azure adapter therefore publishes the canonical provider
+snapshot plan, sealed recovery manifest and verified restore result as private,
+immutable OCI artifacts in the governed registry before disposable ARM deployment
+records are removed. The executable confirmation combines the successful exact ARM
+resource operation with the restored pre-point/post-point workflow boundary. Portable
+and customer/audit evidence emits only safe immutable OCI references and digests,
+never the private payloads or Azure resource identifiers.
 
 The exercise uses General Purpose Azure SQL short-term retention configured to 35
 days. Microsoft documents transaction-log backups at approximately ten-minute
@@ -204,4 +218,6 @@ watermark that the live-database API does not expose.
 - measured recovery-point age and restore duration;
 - proof that target health preceded cutover eligibility;
 - source-preservation and target/source cleanup postconditions; and
-- known limitations: same-region, no LTR/geo-restore, no automatic traffic cutover.
+- known limitations: same-region, no LTR/geo-restore, no automatic traffic cutover,
+  and no proof-harness fencing against an external actor concurrently mutating source
+  revisions (production lifecycle operation reservation owns that boundary).
