@@ -1,6 +1,7 @@
 # Spike 127 — Managed Elsa identity handoff
 
-**Status:** Contract implemented; end-to-end browser evidence remains follow-up work.
+**Status:** Contract implemented; the real local browser journey passes against the
+published immutable Combined image. Azure/public-TLS browser proof remains pending.
 
 ## Decision
 
