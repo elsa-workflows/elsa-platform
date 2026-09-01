@@ -99,6 +99,31 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Passes_admitted_non_38_package_versions_to_the_Bicep_authority()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args is ["group", "exists", ..], "false");
+        process.Success(args => args is ["group", "create", ..]);
+        process.Success(args => args.Contains("deployment") && args.Contains("group") && args.Contains("create"), FoundationOutputs());
+        var command = _fixture.Command(AzureProviderRunnerStep.Foundation) with
+        {
+            Plan = _fixture.Plan with
+            {
+                ElsaVersion = "5.0.0",
+                ReleaseLine = "5.0",
+                SqlWorkflowPackageVersion = "5.0.1",
+                SqlQuartzPackageVersion = "5.0.2"
+            }
+        };
+
+        await _fixture.Runner(process).RunAsync(command);
+
+        var args = process.Calls.Single(call => call.Contains("deployment") && call.Contains("create"));
+        Assert.Contains("sqlWorkflowPackageVersion=5.0.1", args);
+        Assert.Contains("sqlQuartzPackageVersion=5.0.2", args);
+    }
+
+    [Fact]
     public async Task Stops_before_a_following_mutation_when_template_authority_drifts()
     {
         var process = new FakeCommandProcess();
@@ -897,7 +922,8 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
             "valenceruntimeimages.azurecr.io/runtime-combined", new string('b', 64),
             "oci://release/manifest@sha256:" + new string('c', 64), "sha256:" + new string('c', 64),
             "oci://release/signature@sha256:" + new string('d', 64), "sha256:" + new string('d', 64),
-            new Dictionary<string, string>(), new string('a', 64));
+            new Dictionary<string, string>(), new string('a', 64),
+            "3.8.0-preview.5413", "3.8.0-preview.342");
         public AzureProviderResourceReferences FoundationResources { get; } = new(
             ResourceGroupName: "proof-rg",
             FoundationDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.Resources/deployments/foundation",

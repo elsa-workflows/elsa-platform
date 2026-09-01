@@ -1272,6 +1272,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             $"sqlConnectionSecretName={SqlConnectionSecretName}", $"signingKeySecretName={SigningKeySecretName}",
             $"adminPasswordSecretName={AdminPasswordSecretName}", $"adminUsername={AdminUsername}",
             $"elsaVersion={command.Plan.ElsaVersion}",
+            $"sqlWorkflowPackageVersion={command.Plan.SqlWorkflowPackageVersion}", $"sqlQuartzPackageVersion={command.Plan.SqlQuartzPackageVersion}",
             $"templateFingerprint={command.Context.TemplateFingerprint}", "deployWorkload=false", "--query", "properties.outputs", "--output", "json", "--only-show-errors"];
 
     private IReadOnlyList<string> AcrDeploymentArguments(AzureProviderRunnerCommand command, string identityId, string principalId, string deploymentName) =>
@@ -1290,6 +1291,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             $"sqlConnectionSecretName={SqlConnectionSecretName}", $"signingKeySecretName={SigningKeySecretName}",
             $"adminPasswordSecretName={AdminPasswordSecretName}", $"adminUsername={AdminUsername}",
             $"elsaVersion={command.Plan.ElsaVersion}",
+            $"sqlWorkflowPackageVersion={command.Plan.SqlWorkflowPackageVersion}", $"sqlQuartzPackageVersion={command.Plan.SqlQuartzPackageVersion}",
             $"templateFingerprint={command.Context.TemplateFingerprint}", "deployWorkload=true", $"workloadRevisionSuffix={revision}",
             $"stableTrafficRevisionName={stable ?? string.Empty}", "--query", "properties.outputs", "--output", "json", "--only-show-errors"];
 
@@ -1316,6 +1318,14 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             !string.Equals(command.Plan.ImageRepository, SupportedImageRepository, StringComparison.Ordinal) ||
             !AzureWorkloadPlanTranslator.IsSupportedLocation(command.Plan.Location) ||
             command.Plan.ImageDigest.Length != 64 || !command.Plan.ImageDigest.All(Uri.IsHexDigit) ||
+            string.IsNullOrWhiteSpace(command.Plan.SqlWorkflowPackageVersion) ||
+            string.IsNullOrWhiteSpace(command.Plan.SqlQuartzPackageVersion) ||
+            command.Plan.SqlWorkflowPackageVersion.Length > 128 ||
+            command.Plan.SqlQuartzPackageVersion.Length > 128 ||
+            command.Plan.SqlWorkflowPackageVersion.Any(char.IsControl) ||
+            command.Plan.SqlQuartzPackageVersion.Any(char.IsControl) ||
+            command.Plan.SqlWorkflowPackageVersion.Any(char.IsWhiteSpace) ||
+            command.Plan.SqlQuartzPackageVersion.Any(char.IsWhiteSpace) ||
             !AzureProviderOperationValidation.IsSafeImmutableEvidenceReference(command.Plan.ReleaseManifestReference, command.Plan.ReleaseManifestDigest) ||
             !AzureProviderOperationValidation.IsSafeImmutableEvidenceReference(command.Plan.ReleaseManifestSignatureReference, command.Plan.ReleaseManifestSignatureDigest) ||
             !AzureProviderOperationValidation.IsSafeSecretReferences(command.Plan.SecretReferences))

@@ -294,6 +294,8 @@ public static class AzureProviderOperationValidation
             IdempotencyKey = request.IdempotencyKey.Trim(),
             ReleaseManifestReference = NormalizeOptionalReference(request.ReleaseManifestReference),
             ReleaseManifestSignatureReference = NormalizeOptionalReference(request.ReleaseManifestSignatureReference),
+            SqlWorkflowPackageVersion = NormalizeOptionalSafe(request.SqlWorkflowPackageVersion),
+            SqlQuartzPackageVersion = NormalizeOptionalSafe(request.SqlQuartzPackageVersion),
             SecretReferences = NormalizeSecretReferences(request.SecretReferences),
             ProviderScopeFingerprint = request.ProviderScopeFingerprint is null
                 ? null
@@ -326,6 +328,8 @@ public static class AzureProviderOperationValidation
         if (request.ReleaseManifestSignatureDigest is not null && !IsDigest(request.ReleaseManifestSignatureDigest)) errors.Add("releaseManifestSignatureDigest.invalid");
         if (request.ReleaseManifestReference is not null && !IsSafeImmutableEvidenceReference(request.ReleaseManifestReference, request.ReleaseManifestDigest)) errors.Add("releaseManifestReference.invalid");
         if (request.ReleaseManifestSignatureReference is not null && !IsSafeImmutableEvidenceReference(request.ReleaseManifestSignatureReference, request.ReleaseManifestSignatureDigest)) errors.Add("releaseManifestSignatureReference.invalid");
+        BoundedSafe(request.SqlWorkflowPackageVersion, 128, "sqlWorkflowPackageVersion", errors);
+        BoundedSafe(request.SqlQuartzPackageVersion, 128, "sqlQuartzPackageVersion", errors);
         if ((request.ReleaseManifestReference is null) != (request.ReleaseManifestSignatureReference is null)) errors.Add("releaseManifestReferences.incomplete");
         ValidateSecretReferences(request.SecretReferences, errors);
 
@@ -352,7 +356,9 @@ public static class AzureProviderOperationValidation
     {
         var normalized = Normalize(request);
         var canonical = normalized.ProviderScopeFingerprint is null
-            ? SerializeLegacyRequest(normalized)
+            ? normalized.SqlWorkflowPackageVersion is null && normalized.SqlQuartzPackageVersion is null
+                ? SerializeLegacyRequest(normalized)
+                : SerializeRequestWithPackageMetadata(normalized, includeProviderScope: false)
             : JsonSerializer.Serialize(new
             {
                 normalized.WorkspaceId,
@@ -371,6 +377,8 @@ public static class AzureProviderOperationValidation
                 normalized.ReleaseManifestSignatureDigest,
                 normalized.ReleaseManifestReference,
                 normalized.ReleaseManifestSignatureReference,
+                normalized.SqlWorkflowPackageVersion,
+                normalized.SqlQuartzPackageVersion,
                 normalized.ProviderScopeFingerprint,
                 secretReferences = normalized.SecretReferences
             });
@@ -386,8 +394,37 @@ public static class AzureProviderOperationValidation
         var value = normalized.ProviderScopeFingerprint is null
             ? legacyValue
             : $"{legacyValue}|{normalized.ProviderScopeFingerprint}";
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+        var withPackageMetadata = normalized.SqlWorkflowPackageVersion is null && normalized.SqlQuartzPackageVersion is null
+            ? value
+            : $"{value}|{normalized.SqlWorkflowPackageVersion}|{normalized.SqlQuartzPackageVersion}";
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(withPackageMetadata))).ToLowerInvariant();
     }
+
+    private static string SerializeRequestWithPackageMetadata(
+        AzureProviderOperationRequest normalized,
+        bool includeProviderScope) => JsonSerializer.Serialize(new
+        {
+            normalized.WorkspaceId,
+            normalized.TargetKey,
+            Action = normalized.Action.ToString(),
+            normalized.PlanFingerprint,
+            normalized.TemplateFingerprint,
+            normalized.ElsaVersion,
+            normalized.ReleaseLine,
+            normalized.Topology,
+            normalized.Isolation,
+            normalized.Location,
+            normalized.ImageRepository,
+            normalized.ImageDigest,
+            normalized.ReleaseManifestDigest,
+            normalized.ReleaseManifestSignatureDigest,
+            normalized.ReleaseManifestReference,
+            normalized.ReleaseManifestSignatureReference,
+            normalized.SqlWorkflowPackageVersion,
+            normalized.SqlQuartzPackageVersion,
+            ProviderScopeFingerprint = includeProviderScope ? normalized.ProviderScopeFingerprint : null,
+            secretReferences = normalized.SecretReferences
+        });
 
     private static string SerializeLegacyRequest(AzureProviderOperationRequest normalized) => JsonSerializer.Serialize(new
     {
@@ -422,6 +459,7 @@ public static class AzureProviderOperationValidation
     private static string NormalizeDigest(string value) => $"sha256:{value.Trim()[7..].ToLowerInvariant()}";
     private static string? NormalizeOptionalDigest(string? value) => value is null ? null : NormalizeDigest(value);
     private static string? NormalizeOptionalReference(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private static string? NormalizeOptionalSafe(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static IReadOnlyDictionary<string, string> NormalizeSecretReferences(IReadOnlyDictionary<string, string>? values) =>
         new ReadOnlyDictionary<string, string>((values ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase))

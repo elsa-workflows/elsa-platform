@@ -60,6 +60,8 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             PlanFingerprint = normalized.PlanFingerprint,
             TemplateFingerprint = normalized.TemplateFingerprint,
             ProviderScopeFingerprint = normalized.ProviderScopeFingerprint,
+            SqlWorkflowPackageVersion = normalized.SqlWorkflowPackageVersion,
+            SqlQuartzPackageVersion = normalized.SqlQuartzPackageVersion,
             ElsaVersion = normalized.ElsaVersion,
             ReleaseLine = normalized.ReleaseLine,
             Topology = normalized.Topology,
@@ -171,15 +173,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         var entity = await db.AzureProviderOperations.AsNoTracking()
             .Where(x => x.WorkspaceId == workspaceId && x.TargetKey == normalizedTargetKey &&
                         x.ProviderScopeFingerprint == normalizedProviderScopeFingerprint &&
-                        x.Action == AzureProviderOperationAction.Reconcile &&
-                        (x.ResourceGroupName != null || x.FoundationDeploymentId != null ||
-                         x.WorkloadDeploymentId != null || x.WorkloadResourceId != null ||
-                         x.WorkloadRevisionName != null || x.StableTrafficRevisionName != null ||
-                         x.WorkloadIdentityResourceId != null || x.WorkloadIdentityClientId != null ||
-                         x.WorkloadIdentityPrincipalId != null || x.KeyVaultResourceId != null ||
-                         x.KeyVaultUri != null || x.SqlServerResourceId != null || x.SqlServerFqdn != null ||
-                         x.ContainerAppsEnvironmentResourceId != null || x.RegistryResourceId != null ||
-                         x.AcrPullDeploymentId != null || x.AcrPullRoleAssignmentId != null))
+                        x.Action == AzureProviderOperationAction.Reconcile)
             .OrderByDescending(x => x.UpdatedAt)
             .ThenByDescending(x => x.CreatedAt)
             .ThenByDescending(x => x.Id)
@@ -534,7 +528,9 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             x.ReleaseManifestReference, x.ReleaseManifestSignatureReference,
             secretReferences,
             diagnosticsInvalid || secretReferencesInvalid,
-            x.ProviderScopeFingerprint);
+            x.ProviderScopeFingerprint,
+            x.SqlWorkflowPackageVersion,
+            x.SqlQuartzPackageVersion);
     }
 
     private static (IReadOnlyList<AzureProviderDiagnostic> Diagnostics, bool Invalid) ReadDiagnostics(string? json)

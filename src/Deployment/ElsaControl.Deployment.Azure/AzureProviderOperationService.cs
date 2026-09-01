@@ -218,7 +218,9 @@ public sealed class AzureProviderOperationService(
                 pair => pair.Key,
                 pair => pair.Value,
                 StringComparer.OrdinalIgnoreCase)),
-            providerScopeFingerprint);
+            providerScopeFingerprint,
+            plan.SqlWorkflowPackageVersion,
+            plan.SqlQuartzPackageVersion);
 
     internal static AzureProviderOperationRequest CreateOperationRequest(AzureProviderOperation operation) =>
         new(
@@ -240,7 +242,9 @@ public sealed class AzureProviderOperationService(
             operation.ReleaseManifestReference,
             operation.ReleaseManifestSignatureReference,
             operation.SafeSecretReferences,
-            operation.ProviderScopeFingerprint);
+            operation.ProviderScopeFingerprint,
+            operation.SqlWorkflowPackageVersion,
+            operation.SqlQuartzPackageVersion);
 
     internal static AzureWorkloadPlan? TryRestorePlan(AzureProviderOperation operation)
     {
@@ -274,7 +278,9 @@ public sealed class AzureProviderOperationService(
                 operationRequest.ReleaseManifestSignatureReference!,
                 operationRequest.ReleaseManifestSignatureDigest!,
                 operationRequest.SecretReferences!,
-                operationRequest.PlanFingerprint);
+                operationRequest.PlanFingerprint,
+                operationRequest.SqlWorkflowPackageVersion,
+                operationRequest.SqlQuartzPackageVersion);
 
             AzureProviderExecutor.ValidateExecutionRequest(
                 new AzureProviderExecutionRequest(operationRequest, plan));

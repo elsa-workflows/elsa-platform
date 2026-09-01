@@ -50,7 +50,7 @@ public sealed class AzureWorkloadPlanTranslatorTests
         Assert.Equal("oci://release-manifest.example/signature", first.Plan.ReleaseManifestSignatureReference);
         Assert.Equal(ImageDigest, first.Plan.ReleaseManifestSignatureDigest);
         Assert.Equal("secret://vault/database-connection", first.Plan.SecretReferences["Database:ConnectionString"]);
-        Assert.Equal("database:connectionstring", Assert.Single(first.Plan.SecretReferences).Key);
+        Assert.Equal("secret://vault/database-connection", first.Plan.SecretReferences["database:connectionstring"]);
         Assert.Matches("^[a-f0-9]{64}$", first.Plan.Fingerprint);
     }
 
@@ -94,6 +94,32 @@ public sealed class AzureWorkloadPlanTranslatorTests
     }
 
     [Fact]
+    public void Requires_exact_provider_package_metadata_before_translation()
+    {
+        var result = AzureWorkloadPlanTranslator.Translate(
+            CreatePlan() with { Packages = [CreatePlan().Packages[0]] },
+            new("workload-a", "westeurope"));
+
+        Assert.False(result.IsAccepted);
+        Assert.Contains(result.Findings, x => x.Code == "azure.packageMetadata.required");
+    }
+
+    [Fact]
+    public void Requires_the_secret_references_used_by_the_workload_template()
+    {
+        var result = AzureWorkloadPlanTranslator.Translate(
+            CreatePlan() with
+            {
+                Configuration = new([new("Database:ConnectionString", "string", true, true, false,
+                    "ELSA_DATABASE_CONNECTION", null, "secret://vault/database-connection", null)])
+            },
+            new("workload-a", "westeurope"));
+
+        Assert.False(result.IsAccepted);
+        Assert.Equal(2, result.Findings.Count(x => x.Code == "azure.secret.required"));
+    }
+
+    [Fact]
     public void Does_not_layer_provider_findings_over_base_schema_failures()
     {
         var result = AzureWorkloadPlanTranslator.Translate(
@@ -110,7 +136,10 @@ public sealed class AzureWorkloadPlanTranslatorTests
         var plan = CreatePlan();
         var changedCasing = plan with
         {
-            Configuration = new([plan.Configuration.Entries[0] with { Key = "database:connectionstring" }])
+            Configuration = plan.Configuration with
+            {
+                Entries = [plan.Configuration.Entries[0] with { Key = "database:connectionstring" }, .. plan.Configuration.Entries.Skip(1)]
+            }
         };
 
         var first = AzureWorkloadPlanTranslator.Translate(plan, new("workload-a", "westeurope"));
@@ -452,7 +481,12 @@ public sealed class AzureWorkloadPlanTranslatorTests
     {
         var plan = CreatePlan("5.0", "5.0.0") with
         {
-            Packages = [CreatePlan().Packages[0] with { Version = "5.0.0" }]
+            Packages =
+            [
+                CreatePlan().Packages[0] with { Version = "5.0.0" },
+                CreatePlan().Packages[1] with { Version = "5.0.1" },
+                CreatePlan().Packages[2] with { Version = "5.0.2" }
+            ]
         };
 
         var result = AzureWorkloadPlanTranslator.Translate(plan, new("workload-a", "westeurope"));
@@ -477,8 +511,16 @@ public sealed class AzureWorkloadPlanTranslatorTests
             ResolvedElsaApplicationPlanSchema.CurrentVersion,
             new("valence-runtime", releaseLine, version, "https://github.com/valence-works/elsa-production-image", "1aeee8df455b21cf3bf3d2b26dfbd512d76da27b", "oci://release-manifest.example/manifest", ManifestDigest),
             new("combined", [component]),
-            [new(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), "Elsa.Core", version, ImageDigest, ["elsa.server"], [new("runtime", "Elsa.Runtime", ["elsa.server"], ["workflow.runtime"])])],
-            new([new("Database:ConnectionString", "string", true, true, false, "ELSA_DATABASE_CONNECTION", null, "secret://vault/database-connection", null)]),
+            [
+                new(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), "Elsa.Core", version, ImageDigest, ["elsa.server"], [new("runtime", "Elsa.Runtime", ["elsa.server"], ["workflow.runtime"])]),
+                new(Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"), AzureWorkloadPlanTranslator.SqlWorkflowPackageId, "3.8.0-preview.5413", ImageDigest, ["elsa.server"], []),
+                new(Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"), AzureWorkloadPlanTranslator.SqlQuartzPackageId, "3.8.0-preview.342", ImageDigest, ["elsa.server"], [])
+            ],
+            new([
+                new("Database:ConnectionString", "string", true, true, false, "ELSA_DATABASE_CONNECTION", null, "secret://vault/database-connection", null),
+                new("Identity:SigningKey", "string", true, true, false, "ELSA_IDENTITY_SIGNING_KEY", null, "secret://vault/identity-signing-key", null),
+                new("Admin:Password", "string", true, true, false, "ELSA_ADMIN_PASSWORD", null, "secret://vault/admin-password", null)
+            ]),
             new([new("runtime", 1, 1, 500, 1024)], [new("elsa-data", "relational", "persistent", "exclusive", 10)]),
             new("public", "unrestricted", false, [], [new("runtime", "api", "https", 443, "public", true, "/elsa/api")]),
             "Dedicated",

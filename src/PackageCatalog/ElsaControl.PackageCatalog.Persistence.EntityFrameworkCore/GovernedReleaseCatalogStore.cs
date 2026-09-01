@@ -311,6 +311,8 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
 
     private static bool Matches(GovernedReleaseCatalogEntry entry, GovernedReleaseCatalogQuery query) =>
         (query.TopologyId is null || string.Equals(entry.Topology.Id, query.TopologyId, StringComparison.Ordinal))
+        && (query.CatalogLifecycle is null || string.Equals(entry.CatalogLifecycle, query.CatalogLifecycle, StringComparison.OrdinalIgnoreCase))
+        && (query.ProducerLifecycle is null || string.Equals(entry.Distribution.ProducerLifecycle, query.ProducerLifecycle, StringComparison.OrdinalIgnoreCase))
         && (query.RuntimeKind is null || entry.Topology.RuntimeKinds.Contains(query.RuntimeKind, StringComparer.Ordinal))
         && (query.Capability is null || entry.Topology.Capabilities
             .Concat(entry.Topology.Components.SelectMany(x => x.Capabilities))

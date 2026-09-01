@@ -313,7 +313,7 @@ builder.Services.AddScoped<IWorkspaceDeploymentMutationStore, DeploymentWorkspac
 builder.Services.AddScoped<IWorkspaceDeploymentCommandStore, DeploymentWorkspaceStore>();
 builder.Services.AddScoped<WorkspaceDeploymentService>();
 builder.Services.AddScoped<IAzureProviderOperationStore, AzureProviderOperationStore>();
-builder.Services.AddScoped<IAzureProviderRunner, UnconfiguredAzureProviderRunner>();
+AzureProviderRunnerComposition.AddRunner(builder.Services, builder.Configuration);
 builder.Services.AddScoped<AzureProviderExecutor>();
 builder.Services.AddScoped<IAzureProviderOperationService, AzureProviderOperationService>();
 builder.Services.AddScoped<AzureProviderOperationWorker>();

@@ -17,6 +17,7 @@ public sealed record AzureProviderTargetScope(
     string RegistryName,
     string Location)
 {
+    public const string ConfigurationSection = "Deployment:AzureProvider:Runner:TargetScope";
     public string ComputeFingerprint()
     {
         Validate();
@@ -64,6 +65,7 @@ public sealed record AzureProviderTargetScope(
 /// </summary>
 public sealed record AzureProviderRunnerOptions
 {
+    public const string ConfigurationSection = "Deployment:AzureProvider:Runner";
     public bool Enabled { get; init; }
     /// <summary>Absolute Azure CLI executable bound into provider authority.</summary>
     public string AzureCliPath { get; init; } = "";

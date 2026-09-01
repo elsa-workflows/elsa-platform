@@ -67,11 +67,11 @@ param elsaVersion string = '3.8'
 
 @description('Exact Nuplane feed version for Elsa SQL Server workflow/identity persistence packages.')
 @minLength(1)
-param sqlWorkflowPackageVersion string = '3.8.0-preview.5413'
+param sqlWorkflowPackageVersion string
 
 @description('Exact Nuplane feed version for Elsa Quartz SQL Server scheduling package.')
 @minLength(1)
-param sqlQuartzPackageVersion string = '3.8.0-preview.342'
+param sqlQuartzPackageVersion string
 
 @description('Elsa topology represented by the immutable image.')
 @allowed([

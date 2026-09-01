@@ -177,6 +177,23 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Latest_reconcile_includes_precheckpoint_operation_without_resource_references()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var operation = await store.CreateOrGetAsync(Request(), now);
+
+        var latest = await store.GetLatestReconcileAsync(
+            _workspaceId, Request().TargetKey.ToUpperInvariant(), providerScopeFingerprint: null);
+
+        Assert.NotNull(latest);
+        Assert.Equal(operation.Id, latest.Id);
+        Assert.Equal(AzureProviderOperationAction.Reconcile, latest.Action);
+        Assert.Equal(new AzureProviderResourceReferences(), latest.Resources);
+    }
+
+    [Fact]
     public async Task Recovery_claim_only_accepts_recovery_required_operations()
     {
         var now = DateTimeOffset.UtcNow;

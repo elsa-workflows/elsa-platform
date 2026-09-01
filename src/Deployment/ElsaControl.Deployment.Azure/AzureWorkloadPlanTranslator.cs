@@ -35,6 +35,10 @@ public static class AzureWorkloadPlanTranslator
     public const string SupportedReleaseLine = "*";
     public const string SupportedRegistryClass = "paid";
     public const string SupportedRegistryHost = "valenceruntimeimages.azurecr.io";
+    public const string SqlWorkflowPackageId = "Elsa.Persistence.EFCore.SqlServer";
+    public const string SqlQuartzPackageId = "Elsa.Scheduling.Quartz.EFCore.SqlServer";
+    private static readonly string[] RequiredSecretKeys =
+        ["database:connectionstring", "identity:signingkey", "admin:password"];
     public static AzureWorkloadPlanTranslation Translate(
         ResolvedElsaApplicationPlan? resolvedPlan,
         AzureWorkloadTarget? target)
@@ -59,6 +63,10 @@ public static class AzureWorkloadPlanTranslator
             findings.Add(new("azure.plan.normalization.invalid", "The resolved plan could not be normalized safely.", "plan"));
             return Rejected(findings);
         }
+        var sqlWorkflowPackageVersion = RequiredPackageVersion(normalized.Packages, SqlWorkflowPackageId, findings);
+        var sqlQuartzPackageVersion = RequiredPackageVersion(normalized.Packages, SqlQuartzPackageId, findings);
+        if (findings.Count > 0)
+            return Rejected(findings);
         var component = normalized.Topology.Components.Single();
         var evidence = normalized.Evidence.Single(x =>
             string.Equals(x.Kind, ReleaseManifestEvidenceKinds.Manifest, StringComparison.OrdinalIgnoreCase));
@@ -67,6 +75,13 @@ public static class AzureWorkloadPlanTranslator
         var secretReferences = new ReadOnlyDictionary<string, string>(normalized.Configuration.Entries
             .Where(x => x.Secret && x.SecretReference is not null)
             .ToDictionary(x => x.Key.ToLowerInvariant(), x => x.SecretReference!, StringComparer.OrdinalIgnoreCase));
+        foreach (var requiredSecretKey in RequiredSecretKeys)
+        {
+            if (!secretReferences.ContainsKey(requiredSecretKey))
+                findings.Add(new("azure.secret.required", "The admitted plan is missing a secret reference required by the Azure workload profile.", $"configuration:{requiredSecretKey}"));
+        }
+        if (findings.Count > 0)
+            return Rejected(findings);
         var canonicalTarget = new
         {
             workloadName = target.WorkloadName.Trim().ToLowerInvariant(),
@@ -91,6 +106,8 @@ public static class AzureWorkloadPlanTranslator
             // second Azure deployment-intent identity that would be lost on resume.
             releaseManifestSignatureReference = signatureEvidence.Reference,
             releaseManifestSignatureDigest = signatureEvidence.Digest!.ToLowerInvariant(),
+            sqlWorkflowPackageVersion,
+            sqlQuartzPackageVersion,
             secretReferences = secretReferences
                 .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
                 .Select(x => new { key = x.Key.ToLowerInvariant(), reference = x.Value })
@@ -114,8 +131,34 @@ public static class AzureWorkloadPlanTranslator
                 signatureEvidence.Reference,
                 signatureEvidence.Digest!.ToLowerInvariant(),
                 secretReferences,
-                fingerprint),
+                fingerprint,
+                sqlWorkflowPackageVersion,
+                sqlQuartzPackageVersion),
             []);
+    }
+
+    private static string? RequiredPackageVersion(
+        IReadOnlyList<ResolvedElsaPackage> packages,
+        string packageId,
+        ICollection<ResolvedPlanValidationFinding> findings)
+    {
+        var matches = (packages ?? [])
+            .Where(package => package is not null &&
+                              string.Equals(package.PackageId, packageId, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (matches.Length == 0)
+        {
+            findings.Add(new("azure.packageMetadata.required", "The admitted plan must contain the provider package metadata required by the Azure profile.", $"packages:{packageId}"));
+            return null;
+        }
+        if (matches.Length != 1 || string.IsNullOrWhiteSpace(matches[0].Version) ||
+            matches[0].Version.Length > 128 || matches[0].Version.Any(char.IsControl) ||
+            matches[0].Version.Any(char.IsWhiteSpace))
+        {
+            findings.Add(new("azure.packageMetadata.invalid", "The admitted plan contains ambiguous or invalid provider package metadata.", $"packages:{packageId}"));
+            return null;
+        }
+        return matches[0].Version.Trim();
     }
 
     private static void ValidateTarget(

@@ -150,9 +150,15 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 SynchronizeIdentityBinding(instance, commit.ReconciledAt);
             instance.UpdatedAt = commit.ReconciledAt.ToUniversalTime();
             operation.State = commit.Operation.State;
-            operation.FailureCode = commit.Operation.State == ElsaInstanceOperationState.RecoveryRequired && commit.RetrySafe
-                ? ElsaInstanceProviderReconciliationService.RetrySafeCode
-                : commit.Operation.State == ElsaInstanceOperationState.Failed ? commit.DiagnosticCode : null;
+            var preserveUncertainSubmission = commit.Operation.State == ElsaInstanceOperationState.RecoveryRequired &&
+                !commit.RetrySafe &&
+                (string.Equals(operation.FailureCode, "provider.submission.uncertain", StringComparison.Ordinal) ||
+                 string.Equals(run.RecoveryReason, "provider.submission.uncertain", StringComparison.Ordinal));
+            operation.FailureCode = preserveUncertainSubmission
+                ? "provider.submission.uncertain"
+                : commit.Operation.State == ElsaInstanceOperationState.RecoveryRequired && commit.RetrySafe
+                    ? ElsaInstanceProviderReconciliationService.RetrySafeCode
+                    : commit.Operation.State == ElsaInstanceOperationState.Failed ? commit.DiagnosticCode : null;
             // Persistence derives the safe summary from FailureCode; do not assign
             // human-readable text here that the validation boundary will discard.
             operation.FailureSummary = null;
@@ -184,7 +190,9 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             run.CompletedAt = run.Status == WorkspaceDeploymentRunStatus.RecoveryRequired
                 ? null
                 : commit.ReconciledAt.ToUniversalTime();
-            run.RecoveryReason = run.Status == WorkspaceDeploymentRunStatus.RecoveryRequired ? commit.DiagnosticCode : null;
+            run.RecoveryReason = run.Status == WorkspaceDeploymentRunStatus.RecoveryRequired
+                ? preserveUncertainSubmission ? "provider.submission.uncertain" : commit.DiagnosticCode
+                : null;
             run.FailureMessage = run.Status == WorkspaceDeploymentRunStatus.Failed
                 ? "Provider reconciliation established a terminal failure."
                 : null;

@@ -1358,6 +1358,52 @@ public sealed class ElsaInstanceLifecycleStoreTests
     }
 
     [Fact]
+    public async Task Unknown_reconciliation_preserves_uncertain_submission_for_restart_reconstruction()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var (workspace, accepted) = await QueueManagedLifecycleRunAsync(db, "Provider uncertain reconciliation");
+        var store = new EfCoreElsaInstanceLifecycleStore(
+            db, EmptyResolutionInputSource.Instance, new FixedTimeProvider(Now));
+
+        // This is the durable marker written when the provider may have accepted
+        // the request but the worker lost the response before recording success.
+        await store.CommitProviderSubmissionAsync(new(
+            workspace.Id,
+            accepted.Instance.Id,
+            accepted.Operation.Id,
+            accepted.Operation.AttemptNumber,
+            "provider-submission-uncertain",
+            Now));
+
+        var reconciled = await new ElsaInstanceProviderReconciliationService(
+                store,
+                new QueueProviderPort(new ElsaInstanceProviderObservation(
+                    ElsaInstanceProviderObservationKind.Unknown,
+                    ElsaObservedLifecycle.Unknown,
+                    ElsaInstanceProviderHealthGate.Unknown,
+                    "provider-observation-unknown")),
+                new FixedTimeProvider(Now.AddMinutes(1)))
+            .ReconcileAsync(workspace.Id, accepted.Operation.Id);
+
+        Assert.Equal(ElsaInstanceProviderReconciliationOutcome.RecoveryRequired, reconciled.Outcome);
+        Assert.False(reconciled.RetrySafe);
+
+        db.ChangeTracker.Clear();
+        var pending = Assert.Single(await new EfCoreElsaInstanceLifecycleStore(
+            db, EmptyResolutionInputSource.Instance, new FixedTimeProvider(Now.AddMinutes(1)))
+            .ListPendingProviderOperationsAsync(16));
+        Assert.NotNull(pending.Submission);
+        Assert.Equal(accepted.Operation.Id, pending.Submission!.OperationId);
+        Assert.Equal("provider.submission.uncertain",
+            (await db.ElsaInstanceOperations.SingleAsync(x => x.Id == accepted.Operation.Id)).FailureCode);
+        Assert.Equal("provider.submission.uncertain",
+            (await db.DeploymentRuns.SingleAsync(x => x.ElsaInstanceId == accepted.Instance.Id)).RecoveryReason);
+    }
+
+    [Fact]
     public async Task Invalid_deleting_provider_submission_is_not_reconstructed_for_replay()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

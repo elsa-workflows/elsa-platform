@@ -50,9 +50,15 @@ public static class Elsa38CombinedProofResolutionFactory
                 "https://github.com/valence-works/elsa-production-image", admission.SourceCommit,
                 admission.ManifestReference, admission.ManifestDigest),
             new("combined", [component]),
-            [new(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), "Elsa.Core", admission.Version,
-                admission.ImageDigest, ["elsa.server"],
-                [new("runtime", "Elsa.Runtime", ["elsa.server"], ["workflow.runtime"])])],
+            [
+                new(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), "Elsa.Core", admission.Version,
+                    admission.ImageDigest, ["elsa.server"],
+                    [new("runtime", "Elsa.Runtime", ["elsa.server"], ["workflow.runtime"])]),
+                new(Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"), AzureWorkloadPlanTranslator.SqlWorkflowPackageId,
+                    "3.8.0-preview.5413", admission.ImageDigest, ["elsa.server"], []),
+                new(Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"), AzureWorkloadPlanTranslator.SqlQuartzPackageId,
+                    "3.8.0-preview.342", admission.ImageDigest, ["elsa.server"], [])
+            ],
             new([
                 new("Database:ConnectionString", "string", true, true, false, "ELSA_DATABASE_CONNECTION", null, admission.SecretReferences["sql-connection"], null),
                 new("Identity:SigningKey", "string", true, true, false, "ELSA_IDENTITY_SIGNING_KEY", null, admission.SecretReferences["identity-signing-key"], null),

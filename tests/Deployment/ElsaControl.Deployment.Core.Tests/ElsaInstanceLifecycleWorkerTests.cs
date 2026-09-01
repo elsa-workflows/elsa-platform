@@ -92,6 +92,38 @@ public sealed class ElsaInstanceLifecycleWorkerTests
     }
 
     [Fact]
+    public async Task Unknown_reconciliation_preserves_uncertain_submission_for_a_later_replay()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var accepted = await service.CreateAsync(CreateRequest("claims-provider-uncertain-reconcile", "create-provider-uncertain-reconcile"));
+        store.RegisterResolutionInput(accepted.Operation.Id, ResolutionInput(accepted.Instance));
+
+        await new ElsaInstanceLifecycleWorker(
+                store,
+                new RecordingResolver(SuccessfulResolution(WorkspaceId, accepted.Instance.Id)),
+                new StaticTimeProvider(Now),
+                new RecordingSubmissionPort(throwOnSubmit: true),
+                store)
+            .ProcessAvailableAsync("lifecycle-worker-1");
+
+        var before = Assert.Single(await store.ListPendingProviderOperationsAsync(16));
+        Assert.NotNull(before.Submission);
+
+        var result = await new ElsaInstanceProviderReconciliationService(
+                store,
+                new UnknownReconciliationPort(),
+                new StaticTimeProvider(Now.AddMinutes(1)))
+            .ReconcileAsync(WorkspaceId, accepted.Operation.Id);
+
+        Assert.Equal(ElsaInstanceProviderReconciliationOutcome.RecoveryRequired, result.Outcome);
+        Assert.False(result.RetrySafe);
+        var after = Assert.Single(await store.ListPendingProviderOperationsAsync(16));
+        Assert.NotNull(after.Submission);
+        Assert.Equal("provider.submission.uncertain", Assert.Single(store.DeploymentRuns).Run.RecoveryReason);
+    }
+
+    [Fact]
     public async Task Successful_replay_upgrades_uncertain_handoff_and_stops_future_submission_replays()
     {
         var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
@@ -526,6 +558,20 @@ public sealed class ElsaInstanceLifecycleWorkerTests
                 $"provider-operation-{request.OperationId:N}",
                 Replayed: Submissions.Count > 1));
         }
+    }
+
+    private sealed class UnknownReconciliationPort : IElsaInstanceProviderReconciliationPort
+    {
+        public Task<ElsaInstanceProviderObservation> ObserveAsync(
+            ElsaInstanceProviderReconciliationRequest request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ElsaInstanceProviderObservation(
+                ElsaInstanceProviderObservationKind.Unknown,
+                ElsaObservedLifecycle.Unknown,
+                ElsaInstanceProviderHealthGate.Unknown,
+                request.OperationId,
+                request.AttemptNumber,
+                "provider-observation-unknown"));
     }
 
     private sealed class QueueResolver(params ElsaInstancePlanResolutionResult[] results) : IElsaInstancePlanResolver

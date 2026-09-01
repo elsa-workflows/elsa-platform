@@ -165,10 +165,23 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSourceTests : IAs
         Assert.Null(result);
     }
 
+    [Fact]
+    public async Task Catalog_entries_outside_supported_lifecycle_fail_closed()
+    {
+        var source = new CatalogElsaInstanceLifecycleResolutionInputSource(
+            _db,
+            new StaticCatalog(CreateEntry("preview")),
+            new ElsaInstancePlanAuthorityOptions { Origin = "https://control.example.test" });
+
+        var result = await source.GetAsync(_accepted.Instance, _accepted.Operation);
+
+        Assert.Null(result);
+    }
+
     private CatalogElsaInstanceLifecycleResolutionInputSource CreateSource(string? origin) =>
         new(_db, new StaticCatalog(CreateEntry()), new ElsaInstancePlanAuthorityOptions { Origin = origin });
 
-    private GovernedReleaseCatalogEntry CreateEntry() => new(
+    private GovernedReleaseCatalogEntry CreateEntry(string catalogLifecycle = "supported") => new(
         "2.0.0",
         "https://catalog.example.test/manifests/5.0.0.json",
         "sha256:" + new string('c', 64),
@@ -203,7 +216,7 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSourceTests : IAs
                 [],
                 null)],
             []),
-        "supported",
+        catalogLifecycle,
         DateTimeOffset.UtcNow);
 
     private static Guid DeterministicGuid(Guid seed, string purpose)
@@ -223,7 +236,10 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSourceTests : IAs
         public Task<IReadOnlyList<GovernedReleaseCatalogEntry>> QueryAsync(
             GovernedReleaseCatalogQuery query,
             CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<GovernedReleaseCatalogEntry>>([entry]);
+            Task.FromResult<IReadOnlyList<GovernedReleaseCatalogEntry>>(
+                string.Equals(query.CatalogLifecycle, entry.CatalogLifecycle, StringComparison.OrdinalIgnoreCase)
+                    ? [entry]
+                    : []);
     }
 
     private sealed class EmptyResolutionInputSource : IElsaInstanceLifecycleResolutionInputSource

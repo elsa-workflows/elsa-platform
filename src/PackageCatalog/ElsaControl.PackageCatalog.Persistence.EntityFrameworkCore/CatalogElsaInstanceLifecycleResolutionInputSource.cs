@@ -69,6 +69,7 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSource(
             ReleaseLine: instance.ReleaseIntent.ReleaseLine,
             ReleaseVersion: instance.ReleaseIntent.RequestedVersion,
             Channel: instance.ReleaseIntent.Channel,
+            CatalogLifecycle: "supported",
             RegistryClass: "paid",
             TopologyId: instance.ApplicationIntent.TopologyId), cancellationToken);
 

@@ -40,6 +40,8 @@ public sealed class AzureProviderOperationMigrationTests
         Assert.Contains("AcrPullDeploymentId", columns);
         Assert.Contains("AcrPullRoleAssignmentId", columns);
         Assert.Contains("ProviderScopeFingerprint", columns);
+        Assert.Contains("SqlWorkflowPackageVersion", columns);
+        Assert.Contains("SqlQuartzPackageVersion", columns);
         Assert.Empty(await db.Database.GetPendingMigrationsAsync());
     }
 }
