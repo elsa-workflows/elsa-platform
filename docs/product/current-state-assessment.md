@@ -111,7 +111,7 @@ stamp, capacity and customer-routing composition are therefore still product wor
 ## Immediate Recommendation
 
 Complete #185's public-TLS Azure browser proof with the account owner's normal Entra/MFA
-interaction. Then unblock `valence-works/elsa-production-image#35` and generalize the
+interaction. Then unblock [elsa-production-image#35](https://github.com/valence-works/elsa-production-image/issues/35) and generalize the
 proven runtime integration through declared capability and immutable compatibility
 metadata, without a finite Elsa-version switch. Keep #129's recovery proof as an
 independent review lane and do not infer a production backup service from it.

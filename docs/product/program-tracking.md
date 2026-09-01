@@ -39,7 +39,7 @@ Completed foundations: commercial image/version authority → resolved Elsa appl
 model → typed reconciliation → Azure provider/IaC and executable Milestone B proof →
 durable Elsa Instance lifecycle/API → managed handoff/session foundation. Active P0
 path: real local/Azure browser proof (#185) → capability-based multi-release/topology
-runtime integration (`valence-works/elsa-production-image#35`) → Elsa Cloud
+runtime integration ([elsa-production-image#35](https://github.com/valence-works/elsa-production-image/issues/35)) → Elsa Cloud
 walking-skeleton completion. #129 is an independent P1 recovery lane in review; it is
 not evidence that production backup operations are already shipped.
 

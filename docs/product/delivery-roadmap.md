@@ -73,7 +73,7 @@ completed: image/version authority
 
 active: real local/Azure browser proof (#185)
   -> capability-based multi-release/topology runtime integration
-     (valence-works/elsa-production-image#35)
+     ([elsa-production-image#35](https://github.com/valence-works/elsa-production-image/issues/35))
   -> Elsa Cloud walking-skeleton completion
 ```
 
@@ -107,7 +107,7 @@ status and dependency order. The initial prerequisite queue produced these outco
 The identity handoff contract and threat model are captured in
 [`docs/spikes/127-managed-elsa-identity-handoff.md`](../spikes/127-managed-elsa-identity-handoff.md).
 
-The only current successor leaf is `valence-works/elsa-production-image#35`, which is
+The only current successor leaf is [elsa-production-image#35](https://github.com/valence-works/elsa-production-image/issues/35), which is
 correctly Not Ready while #185 remains open. It generalizes the proven integration by
 declared capability and immutable artifact compatibility for arbitrary supported Elsa
 release lines and applicable Server/Combined topologies.
@@ -116,7 +116,7 @@ release lines and applicable Server/Combined topologies.
 
 | Risk | Mitigation |
 |------|------------|
-| A proof centered on Elsa 3.8 could hard-code a finite version or topology switch. | Complete #185, then require `elsa-production-image#35` and #97 to select compatible immutable integration artifacts from declared capability metadata for arbitrary supported release lines. |
+| A proof centered on Elsa 3.8 could hard-code a finite version or topology switch. | Complete #185, then require [elsa-production-image#35](https://github.com/valence-works/elsa-production-image/issues/35) and #97 to select compatible immutable integration artifacts from declared capability metadata for arbitrary supported release lines. |
 | Shared isolation can dominate architecture and security. | Launch paid service with Dedicated only; require #110-derived executable evidence before adding Shared or Data-isolated. |
 | The proven Azure provider could be mistaken for production stamp composition. | Keep the API default fail closed while the production runner/stamp boundary is configured; retain provider IDs and reconciliation metadata behind ADR-0007. |
 | Seamless identity can appear complete from API/session tests while Combined Studio still challenges the user. | Require #185's real public-TLS browser proof, replay/expiry/logout evidence and immutable release facts before accepting the walking skeleton. |
