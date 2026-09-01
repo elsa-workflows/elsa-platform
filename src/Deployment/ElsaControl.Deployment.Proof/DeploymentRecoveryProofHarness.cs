@@ -45,6 +45,8 @@ public sealed partial class DeploymentRecoveryProofHarness
         var cutoverEligible = false;
         DateTimeOffset? eligibilityAt = null;
         var rpoAge = startedAt - recoveryPoint.RestorePointAt;
+        if (rpoAge < TimeSpan.Zero)
+            rpoAge = TimeSpan.Zero;
 
         if (cancellationToken.IsCancellationRequested)
         {

@@ -55,6 +55,21 @@ public sealed class DeploymentRecoveryProofHarnessTests
     }
 
     [Fact]
+    public async Task Future_recovery_point_is_rejected_without_negative_rpo_evidence()
+    {
+        var provider = new RecoveryFakeProvider();
+        var point = RecoveryPoint(capturedAt: Now + TimeSpan.FromMinutes(1));
+
+        var report = await RunAsync(provider, point);
+
+        Assert.False(report.Passed);
+        Assert.Equal("recovery.point.future", report.Failure?.Code);
+        Assert.Equal(TimeSpan.Zero, report.RpoAge);
+        Assert.Contains("\"rpoAge\": \"00:00:00\"", report.ToJson(), StringComparison.Ordinal);
+        Assert.Equal(0, provider.CreateCalls);
+    }
+
+    [Fact]
     public async Task Invalid_digest_or_embedded_reference_digest_is_rejected()
     {
         var provider = new RecoveryFakeProvider();
