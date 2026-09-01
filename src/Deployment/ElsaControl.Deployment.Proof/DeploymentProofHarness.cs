@@ -272,11 +272,7 @@ public sealed class DeploymentProofHarness(
                 ["applied"] = value.Applied.ToString().ToLowerInvariant(),
                 ["noOp"] = value.NoOp.ToString().ToLowerInvariant()
             },
-            DeploymentProofCleanup value => new Dictionary<string, string>(value.SafeMetadata, StringComparer.Ordinal)
-            {
-                ["resourceId"] = value.ResourceId,
-                ["succeeded"] = value.Succeeded.ToString().ToLowerInvariant()
-            },
+            DeploymentProofCleanup value => CleanupMetadata(value),
             _ => new Dictionary<string, string>(StringComparer.Ordinal)
         };
 
@@ -288,6 +284,23 @@ public sealed class DeploymentProofHarness(
             startedAt,
             completedAt,
             DeploymentProofEvidence.Sanitize(evidence));
+    }
+
+    private static Dictionary<string, string> CleanupMetadata(DeploymentProofCleanup value)
+    {
+        var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in value.SafeMetadata.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            if (string.Equals(pair.Key, "succeeded", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(pair.Key, "resourceId", StringComparison.OrdinalIgnoreCase))
+                continue;
+            metadata.TryAdd(pair.Key, pair.Value);
+        }
+
+        metadata["succeeded"] = value.Succeeded.ToString().ToLowerInvariant();
+        if (!string.IsNullOrWhiteSpace(value.ResourceId))
+            metadata["resourceId"] = value.ResourceId;
+        return metadata;
     }
 
     private DeploymentProofStageResult Failure(DeploymentProofStage stage, string code, string message) =>

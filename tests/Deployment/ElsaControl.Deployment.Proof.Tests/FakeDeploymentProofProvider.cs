@@ -6,7 +6,8 @@ namespace ElsaControl.Deployment.Proof.Tests;
 
 internal sealed class FakeDeploymentProofProvider(
     IReadOnlySet<DeploymentProofStage>? failures = null,
-    IReadOnlyDictionary<string, string>? extraMetadata = null) : IDeploymentProofProvider
+    IReadOnlyDictionary<string, string>? extraMetadata = null,
+    bool cleanupWithoutResource = false) : IDeploymentProofProvider
 {
     private readonly IReadOnlySet<DeploymentProofStage> _failures = failures ?? new HashSet<DeploymentProofStage>();
     private readonly IReadOnlyDictionary<string, string> _extraMetadata = extraMetadata ?? new Dictionary<string, string>();
@@ -87,8 +88,9 @@ internal sealed class FakeDeploymentProofProvider(
         var resourceId = deployment?.ResourceId
             ?? _partialProvisionResources.GetValueOrDefault(plan.PlanId)
             ?? $"fake-resource-for-{plan.PlanId}";
-        _cleanupResourceIds.Add(resourceId);
-        return Task.FromResult(new DeploymentProofCleanup(true, resourceId, _extraMetadata));
+        if (!cleanupWithoutResource)
+            _cleanupResourceIds.Add(resourceId);
+        return Task.FromResult(new DeploymentProofCleanup(true, cleanupWithoutResource ? null : resourceId, _extraMetadata));
     }
 
     private void ThrowIfConfigured(DeploymentProofStage stage)

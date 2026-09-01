@@ -136,51 +136,6 @@ verify_workload_traffic() {
   ' <<<"$traffic_json" >/dev/null
 }
 
-# Remove only the temporary SQL Entra administrator owned by this proof. The
-# caller may invoke this from an EXIT trap, so an unexpected administrator must
-# be preserved even when an earlier setup step has already failed closed.
-remove_owned_sql_bootstrap_admin() {
-  local subscription_id="$1"
-  local resource_group="$2"
-  local server_name="$3"
-  local expected_login="$4"
-  local expected_object_id="$5"
-  local admin_count admin_state server_count actual_object_id_lower expected_object_id_lower
-
-  server_count="$(az sql server list --subscription "$subscription_id" --resource-group "$resource_group" \
-    --query "[?name=='${server_name}'] | length(@)" --output tsv --only-show-errors 2>/dev/null)" || return 1
-  (( server_count == 0 )) && return 0
-  (( server_count == 1 )) || { echo "Expected at most one proof SQL server named $server_name" >&2; return 1; }
-
-  admin_count="$(az sql server ad-admin list --subscription "$subscription_id" --resource-group "$resource_group" \
-    --server "$server_name" --query 'length(@)' --output tsv --only-show-errors 2>/dev/null)" || return 1
-  (( admin_count == 0 )) && return 0
-  (( admin_count == 1 )) || { echo "Refusing to remove unexpected SQL server administrators" >&2; return 1; }
-
-  admin_state="$(az sql server ad-admin list --subscription "$subscription_id" --resource-group "$resource_group" \
-    --server "$server_name" --query '[0].{login:login,sid:sid}' --output json --only-show-errors 2>/dev/null)" || return 1
-  actual_object_id_lower="$(jq -r .sid <<<"$admin_state" | tr '[:upper:]' '[:lower:]')"
-  expected_object_id_lower="$(printf '%s' "$expected_object_id" | tr '[:upper:]' '[:lower:]')"
-  if [[ "$(jq -r .login <<<"$admin_state")" != "$expected_login" || "$actual_object_id_lower" != "$expected_object_id_lower" ]]; then
-    echo "Refusing to remove an unexpected SQL server administrator" >&2
-    return 1
-  fi
-
-  az sql server ad-only-auth disable --subscription "$subscription_id" --resource-group "$resource_group" \
-    --name "$server_name" --only-show-errors >/dev/null || return 1
-  az sql server ad-admin delete --subscription "$subscription_id" --resource-group "$resource_group" \
-    --server "$server_name" --only-show-errors >/dev/null || return 1
-
-  for _ in {1..12}; do
-    admin_count="$(az sql server ad-admin list --subscription "$subscription_id" --resource-group "$resource_group" \
-      --server "$server_name" --query 'length(@)' --output tsv --only-show-errors 2>/dev/null)" || return 1
-    (( admin_count == 0 )) && return 0
-    sleep 5
-  done
-  echo "Temporary SQL bootstrap administrator remained configured" >&2
-  return 1
-}
-
 # Azure role-assignment deletion is eventually consistent and may commit even
 # when the CLI returns an error. Verify the exact owned assignment is absent
 # before its deployment record (the cleanup provenance) can be removed.

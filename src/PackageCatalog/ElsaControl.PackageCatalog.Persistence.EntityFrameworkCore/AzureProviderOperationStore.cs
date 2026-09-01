@@ -156,9 +156,10 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             throw new ArgumentException("Target key is required.", nameof(targetKey));
 
         var normalizedTargetKey = targetKey.Trim().ToLowerInvariant();
+        var normalizedProviderScopeFingerprint = providerScopeFingerprint?.Trim().ToLowerInvariant();
         var entity = await db.AzureProviderOperations.AsNoTracking()
             .Where(x => x.WorkspaceId == workspaceId && x.TargetKey == normalizedTargetKey &&
-                        x.ProviderScopeFingerprint == providerScopeFingerprint &&
+                        x.ProviderScopeFingerprint == normalizedProviderScopeFingerprint &&
                         x.Action == AzureProviderOperationAction.Reconcile &&
                         (x.ResourceGroupName != null || x.FoundationDeploymentId != null ||
                          x.WorkloadDeploymentId != null || x.WorkloadResourceId != null ||
@@ -168,6 +169,34 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
                          x.KeyVaultUri != null || x.SqlServerResourceId != null || x.SqlServerFqdn != null ||
                          x.ContainerAppsEnvironmentResourceId != null || x.RegistryResourceId != null ||
                          x.AcrPullDeploymentId != null || x.AcrPullRoleAssignmentId != null))
+            .OrderByDescending(x => x.UpdatedAt)
+            .ThenByDescending(x => x.CreatedAt)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        return entity is null ? null : ToModel(entity);
+    }
+
+    /// <summary>
+    /// Finds the active reconcile reservation even when interruption happened before the first
+    /// resource checkpoint. This is used only by the explicit disposable proof cleanup recovery.
+    /// </summary>
+    public async Task<AzureProviderOperation?> GetLatestActiveReconcileAsync(
+        Guid workspaceId,
+        string targetKey,
+        string? providerScopeFingerprint,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(targetKey))
+            throw new ArgumentException("Target key is required.", nameof(targetKey));
+
+        var normalizedTargetKey = targetKey.Trim().ToLowerInvariant();
+        var normalizedProviderScopeFingerprint = providerScopeFingerprint?.Trim().ToLowerInvariant();
+        var entity = await db.AzureProviderOperations.AsNoTracking()
+            .Where(x => x.WorkspaceId == workspaceId && x.TargetKey == normalizedTargetKey &&
+                        x.ProviderScopeFingerprint == normalizedProviderScopeFingerprint &&
+                        x.Action == AzureProviderOperationAction.Reconcile &&
+                        (x.Status == AzureProviderOperationStatus.Running ||
+                         x.Status == AzureProviderOperationStatus.RecoveryRequired))
             .OrderByDescending(x => x.UpdatedAt)
             .ThenByDescending(x => x.CreatedAt)
             .ThenByDescending(x => x.Id)

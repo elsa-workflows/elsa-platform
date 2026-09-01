@@ -120,6 +120,35 @@ public sealed class AzureWorkloadPlanTranslatorTests
     }
 
     [Fact]
+    public void Source_commit_is_bound_into_the_provider_plan_fingerprint()
+    {
+        var firstPlan = CreatePlan();
+        var secondPlan = firstPlan with
+        {
+            Release = firstPlan.Release with { SourceCommit = new string('f', 40) }
+        };
+
+        var first = AzureWorkloadPlanTranslator.Translate(firstPlan, new("workload-a", "westeurope"));
+        var second = AzureWorkloadPlanTranslator.Translate(secondPlan, new("workload-a", "westeurope"));
+
+        Assert.True(first.IsAccepted);
+        Assert.True(second.IsAccepted);
+        Assert.NotEqual(first.Plan?.Fingerprint, second.Plan?.Fingerprint);
+    }
+
+    [Fact]
+    public void Equivalent_source_commit_whitespace_does_not_change_the_provider_plan_fingerprint()
+    {
+        var plan = CreatePlan();
+        var first = AzureWorkloadPlanTranslator.Translate(plan, new("workload-a", "westeurope"));
+        var second = AzureWorkloadPlanTranslator.Translate(
+            plan with { Release = plan.Release with { SourceCommit = $" {plan.Release.SourceCommit.ToUpperInvariant()} " } },
+            new("workload-a", "westeurope"));
+
+        Assert.Equal(first.Plan?.Fingerprint, second.Plan?.Fingerprint);
+    }
+
+    [Fact]
     public void Rejects_null_image_repository_without_throwing()
     {
         var plan = CreatePlan();
@@ -141,7 +170,7 @@ public sealed class AzureWorkloadPlanTranslatorTests
     [Theory]
     [InlineData("server-studio", "Dedicated", "westeurope", "azure.topology.unsupported")]
     [InlineData("combined", "Shared", "westeurope", "azure.isolation.unsupported")]
-    [InlineData("combined", "Dedicated", "northeurope", "azure.location.unsupported")]
+    [InlineData("combined", "Dedicated", "eastus", "azure.location.unsupported")]
     public void Rejects_unsupported_initial_provider_profile(
         string topology,
         string isolation,
@@ -158,6 +187,18 @@ public sealed class AzureWorkloadPlanTranslatorTests
 
         Assert.False(result.IsAccepted);
         Assert.Contains(result.Findings, x => x.Code == expectedCode);
+    }
+
+    [Theory]
+    [InlineData("westeurope")]
+    [InlineData("northeurope")]
+    [InlineData("swedencentral")]
+    public void Accepts_each_governed_proof_location(string location)
+    {
+        var result = AzureWorkloadPlanTranslator.Translate(CreatePlan(), new("workload-a", location));
+
+        Assert.True(result.IsAccepted);
+        Assert.Equal(location, result.Plan?.Location);
     }
 
     [Fact]

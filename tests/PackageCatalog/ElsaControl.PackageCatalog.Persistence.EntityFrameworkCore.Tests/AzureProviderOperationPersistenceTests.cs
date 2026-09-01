@@ -155,6 +155,26 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Latest_active_reconcile_includes_recovery_required_operation_without_resource_references()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var request = Request() with { ProviderScopeFingerprint = new string('d', 64) };
+        var operation = await store.CreateOrGetAsync(request, now);
+        Assert.NotNull(await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker-1", "lease-1", TimeSpan.FromMinutes(1), now));
+        Assert.Equal(1, await store.RecoverStaleAsync(now.AddMinutes(2)));
+
+        var active = await store.GetLatestActiveReconcileAsync(
+            _workspaceId, request.TargetKey.ToUpperInvariant(), $" {request.ProviderScopeFingerprint!.ToUpperInvariant()} ");
+
+        Assert.NotNull(active);
+        Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, active.Status);
+        Assert.Equal(new AzureProviderResourceReferences(), active.Resources);
+    }
+
+    [Fact]
     public async Task Recovery_claim_only_accepts_recovery_required_operations()
     {
         var now = DateTimeOffset.UtcNow;

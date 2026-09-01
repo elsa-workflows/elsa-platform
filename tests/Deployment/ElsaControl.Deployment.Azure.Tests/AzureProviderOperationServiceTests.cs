@@ -91,6 +91,24 @@ public sealed class AzureProviderOperationServiceTests
     }
 
     [Fact]
+    public async Task Delete_submission_advances_a_deterministic_retry_chain_after_terminal_failures()
+    {
+        var store = new CapturingStore(terminalAttempts: 2);
+        var service = new AzureProviderOperationService(store, new FixedTimeProvider(Now));
+        var submission = new AzureProviderOperationSubmission("delete-1", new('b', 64), CreatePlan());
+
+        var first = await service.SubmitDeleteAsync(WorkspaceId, submission);
+        var replay = await service.SubmitDeleteAsync(WorkspaceId, submission);
+
+        Assert.Equal(AzureProviderOperationStatus.Accepted, first.Status);
+        Assert.Equal(first.Id, replay.Id);
+        Assert.Equal(3, store.Requests.Count);
+        Assert.Equal("delete-1:delete", store.Requests[0].IdempotencyKey);
+        Assert.Contains(":retry:", store.Requests[1].IdempotencyKey, StringComparison.Ordinal);
+        Assert.Contains(":retry:", store.Requests[2].IdempotencyKey, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Delete_submission_derives_a_bounded_deterministic_key_from_a_maximum_length_key()
     {
         var originalKey = new string('x', 512);
@@ -219,16 +237,25 @@ public sealed class AzureProviderOperationServiceTests
         public override DateTimeOffset GetUtcNow() => now;
     }
 
-    private sealed class CapturingStore : IAzureProviderOperationStore
+    private sealed class CapturingStore(int terminalAttempts = 0) : IAzureProviderOperationStore
     {
         public AzureProviderOperationRequest? Request { get; private set; }
+        public List<AzureProviderOperationRequest> Requests { get; } = [];
         private AzureProviderOperation? _operation;
+        private readonly Dictionary<string, AzureProviderOperation> _operations = new(StringComparer.Ordinal);
 
         public Task<AzureProviderOperation> CreateOrGetAsync(AzureProviderOperationRequest request, DateTimeOffset now, CancellationToken cancellationToken = default)
         {
             Request = AzureProviderOperationValidation.Normalize(request);
-            _operation ??= new(
-                Guid.Parse("22222222-2222-2222-2222-222222222222"),
+            if (_operations.TryGetValue(Request.IdempotencyKey, out var existing))
+            {
+                _operation = existing;
+                return Task.FromResult(existing);
+            }
+
+            Requests.Add(Request);
+            _operation = new(
+                Guid.Parse($"22222222-2222-2222-2222-{(_operations.Count + 1):D12}"),
                 Request.WorkspaceId,
                 Request.TargetKey,
                 Request.Action,
@@ -246,7 +273,9 @@ public sealed class AzureProviderOperationServiceTests
                 Request.ImageDigest,
                 Request.ReleaseManifestDigest,
                 Request.ReleaseManifestSignatureDigest,
-                AzureProviderOperationStatus.Accepted,
+                _operations.Count < terminalAttempts
+                    ? AzureProviderOperationStatus.Failed
+                    : AzureProviderOperationStatus.Accepted,
                 AzureProviderOperationPhase.Planned,
                 0,
                 0,
@@ -264,6 +293,7 @@ public sealed class AzureProviderOperationServiceTests
                 Request.ReleaseManifestReference,
                 Request.ReleaseManifestSignatureReference,
                 Request.SecretReferences);
+            _operations.Add(Request.IdempotencyKey, _operation);
             return Task.FromResult(_operation);
         }
 

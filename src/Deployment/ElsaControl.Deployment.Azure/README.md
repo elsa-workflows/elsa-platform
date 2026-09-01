@@ -9,7 +9,7 @@ the resource model; provider lifecycle code consumes the accepted intent.
 
 The first admitted provider capability is deliberately narrow:
 
-- West Europe (`westeurope`)
+- West Europe (`westeurope`), North Europe (`northeurope`), or Sweden Central (`swedencentral`)
 - Dedicated isolation
 - Combined topology with one component
 - Elsa release line 3.8

@@ -40,7 +40,7 @@ public sealed record AzureProviderTargetScope(
         ValidateResourceGroup(RegistryResourceGroupName, nameof(RegistryResourceGroupName));
         if (!Regex.IsMatch(RegistryName ?? "", "^[a-z0-9]{5,50}\\z", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking))
             throw new ArgumentException("The Azure registry name is unsafe.", nameof(RegistryName));
-        if (!string.Equals(Location?.Trim(), AzureWorkloadPlanTranslator.SupportedLocation, StringComparison.OrdinalIgnoreCase))
+        if (!AzureWorkloadPlanTranslator.IsSupportedLocation(Location))
             throw new ArgumentException("The Azure location is outside the governed provider profile.", nameof(Location));
     }
 
@@ -148,7 +148,7 @@ public sealed record AzureProviderRunnerOptions
         if (!Guid.TryParseExact(SqlBootstrapObjectId, "D", out _) ||
             !string.Equals(SqlBootstrapObjectId, SqlBootstrapObjectId.ToLowerInvariant(), StringComparison.Ordinal))
             throw new ArgumentException("The SQL bootstrap object ID must be a canonical GUID.", nameof(SqlBootstrapObjectId));
-        if (!Regex.IsMatch(SqlBootstrapLogin ?? "", "^[A-Za-z0-9._@-]{1,128}\\z", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking))
+        if (!Regex.IsMatch(SqlBootstrapLogin ?? "", "^[A-Za-z0-9._@#-]{1,128}\\z", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking))
             throw new ArgumentException("The SQL bootstrap login is unsafe.", nameof(SqlBootstrapLogin));
         if (!System.Net.IPAddress.TryParse(SqlBootstrapIp, out var ip) ||
             ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork ||
@@ -185,17 +185,22 @@ public sealed record AzureProviderRunnerOptions
 
     private static string ComputeTemplateAuthorityFingerprint(string root)
     {
-        if (!Directory.Exists(root) || IsSymbolicLink(root) ||
-            Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories).Any(IsSymbolicLink))
+        var directories = Directory.Exists(root)
+            ? Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories).Take(33).ToArray()
+            : [];
+        if (!Directory.Exists(root) || IsSymbolicLink(root) || directories.Length > 32 || directories.Any(IsSymbolicLink))
             throw new ArgumentException("The Azure template root must be a regular trusted directory.", nameof(TemplateRoot));
 
-        var authorityFiles = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+        var files = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).Take(257).ToArray();
+        if (files.Length > 256)
+            throw new ArgumentException("The checked-in Azure provider authority is outside the governed bounds.", nameof(TemplateRoot));
+        var authorityFiles = files
             .Where(path => string.Equals(Path.GetExtension(path), ".bicep", StringComparison.OrdinalIgnoreCase) ||
                            string.Equals(Path.GetExtension(path), ".sql", StringComparison.OrdinalIgnoreCase))
             .Select(Path.GetFullPath)
             .OrderBy(path => path, StringComparer.Ordinal)
             .ToArray();
-        if (authorityFiles.Length == 0 || authorityFiles.Any(IsSymbolicLink))
+        if (authorityFiles.Length is 0 or > 64 || authorityFiles.Any(IsSymbolicLink))
             throw new ArgumentException("The checked-in Azure provider authority is incomplete.", nameof(TemplateRoot));
 
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);

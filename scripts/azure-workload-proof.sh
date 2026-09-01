@@ -19,8 +19,8 @@ Required apply/what-if options:
   --image-repository <repository>      Repository without a tag or digest
   --image-digest <64 hex characters>   Immutable image digest without sha256:
   --registry-resource-group <name>     Resource group containing valenceruntimeimages
-  --sql-bootstrap-object-id <GUID>     Entra object ID for temporary SQL administrator
-  --sql-bootstrap-login <name>         Entra login/display name for temporary SQL administrator
+  --sql-bootstrap-object-id <GUID>     Entra object ID for governed SQL administrator
+  --sql-bootstrap-login <name>         Entra login/display name for governed SQL administrator
   --sql-bootstrap-ip <IPv4 address>    Exact operator IP for the temporary SQL firewall rule
 
 Optional:
@@ -429,12 +429,15 @@ fi
 sql_server_name="${proof_name}-sql"
 temporary_firewall_rule="elsa108-bootstrap"
 temporary_firewall_created=0
-bootstrap_admin_removed=0
 temp_dir=""
-ensure_sql_bootstrap_admin_for_reapply() {
+ensure_exact_sql_bootstrap_admin() {
+  local allow_missing_server="${1:-0}"
   local admin_count admin_state server_count actual_admin_object_id_lower expected_admin_object_id_lower
   server_count="$(az sql server list --subscription "$proof_subscription_id" --resource-group "$resource_group" --query "[?name=='${sql_server_name}'] | length(@)" --output tsv --only-show-errors)" || return 1
-  if (( server_count == 0 )); then return 0; fi
+  if (( server_count == 0 )); then
+    (( allow_missing_server == 1 )) && return 0
+    return 1
+  fi
   (( server_count == 1 )) || { echo "Expected at most one proof SQL server named $sql_server_name" >&2; return 1; }
 
   admin_count="$(az sql server ad-admin list --subscription "$proof_subscription_id" --resource-group "$resource_group" --server "$sql_server_name" --query 'length(@)' --output tsv --only-show-errors)" || return 1
@@ -448,26 +451,17 @@ ensure_sql_bootstrap_admin_for_reapply() {
   expected_admin_object_id_lower="$(printf '%s' "$sql_bootstrap_object_id" | tr '[:upper:]' '[:lower:]')"
   [[ "$(jq -r .login <<<"$admin_state")" == "$sql_bootstrap_login" && "$actual_admin_object_id_lower" == "$expected_admin_object_id_lower" ]] || { echo "Refusing to replace an unexpected SQL server administrator" >&2; return 1; }
   az sql server ad-only-auth enable --subscription "$proof_subscription_id" --resource-group "$resource_group" --name "$sql_server_name" --only-show-errors >/dev/null || return 1
-  bootstrap_admin_removed=0
-}
-remove_sql_bootstrap_admin() {
-  remove_owned_sql_bootstrap_admin "$proof_subscription_id" "$resource_group" "$sql_server_name" \
-    "$sql_bootstrap_login" "$sql_bootstrap_object_id" || return 1
-  bootstrap_admin_removed=1
 }
 cleanup_apply() {
   if (( temporary_firewall_created )); then
     delete_and_verify_firewall_rule "$proof_subscription_id" "$resource_group" "$sql_server_name" "$temporary_firewall_rule" ||
       echo "CRITICAL: temporary SQL firewall rule cleanup could not be verified" >&2
   fi
-  if (( bootstrap_admin_removed == 0 )); then
-    remove_sql_bootstrap_admin >/dev/null 2>&1 || echo "CRITICAL: temporary SQL bootstrap administrator cleanup could not be verified" >&2
-  fi
   [[ -z "$temp_dir" ]] || rm -rf -- "$temp_dir"
 }
 trap cleanup_apply EXIT
 
-ensure_sql_bootstrap_admin_for_reapply || { echo "Temporary SQL bootstrap administrator could not be established safely" >&2; exit 5; }
+ensure_exact_sql_bootstrap_admin 1 || { echo "The governed SQL administrator could not be established safely" >&2; exit 5; }
 
 deployment_name="elsa108-${proof_name}-${deployment_suffix}"
 foundation_outputs="$(az deployment group create \
@@ -577,7 +571,7 @@ az deployment group create \
   --parameters "${parameters[@]}" deployWorkload=true workloadRevisionSuffix="$workload_revision_suffix" stableTrafficRevisionName="$stable_traffic_revision" \
   --query properties.outputs --output none --only-show-errors
 
-remove_sql_bootstrap_admin || { echo "Temporary SQL bootstrap administrator cleanup failed" >&2; exit 5; }
+ensure_exact_sql_bootstrap_admin 0 || { echo "The governed SQL administrator could not be verified after workload deployment" >&2; exit 5; }
 
 endpoint="$(az deployment group show --resource-group "$resource_group" --name "${deployment_name}-workload" --query 'properties.outputs.containerAppEndpoint.value' --output tsv --only-show-errors)"
 candidate_revision="${proof_name}-app--${workload_revision_suffix}"

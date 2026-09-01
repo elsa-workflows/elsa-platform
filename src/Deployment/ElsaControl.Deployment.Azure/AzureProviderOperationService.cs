@@ -56,7 +56,7 @@ public sealed class AzureProviderOperationService(
         CancellationToken cancellationToken = default) =>
         SubmitCoreAsync(workspaceId, submission, AzureProviderOperationAction.Reconcile, cancellationToken);
 
-    public Task<AzureProviderOperation> SubmitDeleteAsync(
+    public async Task<AzureProviderOperation> SubmitDeleteAsync(
         Guid workspaceId,
         AzureProviderOperationSubmission submission,
         CancellationToken cancellationToken = default)
@@ -65,11 +65,33 @@ public sealed class AzureProviderOperationService(
         var deleteIdempotencyKey = CreateDeleteIdempotencyKey(submission.IdempotencyKey);
         // Idempotency is scoped to a lifecycle action. A cleanup request must never
         // accidentally reuse the successful reconcile operation for the same target.
-        return SubmitCoreAsync(
-            workspaceId,
-            submission with { IdempotencyKey = deleteIdempotencyKey },
-            AzureProviderOperationAction.Delete,
-            cancellationToken);
+        for (var attempt = 0; attempt < 32; attempt++)
+        {
+            var operation = await SubmitCoreAsync(
+                workspaceId,
+                submission with { IdempotencyKey = deleteIdempotencyKey },
+                AzureProviderOperationAction.Delete,
+                cancellationToken);
+            if (operation.Status is not (AzureProviderOperationStatus.Failed or AzureProviderOperationStatus.Cancelled))
+                return operation;
+
+            // A confirmed cleanup failure may still leave owned resources behind. Derive the
+            // next durable key from the terminal operation so concurrent/replayed callers select
+            // the same retry instead of permanently replaying the failed attempt.
+            deleteIdempotencyKey = CreateDeleteRetryIdempotencyKey(operation);
+        }
+
+        throw new InvalidOperationException("The bounded Azure cleanup retry chain was exhausted.");
+    }
+
+    private static string CreateDeleteRetryIdempotencyKey(AzureProviderOperation operation)
+    {
+        var seed = $"{operation.IdempotencyKey}:retry:{operation.Id:N}";
+        if (seed.Length <= MaximumIdempotencyKeyLength)
+            return seed;
+
+        var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(seed))).ToLowerInvariant();
+        return $"delete-retry:sha256:{digest}";
     }
 
     private static string CreateDeleteIdempotencyKey(string idempotencyKey)

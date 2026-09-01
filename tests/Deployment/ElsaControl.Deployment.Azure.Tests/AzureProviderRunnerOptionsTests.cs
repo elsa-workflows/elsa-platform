@@ -23,6 +23,16 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
     {
         ValidOptions().Validate();
         (ValidOptions() with { TemplateRoot = _templateRoot + Path.DirectorySeparatorChar }).Validate();
+        (ValidOptions() with { SqlBootstrapLogin = "operator_example.test#EXT#@tenant.onmicrosoft.com" }).Validate();
+    }
+
+    [Fact]
+    public void Rejects_template_authority_outside_the_bounded_tree()
+    {
+        for (var index = 0; index < 33; index++)
+            Directory.CreateDirectory(Path.Combine(_templateRoot, $"directory-{index:D2}"));
+
+        Assert.Throws<ArgumentException>(() => ValidOptions().Validate());
     }
 
     [Fact]

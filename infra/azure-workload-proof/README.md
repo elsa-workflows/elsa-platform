@@ -1,6 +1,6 @@
 # Disposable Azure workload proof
 
-This directory is the checked-in Bicep authority for issue [#146](https://github.com/valence-works/elsa-control/issues/146), a disposable Elsa 3.8 Combined proof in **West Europe**. Azure-specific resource realization stays here; provider-neutral desired state does not gain Azure fields.
+This directory is the checked-in Bicep authority for issue [#146](https://github.com/valence-works/elsa-control/issues/146), a disposable Elsa 3.8 Combined proof in a governed proof region: **West Europe**, **North Europe**, or **Sweden Central**. Azure-specific resource realization stays here; provider-neutral desired state does not gain Azure fields. These capacity fallbacks do not expand the product launch promise beyond West Europe.
 
 The stack deliberately contains no secret values, SQL passwords, connection-string values, or mutable image tags. The image is composed as `imageRepository@sha256:imageDigest`, and `imageDigest` is exactly 64 hexadecimal characters. The existing `valenceruntimeimages` ACR is the only resource outside the disposable group, and receives one deterministic `AcrPull` assignment through `acr-pull-role.bicep`.
 
@@ -33,10 +33,10 @@ The apply path is two-phase so secret values never enter Bicep parameters, deplo
 4. The configured operator is granted the proof vault's narrow Key Vault Secrets Officer role; the runbook retries while RBAC propagates.
 5. Run `sql-bootstrap.sql` once as the configured Microsoft Entra SQL administrator. It creates a service-principal contained user from the workload identity client ID (without Graph lookup or Directory Readers) and grants `db_datareader`, `db_datawriter` and temporary `db_ddladmin` for first-start migrations.
 6. Deploy the workload phase. Container Apps reads the three Key Vault secrets through the user-assigned identity; it does not receive secret values in the template.
-7. Remove the interactive Microsoft Entra SQL server administrator and verify that no server administrator remains. The EXIT cleanup path also attempts and verifies removal after any failure once the owned proof group exists.
+7. Verify that the exact approved Microsoft Entra SQL server administrator and Entra-only authentication remain configured so the contained workload identity can authenticate.
 8. Wait for the candidate to become healthy, promote it safely, and capture only the endpoint, immutable image reference, resource IDs, plan fingerprint, revision and redacted health evidence.
 
-The SQL bootstrap operator must have an Entra login and object ID. The proof never supplies, stores or outputs SQL login credentials; runtime access is exclusively the contained workload identity. It enables `azureADOnlyAuthentication` for bootstrap; Azure requires that flag to be disabled before deleting the Entra server administrator. The operator is therefore server administrator only during the controlled bootstrap/deployment window; successful apply and failure cleanup disable the flag, remove the administrator and verify absence. On reapply, the runbook fail-closed verifies or briefly re-establishes only the exact configured bootstrap identity before ARM reconciliation, then removes it again. The contained workload identity continues to authenticate with Azure AD managed identity. Its runtime connection enables encryption and disables certificate trust.
+The SQL bootstrap operator must have an Entra login and object ID. The proof never supplies, stores or outputs SQL login credentials; runtime access is exclusively the contained workload identity. Azure SQL requires an Entra administrator to remain configured for Entra-authenticated contained users, so the runbook fail-closed verifies or re-establishes only the exact approved bootstrap identity and keeps Entra-only authentication enabled. The administrator remains for the disposable server lifetime and is removed with the server by verified resource-group cleanup. The contained workload identity uses Azure AD managed identity, with an encrypted runtime connection that disables certificate trust.
 
 Use Go `sqlcmd` with `--authentication-method ActiveDirectoryDefault`; the ODBC sqlcmd is not supported. Supply one exact public IPv4 address with `--sql-bootstrap-ip`. The runbook creates a same-IP temporary SQL firewall rule, retries readiness/bootstrap, and removes the rule on success or failure. `0.0.0.0` is never used for operator access.
 
@@ -60,7 +60,7 @@ Do not echo, log or persist that variable. Cleanup deletes and purges the dispos
 | Key Vault | RBAC, soft delete, public access for this no-VNet proof, 7-day retention |
 | Azure SQL | Entra-only bootstrap, no proof-managed SQL credentials, contained managed-identity runtime access; GP serverless 0.5 minimum, 60-minute auto-pause, local backup redundancy |
 | Log Analytics | PerGB2018, minimum 30-day retention; ACA console/system logs and metrics |
-| Container Apps environment | West Europe, consumption-backed, no zone redundancy |
+| Container Apps environment | Selected governed proof region, consumption-backed, no zone redundancy |
 | Container App | External HTTPS-only ingress, port 8080, multiple revisions, latest revision at 100%, 0–1 replicas, startup/readiness/liveness probes |
 
 Front Door, custom domains, private networking, VNet integration and production HA are intentionally excluded from this proof. They are separate provider/edge decisions.

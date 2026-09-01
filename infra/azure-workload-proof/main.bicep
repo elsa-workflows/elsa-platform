@@ -5,9 +5,11 @@ targetScope = 'resourceGroup'
 @maxLength(16)
 param proofName string
 
-@description('The proof is intentionally constrained to West Europe.')
+@description('The proof is intentionally constrained to governed Azure regions.')
 @allowed([
   'westeurope'
+  'northeurope'
+  'swedencentral'
 ])
 param location string = 'westeurope'
 
@@ -32,10 +34,10 @@ param registrySubscriptionId string = subscription().subscriptionId
 @minLength(1)
 param registryResourceGroupName string
 
-@description('Microsoft Entra object ID used only as the temporary SQL bootstrap administrator.')
+@description('Microsoft Entra object ID retained as the governed SQL administrator for the disposable server lifetime.')
 param sqlBootstrapObjectId string
 
-@description('Microsoft Entra login/display name for the temporary SQL bootstrap administrator.')
+@description('Microsoft Entra login/display name retained as the governed SQL administrator for the disposable server lifetime.')
 @minLength(1)
 @maxLength(128)
 param sqlBootstrapLogin string
