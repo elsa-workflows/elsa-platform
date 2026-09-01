@@ -135,7 +135,12 @@ file sealed class PrivateFileCredentialSource : IElsaProofCredentialSource, IAsy
             await using var stream = new FileStream(
                 path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096,
                 FileOptions.Asynchronous | FileOptions.SequentialScan);
-            using var reader = new StreamReader(stream, new UTF8Encoding(false, true), false, 4096, leaveOpen: false);
+            using var reader = new StreamReader(
+                stream,
+                new UTF8Encoding(false, true),
+                detectEncodingFromByteOrderMarks: true,
+                bufferSize: 4096,
+                leaveOpen: false);
             var count = 0;
             while (count < buffer.Length)
             {
