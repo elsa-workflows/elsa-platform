@@ -34,7 +34,7 @@ Optional:
   --registry-name <name>           Default: valenceruntimeimages
   --image-repository <repository>  Default: valenceruntimeimages.azurecr.io/runtime-combined
   --expiry-utc <YYYY-MM-DD>
-  --manifest-digest <64 hex>       Existing sealed manifest digest (cleanup only)
+  --manifest-digest <64 hex>       Existing sealed manifest digest when target state exists
   --target-principal-id <guid>     Existing target identity principal (cleanup only)
 
 Apply and cleanup require DISPOSABLE_PROOF_APPLY=YES. Apply performs the live
@@ -226,9 +226,13 @@ valid_guid "$sql_bootstrap_object_id" || fail "SQL bootstrap object ID is invali
 valid_ip "$sql_bootstrap_ip" || fail "SQL bootstrap IP is invalid"
 [[ "$expiry_utc" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || fail "expiry date is invalid"
 if [[ "$mode" == cleanup ]]; then
-  [[ "$expected_manifest_digest" =~ ^[a-fA-F0-9]{64}$ ]] || fail "cleanup requires the sealed manifest digest"
-  expected_manifest_digest="$(printf '%s' "$expected_manifest_digest" | tr '[:upper:]' '[:lower:]')"
-  valid_guid "$target_principal_id" || fail "cleanup requires the exact target principal ID"
+  if [[ -n "$expected_manifest_digest" ]]; then
+    [[ "$expected_manifest_digest" =~ ^[a-fA-F0-9]{64}$ ]] || fail "cleanup manifest digest is invalid"
+    expected_manifest_digest="$(printf '%s' "$expected_manifest_digest" | tr '[:upper:]' '[:lower:]')"
+  fi
+  if [[ -n "$target_principal_id" ]]; then
+    valid_guid "$target_principal_id" || fail "cleanup target principal ID is invalid"
+  fi
 elif [[ -n "$target_principal_id" ]]; then
   fail "target principal ID is accepted only for cleanup"
 fi
@@ -263,10 +267,12 @@ target_database="ElsaRestore${recovery_id}"
 target_vault="${target_name}-kv"
 target_identity="${target_name}-identity"
 target_app="${target_name}-app"
-acr_deployment="elsa129-${target_name}"
-database_restore_deployment="elsa129-db-${target_name}"
+acr_deployment="elsa129-${target_name}-${recovery_id}"
+target_deployment="elsa129-target-${target_name}-${recovery_id}"
+database_restore_deployment="elsa129-db-${target_name}-${recovery_id}"
 source_db_id="/subscriptions/${subscription_id}/resourceGroups/${source_resource_group}/providers/Microsoft.Sql/servers/${source_server}/databases/${source_database}"
 source_vault_id="/subscriptions/${subscription_id}/resourceGroups/${source_resource_group}/providers/Microsoft.KeyVault/vaults/${source_vault}"
+source_recovery_lock_id="/subscriptions/${subscription_id}/resourceGroups/${source_resource_group}/providers/Microsoft.Authorization/locks/elsa-control-recovery"
 target_db_id="/subscriptions/${subscription_id}/resourceGroups/${source_resource_group}/providers/Microsoft.Sql/servers/${source_server}/databases/${target_database}"
 registry_id="/subscriptions/${registry_subscription_id}/resourceGroups/${registry_resource_group}/providers/Microsoft.ContainerRegistry/registries/${registry_name}"
 firewall_rule="elsa129-${recovery_id}"
@@ -275,8 +281,10 @@ target_scope_started=0
 cleanup_in_progress=0
 source_quiesced=0
 source_revisions_json=""
+source_recovery_lock_token=""
 target_db_existing=0
-source_secret_assignment_id="${source_vault_id}/providers/Microsoft.Authorization/roleAssignments/$(sha256_text "elsa129-source-vault|${target_name}-identity" | awk '{print substr($0,1,8) "-" substr($0,9,4) "-" substr($0,13,4) "-" substr($0,17,4) "-" substr($0,21,12)}')"
+provider_restore_deployment_record=""
+source_secret_assignment_id="${source_vault_id}/providers/Microsoft.Authorization/roleAssignments/$(sha256_text "elsa129-source-vault|${target_name}-identity|${recovery_id}" | awk '{print substr($0,1,8) "-" substr($0,9,4) "-" substr($0,13,4) "-" substr($0,17,4) "-" substr($0,21,12)}')"
 temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/elsa129.XXXXXX")"
 
 cleanup_local() {
@@ -305,7 +313,7 @@ cleanup_local() {
 trap cleanup_local EXIT HUP INT TERM
 
 verify_source() {
-  local group_json source_image source_template source_template_digest endpoint source_healthy=0
+  local require_health="${1:-true}" group_json source_image source_template source_template_digest endpoint source_healthy=0
   group_json="$(az group show --subscription "$subscription_id" --name "$source_resource_group" --output json --only-show-errors)"
   jq -e --arg proof "$source_proof_name" '.tags.proof == "108" and .tags.owner == "elsa-control" and (.name | length) > 0' <<<"$group_json" >/dev/null || fail "source group ownership is invalid"
   source_image="$(az containerapp show --subscription "$subscription_id" --resource-group "$source_resource_group" --name "$source_app" --query 'properties.template.containers[0].image' --output tsv --only-show-errors)"
@@ -316,15 +324,109 @@ verify_source() {
   [[ "$source_template_digest" == "$desired_revision_digest" ]] || fail "source desired revision digest does not match"
   endpoint="$(az containerapp show --subscription "$subscription_id" --resource-group "$source_resource_group" --name "$source_app" --query properties.configuration.ingress.fqdn --output tsv --only-show-errors)"
   [[ "$endpoint" == "${source_app}."*.azurecontainerapps.io ]] || fail "source endpoint is invalid"
-  for _ in {1..12}; do
-    if curl --fail --silent --show-error --max-time 30 "https://${endpoint}/health" >/dev/null 2>&1; then
-      source_healthy=1
-      break
-    fi
-    sleep 10
-  done
-  (( source_healthy == 1 )) || fail "source health could not be verified"
+  if [[ "$require_health" == true ]]; then
+    for _ in {1..12}; do
+      if curl --fail --silent --show-error --max-time 30 "https://${endpoint}/health" >/dev/null 2>&1; then
+        source_healthy=1
+        break
+      fi
+      sleep 10
+    done
+    (( source_healthy == 1 )) || fail "source health could not be verified"
+  fi
   printf '%s\n' "https://${endpoint}"
+}
+
+read_source_recovery_lock() {
+  local locks_json
+  source_recovery_lock_json=""
+  locks_json="$(az lock list --subscription "$subscription_id" --resource-group "$source_resource_group" \
+    --output json --only-show-errors 2>/dev/null)" || return 1
+  jq -e 'type == "array"' <<<"$locks_json" >/dev/null || return 1
+  source_recovery_lock_json="$(jq -c --arg id "$source_recovery_lock_id" \
+    '[.[] | select((.id | ascii_downcase) == ($id | ascii_downcase))] |
+      if length > 1 then error("ambiguous lock") else first // empty end' <<<"$locks_json")" || return 1
+}
+
+acquire_source_recovery_lock() {
+  local revision="$1" body lock_json lock_notes
+  read_source_recovery_lock || fail "source recovery lock inventory could not be read"
+  [[ -z "$source_recovery_lock_json" ]] || fail "source already has an active recovery operation"
+  source_recovery_lock_token="$(sha256_text "${recovery_id}|$$|$(utc_now)|${RANDOM}${RANDOM}")"
+  lock_notes="elsa-control-recovery|${recovery_id}|${revision}|${source_recovery_lock_token}"
+  body="$(jq -n -c --arg notes "$lock_notes" '{properties:{level:"CanNotDelete",notes:$notes}}')" || \
+    fail "source recovery lock could not be encoded"
+  lock_json="$(az rest --method put --url "https://management.azure.com${source_recovery_lock_id}?api-version=2016-09-01" \
+    --headers 'If-None-Match=*' --body "$body" --output json --only-show-errors 2>/dev/null)" || \
+    fail "source recovery lock could not be acquired"
+  jq -e --arg id "$source_recovery_lock_id" --arg notes "$lock_notes" '
+    ((.id // "") | ascii_downcase) == ($id | ascii_downcase) and
+    .properties.level == "CanNotDelete" and .properties.notes == $notes
+  ' <<<"$lock_json" >/dev/null || fail "source recovery lock identity is invalid"
+  read_source_recovery_lock || fail "source recovery lock could not be verified"
+  jq -e --arg notes "$lock_notes" '(.properties.notes // .notes // "") == $notes' <<<"$source_recovery_lock_json" >/dev/null || \
+    fail "source recovery lock ownership changed"
+  source_revisions_json="$revision"
+  source_quiesced=1
+}
+
+load_source_recovery_lock() {
+  local notes owner locked_recovery locked_revision locked_token
+  read_source_recovery_lock || return 1
+  [[ -n "$source_recovery_lock_json" ]] || return 0
+  jq -e '(.properties.level // .level // "") == "CanNotDelete"' <<<"$source_recovery_lock_json" >/dev/null || return 1
+  notes="$(jq -r '.properties.notes // .notes // empty' <<<"$source_recovery_lock_json")"
+  IFS='|' read -r owner locked_recovery locked_revision locked_token <<<"$notes"
+  [[ "$owner" == elsa-control-recovery && "$locked_recovery" == "$recovery_id" ]] || return 1
+  [[ "$locked_revision" =~ ^[A-Za-z0-9-]+$ && "$locked_token" =~ ^[a-f0-9]{64}$ ]] || return 1
+  source_revisions_json="$locked_revision"
+  source_recovery_lock_token="$locked_token"
+  source_quiesced=1
+}
+
+release_source_recovery_lock() {
+  local expected_notes
+  read_source_recovery_lock || return 1
+  [[ -n "$source_recovery_lock_json" ]] || return 1
+  expected_notes="elsa-control-recovery|${recovery_id}|${source_revisions_json}|${source_recovery_lock_token}"
+  jq -e --arg id "$source_recovery_lock_id" --arg notes "$expected_notes" '
+    ((.id // "") | ascii_downcase) == ($id | ascii_downcase) and
+    (.properties.level // .level // "") == "CanNotDelete" and
+    (.properties.notes // .notes // "") == $notes
+  ' <<<"$source_recovery_lock_json" >/dev/null || return 1
+  az lock delete --subscription "$subscription_id" --ids "$source_recovery_lock_id" --only-show-errors >/dev/null || return 1
+  for _ in {1..24}; do
+    read_source_recovery_lock || return 1
+    [[ -z "$source_recovery_lock_json" ]] && return 0
+    sleep 5
+  done
+  return 1
+}
+
+verify_sql_bootstrap_identity() {
+  local admins_json token current_object_id
+  admins_json="$(az sql server ad-admin list --subscription "$subscription_id" --resource-group "$source_resource_group" \
+    --server "$source_server" --output json --only-show-errors)" || fail "SQL administrator identity could not be read"
+  jq -e --arg object "$sql_bootstrap_object_id" --arg login "$sql_bootstrap_login" '
+    type == "array" and length == 1 and
+    (((.[0].sid // .[0].objectId // "") | ascii_downcase) == ($object | ascii_downcase)) and
+    ((.[0].login // .[0].displayName // .[0].name // "") == $login)
+  ' <<<"$admins_json" >/dev/null || fail "SQL administrator identity does not match the governed bootstrap identity"
+  token="$(az account get-access-token --resource https://database.windows.net/ --query accessToken \
+    --output tsv --only-show-errors)" || fail "SQL bootstrap access token could not be acquired"
+  current_object_id="$(printf '%s' "$token" | python3 -c '
+import base64, json, sys
+parts = sys.stdin.read().split(".")
+if len(parts) != 3:
+    raise SystemExit(1)
+payload = parts[1] + "=" * (-len(parts[1]) % 4)
+value = json.loads(base64.urlsafe_b64decode(payload))
+print(value.get("oid", ""))
+')" || fail "SQL bootstrap principal could not be identified"
+  token=""
+  valid_guid "$current_object_id" || fail "SQL bootstrap principal identity is invalid"
+  [[ "${current_object_id,,}" == "${sql_bootstrap_object_id,,}" ]] || \
+    fail "current Azure principal is not the governed SQL bootstrap identity"
 }
 
 quiesce_source() {
@@ -338,8 +440,8 @@ quiesce_source() {
   for revision in $active_revisions; do
     [[ "$revision" =~ ^[A-Za-z0-9-]+$ ]] || fail "source revision identity is invalid"
   done
+  acquire_source_recovery_lock "$active_revisions"
   source_revisions_json="$active_revisions"
-  source_quiesced=1
   for revision in $source_revisions_json; do
     az containerapp revision deactivate --subscription "$subscription_id" --resource-group "$source_resource_group" \
       --name "$source_app" --revision "$revision" --only-show-errors >/dev/null || {
@@ -370,15 +472,23 @@ quiesce_source() {
     return 1
   }
 
-  # Azure has confirmed the blocking state and all replicas are gone. Capture
-  # the cutoff immediately after that provider observation; never invent a
-  # point by subtracting an arbitrary safety interval.
+  verify_source_database_drained || {
+    echo "source database did not reach a zero-user-session and zero-transaction state" >&2
+    return 1
+  }
+
+  # Azure has confirmed the blocking state, all replicas are gone, and SQL has
+  # no other user sessions or transactions. Capture the cutoff immediately
+  # after those observations; never invent a point by subtracting an interval.
   source_quiesced_at="$(canonical_utc "$(utc_now)")" || return 1
   recovery_cutoff_utc="$source_quiesced_at"
 }
 
 resume_source() {
   local revision revisions_json expected_revisions_json active_exact source_healthy=0 revision_active
+  if (( source_quiesced == 0 )); then
+    load_source_recovery_lock || return 1
+  fi
   (( source_quiesced == 1 )) || return 0
   expected_revisions_json="$(printf '%s\n' "$source_revisions_json" | jq -Rsc 'split("\n") | map(select(length > 0)) | sort')" || return 1
   revisions_json="$(az containerapp revision list --subscription "$subscription_id" --resource-group "$source_resource_group" \
@@ -413,6 +523,10 @@ resume_source() {
     echo "CRITICAL: source was not restored to active healthy state" >&2
     return 1
   fi
+  release_source_recovery_lock || {
+    echo "CRITICAL: source recovery lock could not be released" >&2
+    return 1
+  }
   source_quiesced=0
 }
 
@@ -433,11 +547,19 @@ verify_target_group_inventory() {
 }
 
 query_target_database() {
-  local listed_databases
+  local listed_databases error_file error_text
   target_db_json=""
+  error_file="$(mktemp)"
   if target_db_json="$(az sql db show --subscription "$subscription_id" --resource-group "$source_resource_group" \
-    --server "$source_server" --name "$target_database" --output json --only-show-errors 2>/dev/null)"; then
+    --server "$source_server" --name "$target_database" --output json --only-show-errors 2>"$error_file")"; then
+    rm -f -- "$error_file"
     return 0
+  fi
+  error_text="$(<"$error_file")"
+  rm -f -- "$error_file"
+  if ! azure_cli_error_is_not_found "$error_text"; then
+    echo "Azure target database read failed; absence is unknown" >&2
+    return 1
   fi
   listed_databases="$(az sql db list --subscription "$subscription_id" --resource-group "$source_resource_group" \
     --server "$source_server" --output json --only-show-errors 2>/dev/null)" || {
@@ -449,7 +571,7 @@ query_target_database() {
 }
 
 verify_provider_restore_provenance() {
-  local deployment_json provider_point
+  local expected_manifest="$1" deployment_json deployment_operations_json provider_operation_json provider_point provider_record
   deployment_json="$(az deployment group show --subscription "$subscription_id" --resource-group "$source_resource_group" \
     --name "$database_restore_deployment" --output json --only-show-errors 2>/dev/null)" || {
     echo "Azure restore deployment provenance could not be read" >&2
@@ -463,7 +585,7 @@ verify_provider_restore_provenance() {
     recovery_cutoff_utc="$provider_point"
   fi
   jq -e --arg source "$source_db_id" --arg target "$target_database" --arg point "$provider_point" \
-    --arg manifest "$manifest_tag" --arg targetId "$target_db_id" '
+    --arg manifest "$expected_manifest" --arg targetId "$target_db_id" '
     .properties.provisioningState == "Succeeded" and
     ((.properties.parameters.sourceDatabaseId.value // "") | ascii_downcase) == ($source | ascii_downcase) and
     .properties.parameters.targetDatabaseName.value == $target and
@@ -477,6 +599,30 @@ verify_provider_restore_provenance() {
     echo "Azure restore deployment provenance is not exact" >&2
     return 1
   }
+  deployment_operations_json="$(az deployment operation group list --subscription "$subscription_id" \
+    --resource-group "$source_resource_group" --name "$database_restore_deployment" \
+    --output json --only-show-errors 2>/dev/null)" || return 1
+  provider_operation_json="$(jq -c --arg target "$target_db_id" '
+    [.[] | select(((.properties.targetResource.id // "") | ascii_downcase) == ($target | ascii_downcase) and
+      .properties.provisioningState == "Succeeded" and
+      ((.properties.targetResource.resourceType // "") | ascii_downcase) == "microsoft.sql/servers/databases")] |
+    if length == 1 then .[0] else empty end' <<<"$deployment_operations_json")" || return 1
+  [[ -n "$provider_operation_json" ]] || return 1
+  provider_record="$(jq -cS --argjson operation "$provider_operation_json" '{deployment:{id:.id,correlationId:.properties.correlationId,
+    provisioningState:.properties.provisioningState,timestamp:.properties.timestamp,
+    parameters:{sourceDatabaseId:.properties.parameters.sourceDatabaseId.value,
+      targetDatabaseName:.properties.parameters.targetDatabaseName.value,
+      restorePointUtc:.properties.parameters.restorePointUtc.value},
+    outputs:{restoredDatabaseId:.properties.outputs.restoredDatabaseId.value,
+      sourceDatabaseId:.properties.outputs.sourceDatabaseId.value,
+      restorePointUtc:.properties.outputs.restorePointUtc.value,
+      createMode:.properties.outputs.createMode.value,
+      recoveryManifestDigest:.properties.outputs.recoveryManifestDigest.value}},
+    providerOperation:{operationId:$operation.operationId,provisioningState:$operation.properties.provisioningState,
+      provisioningOperation:$operation.properties.provisioningOperation,statusCode:$operation.properties.statusCode,
+      timestamp:$operation.properties.timestamp,duration:$operation.properties.duration,
+      targetResource:$operation.properties.targetResource}}' <<<"$deployment_json")" || return 1
+  provider_restore_deployment_record="$provider_record"
   provider_restore_point_utc="$provider_point"
 }
 
@@ -550,6 +696,32 @@ delete_owned_firewall_rule() {
   return 1
 }
 
+verify_source_database_drained() {
+  local observed_count="" attempt
+  verify_sql_bootstrap_identity
+  create_owned_firewall_rule
+  for attempt in {1..24}; do
+    observed_count="$(sqlcmd -S "tcp:${source_server}.database.windows.net,1433" -d "$source_database" \
+      --authentication-method ActiveDirectoryDefault -b -h -1 -W -Q \
+      'SET NOCOUNT ON; SELECT (SELECT COUNT_BIG(*) FROM sys.dm_exec_sessions WHERE is_user_process = 1 AND session_id <> @@SPID) + (SELECT COUNT_BIG(*) FROM sys.dm_tran_session_transactions AS transactions INNER JOIN sys.dm_exec_sessions AS sessions ON sessions.session_id = transactions.session_id WHERE sessions.is_user_process = 1 AND transactions.session_id <> @@SPID);' \
+      2>/dev/null | tr -d '[:space:]')" || {
+      echo "source database drain state could not be read" >&2
+      return 1
+    }
+    [[ "$observed_count" =~ ^[0-9]+$ ]] || {
+      echo "source database drain state is invalid" >&2
+      return 1
+    }
+    if (( observed_count == 0 )); then
+      delete_owned_firewall_rule || return 1
+      source_database_drain_count=0
+      return 0
+    fi
+    (( attempt == 24 )) || sleep 5
+  done
+  return 1
+}
+
 wait_for_target_group_absence() {
   local attempt group_exists
   for attempt in {1..300}; do
@@ -562,7 +734,7 @@ wait_for_target_group_absence() {
 }
 
 purge_and_verify_target_vault() {
-  local vault_name="$1" location="$2" deleted_vaults_json vault_count attempt purge_requested=0 vault_id
+  local vault_name="$1" location="$2" expected_tombstone="$3" deleted_vaults_json vault_count attempt purge_requested=0 vault_id
   vault_id="/subscriptions/${subscription_id}/resourceGroups/${target_resource_group}/providers/Microsoft.KeyVault/vaults/${vault_name}"
   for attempt in {1..30}; do
     if deleted_vaults_json="$(az keyvault list-deleted --subscription "$subscription_id" --resource-type vault \
@@ -571,7 +743,13 @@ purge_and_verify_target_vault() {
         '[.[] | select(.name == $name and ((.properties.location // .location // "") | ascii_downcase) == ($location | ascii_downcase) and
           ((.properties.vaultId // .id // "") | ascii_downcase) == ($id | ascii_downcase))] | length' \
         <<<"$deleted_vaults_json")" || return 1
-      (( vault_count == 0 )) && return 0
+      if (( vault_count == 0 )); then
+        if (( expected_tombstone == 0 || purge_requested == 1 )); then
+          return 0
+        fi
+        (( attempt == 30 )) || sleep 5
+        continue
+      fi
       (( vault_count == 1 )) || { echo "Expected at most one deleted target vault" >&2; return 1; }
       if (( purge_requested == 0 )); then
         az keyvault purge --subscription "$subscription_id" --name "$vault_name" --location "$location" \
@@ -624,7 +802,7 @@ cleanup_owned_acr_deployment() {
 }
 
 cleanup_source_secret_assignment() {
-  local assignments_json assignment_json attempt
+  local assignments_json assignment_json assignment_principal attempt
   assignments_json="$(az role assignment list --all --subscription "$subscription_id" --output json --only-show-errors 2>/dev/null)" || {
     echo "Refusing to delete source-vault access: role-assignment inventory could not be read" >&2
     return 1
@@ -640,6 +818,14 @@ cleanup_source_secret_assignment() {
     echo "Refusing to delete source-vault access: assignment ownership is not exact" >&2
     return 1
   }
+  assignment_principal="$(jq -r '.principalId // empty' <<<"$assignment_json")"
+  valid_guid "$assignment_principal" || {
+    echo "Refusing to delete source-vault access: assignment principal is invalid" >&2
+    return 1
+  }
+  if [[ -z "${target_principal_id:-}" ]]; then
+    target_principal_id="$assignment_principal"
+  fi
   if [[ -n "${target_principal_id:-}" ]]; then
     jq -e --arg principal "$target_principal_id" '((.principalId // "") | ascii_downcase) == ($principal | ascii_downcase)' \
       <<<"$assignment_json" >/dev/null || {
@@ -710,7 +896,7 @@ fetch_bound_oci_json() {
 }
 
 lookup_owned_acr_assignment() {
-  local deployment_json deployments_json assignments_json matching_json
+  local deployment_json deployments_json assignments_json matching_json assignment_json
   acr_deployment_present=0
   if deployment_json="$(az deployment group show --subscription "$registry_subscription_id" \
     --resource-group "$registry_resource_group" --name "$acr_deployment" --output json --only-show-errors 2>/dev/null)"; then
@@ -737,10 +923,53 @@ lookup_owned_acr_assignment() {
     [[ "$(jq -r 'length' <<<"$matching_json")" -le 1 ]] || fail "target ACR assignment inventory is ambiguous"
     assignment_id="$(jq -r '.[0].id // empty' <<<"$matching_json")"
   fi
+  if [[ -n "$assignment_id" && -z "${target_principal_id:-}" ]]; then
+    assignments_json="$(az role assignment list --subscription "$registry_subscription_id" --all \
+      --output json --only-show-errors 2>/dev/null)" || fail "target ACR assignment inventory could not be read"
+    assignment_json="$(jq -c --arg id "$assignment_id" \
+      '[.[] | select((.id | ascii_downcase) == ($id | ascii_downcase))] |
+        if length > 1 then error("ambiguous assignment") else first // empty end' <<<"$assignments_json")" || \
+      fail "target ACR assignment inventory is ambiguous"
+    if [[ -n "$assignment_json" ]]; then
+      jq -e --arg scope "$registry_id" --arg role "7f951dda-4ed3-4680-a7ca-43fe172d538d" '
+        ((.scope // "") | ascii_downcase) == ($scope | ascii_downcase) and
+        (((.roleDefinitionId // "") | split("/") | last) | ascii_downcase) == $role and
+        (.principalType // "") == "ServicePrincipal"
+      ' <<<"$assignment_json" >/dev/null || fail "target ACR assignment ownership is invalid"
+      target_principal_id="$(jq -r '.principalId // empty' <<<"$assignment_json")"
+      valid_guid "$target_principal_id" || fail "target ACR assignment principal is invalid"
+    fi
+  fi
+}
+
+verify_no_target_state_without_manifest() {
+  local group_exists deployments_json assignments_json deleted_vaults_json
+  group_exists="$(az group exists --subscription "$subscription_id" --name "$target_resource_group" \
+    --output tsv --only-show-errors)" || return 1
+  [[ "$group_exists" == false ]] || return 1
+  query_target_database || return 1
+  [[ -z "$target_db_json" ]] || return 1
+  deployments_json="$(az deployment group list --subscription "$subscription_id" --resource-group "$source_resource_group" \
+    --output json --only-show-errors)" || return 1
+  jq -e --arg name "$database_restore_deployment" '[.[] | select(.name == $name)] | length == 0' \
+    <<<"$deployments_json" >/dev/null || return 1
+  deployments_json="$(az deployment group list --subscription "$registry_subscription_id" --resource-group "$registry_resource_group" \
+    --output json --only-show-errors)" || return 1
+  jq -e --arg name "$acr_deployment" '[.[] | select(.name == $name)] | length == 0' \
+    <<<"$deployments_json" >/dev/null || return 1
+  assignments_json="$(az role assignment list --subscription "$subscription_id" --all \
+    --output json --only-show-errors)" || return 1
+  jq -e --arg id "$source_secret_assignment_id" \
+    '[.[] | select((.id | ascii_downcase) == ($id | ascii_downcase))] | length == 0' \
+    <<<"$assignments_json" >/dev/null || return 1
+  deleted_vaults_json="$(az keyvault list-deleted --subscription "$subscription_id" --resource-type vault \
+    --output json --only-show-errors)" || return 1
+  jq -e --arg name "$target_vault" '[.[] | select(.name == $name)] | length == 0' \
+    <<<"$deleted_vaults_json" >/dev/null
 }
 
 cleanup_target() {
-  local group_exists group_json assignment_id="" vault_location cleanup_manifest_tag observed_target_principal identities_json vaults_json vault_count
+  local group_exists group_json assignment_id="" vault_location cleanup_manifest_tag observed_target_principal identities_json vaults_json vault_count=0
   local restore_deployments_json restore_deployment_count
   cleanup_manifest_tag="${manifest_tag:-sha256:${expected_manifest_digest:-}}"
   group_exists="$(az group exists --name "$target_resource_group" --subscription "$subscription_id" --output tsv --only-show-errors)"
@@ -783,7 +1012,7 @@ cleanup_target() {
     '[.[] | select(.name == $name)] | length' <<<"$restore_deployments_json")" || fail "restore deployment inventory is invalid"
   (( restore_deployment_count <= 1 )) || fail "restore deployment inventory is ambiguous"
   if (( restore_deployment_count == 1 )); then
-    verify_provider_restore_provenance || fail "restore deployment provenance is invalid during cleanup"
+    verify_provider_restore_provenance "$cleanup_manifest_tag" || fail "restore deployment provenance is invalid during cleanup"
   fi
 
   query_target_database || fail "target database existence could not be determined during cleanup"
@@ -820,12 +1049,19 @@ cleanup_target() {
       fail "target resource group deletion was not accepted"
     wait_for_target_group_absence || fail "target resource group absence was not verified"
   fi
-  purge_and_verify_target_vault "$target_vault" "${vault_location:-westeurope}" || fail "target vault purge was not verified"
+  purge_and_verify_target_vault "$target_vault" "${vault_location:-westeurope}" "$vault_count" || fail "target vault purge was not verified"
   cleanup_source_secret_assignment || fail "source-vault access cleanup was not verified"
   target_scope_started=0
 }
 
 if [[ "$mode" == cleanup ]]; then
+  source_endpoint="$(verify_source false)"
+  resume_source || fail "source recovery lock could not be reconciled"
+  if [[ -z "$expected_manifest_digest" ]]; then
+    verify_no_target_state_without_manifest || fail "target state exists; cleanup requires the sealed manifest digest"
+    echo '{"outcome":"passed","mode":"cleanup","sourceRecovered":true,"targetResourcesAbsent":true}'
+    exit 0
+  fi
   cleanup_target
   echo '{"outcome":"passed","mode":"cleanup","targetResourcesAbsent":true}'
   exit 0
@@ -843,6 +1079,8 @@ if [[ "$mode" == what-if ]]; then
     templateFingerprint="$template_fingerprint" deployWorkload=false expiryUtc="$expiry_utc" --only-show-errors
   exit 0
 fi
+
+verify_sql_bootstrap_identity
 
 fetch_bound_oci_json "$resolved_plan_reference" "resolved-plan.json" \
   "application/vnd.elsa-control.resolved-plan.v1+json" "$temp_dir/resolved-plan.json" "$temp_dir/resolved-plan-oci.json"
@@ -901,13 +1139,22 @@ post_committed_at="$(jq -r '.evidence.finishedAt // empty' "$temp_dir/post.json"
 [[ -n "$post_committed_at" ]] || fail "post-point workflow timestamp is missing"
 not_after "$restore_point_utc" "$post_committed_at" || fail "post-point marker did not follow the selected point"
 
+provider_snapshot_plan="$(jq -n -cS --arg deployment "$database_restore_deployment" --arg source "$source_db_id" \
+  --arg target "$target_db_id" --arg point "$restore_point_utc" \
+  '{provider:"azure-sql-pitr",deployment:$deployment,sourceDatabaseId:$source,
+    targetDatabaseId:$target,restorePointUtc:$point,createMode:"PointInTimeRestore"}')" || \
+  fail "provider restore plan could not be canonicalized"
+provider_snapshot_digest="sha256:$(sha256_text "$provider_snapshot_plan")"
+provider_snapshot_reference="snapshot://azure-sql-pitr/${database_restore_deployment}@${provider_snapshot_digest}"
+
 manifest_file="$temp_dir/recovery-manifest.json"
 jq -n -cS \
   --arg sourceProofName "$source_proof_name" --arg sourceResourceGroup "$source_resource_group" \
   --arg sourceDatabaseId "$source_db_id" --arg recoveryId "$recovery_id" \
   --arg recoveryCutoffUtc "$restore_point_utc" --arg incidentCutoffUtc "$post_committed_at" \
-  --arg sourceQuiescedAtUtc "$source_quiesced_at" --arg providerConfirmation "azure-container-apps-zero-active-zero-replica" \
-  --arg targetDatabaseId "$target_db_id" --arg image "${image_repository}@sha256:${image_digest}" --arg imageDigest "sha256:${image_digest}" \
+  --arg sourceQuiescedAtUtc "$source_quiesced_at" --arg providerConfirmation "azure-container-apps-zero-active-zero-replica-and-sql-zero-user-session-transaction" \
+  --arg providerSnapshotReference "$provider_snapshot_reference" --arg providerSnapshotDigest "$provider_snapshot_digest" \
+  --arg image "${image_repository}@sha256:${image_digest}" --arg imageDigest "sha256:${image_digest}" \
   --arg desiredRevisionId "$desired_revision_id" --arg desiredRevisionDigest "sha256:${desired_revision_digest}" \
   --arg resolvedPlanReference "$resolved_plan_reference" --arg resolvedPlanDigest "sha256:${resolved_plan_digest}" \
   --arg releaseManifestReference "$release_manifest_reference" --arg releaseManifestDigest "sha256:${release_manifest_digest}" \
@@ -915,7 +1162,7 @@ jq -n -cS \
   '{schemaVersion:1,source:{proofName:$sourceProofName,resourceGroup:$sourceResourceGroup,databaseId:$sourceDatabaseId},
     recoveryId:$recoveryId,sourceQuiescedAtUtc:$sourceQuiescedAtUtc,recoveryCutoffUtc:$recoveryCutoffUtc,
     incidentCutoffUtc:$incidentCutoffUtc,provider:"azure-sql-pitr",providerConfirmation:$providerConfirmation,
-    providerSnapshotReference:$targetDatabaseId,
+    providerSnapshot:{reference:$providerSnapshotReference,digest:$providerSnapshotDigest},
     desiredState:{revisionId:$desiredRevisionId,revisionDigest:$desiredRevisionDigest,
       resolvedPlan:{reference:$resolvedPlanReference,digest:$resolvedPlanDigest},
       releaseManifest:{reference:$releaseManifestReference,digest:$releaseManifestDigest},
@@ -955,7 +1202,7 @@ fi
 template_fingerprint="$(az bicep build --file "$target_template" --stdout | sha256_stream)"
 deploy_target() {
   local deploy_workload="$1"
-  az deployment group create --subscription "$subscription_id" --resource-group "$target_resource_group" --name "elsa129-${target_name}" \
+  az deployment group create --subscription "$subscription_id" --resource-group "$target_resource_group" --name "$target_deployment" \
     --template-file "$target_template" --parameters targetName="$target_name" imageRepository="$image_repository" imageDigest="$image_digest" \
     registryName="$registry_name" registrySubscriptionId="$registry_subscription_id" registryResourceGroupName="$registry_resource_group" \
     bootstrapObjectId="$sql_bootstrap_object_id" restoredDatabaseId="$target_db_id" recoveryPointDigest="$manifest_digest" \
@@ -1012,7 +1259,7 @@ if [[ -z "${target_db_json:-}" ]] || ! jq -e --arg id "$target_db_id" '(.id | as
   fail "target database restore was not verified"
 fi
 verify_owned_target_database "$target_db_json" "$manifest_tag" || fail "restored database ownership is invalid"
-verify_provider_restore_provenance || fail "Azure provider restore provenance was not verified"
+verify_provider_restore_provenance "$manifest_tag" || fail "Azure provider restore provenance was not verified"
 
 sql_connection_file="$temp_dir/sql-connection"
 printf 'Server=tcp:%s.database.windows.net,1433;Initial Catalog=%s;Authentication=Active Directory Managed Identity;User Id=%s;Encrypt=True;Trust Server Certificate=False;' "$source_server" "$target_database" "$target_client_id" >"$sql_connection_file"
@@ -1031,6 +1278,7 @@ target_sql_secret_uri="$(az keyvault secret show --subscription "$subscription_i
 [[ "$target_sql_secret_uri" =~ ^https://[a-z0-9-]+\.vault\.azure\.net/secrets/sql-connection/[a-f0-9]{32}$ ]] || fail "target SQL secret reference is not immutable"
 
 sed -e "s/__WORKLOAD_IDENTITY_NAME__/${target_identity}/g" -e "s/__WORKLOAD_IDENTITY_CLIENT_ID__/${target_client_id}/g" "$proof_dir/sql-bootstrap.sql" >"$temp_dir/sql-bootstrap.sql"
+verify_sql_bootstrap_identity
 create_owned_firewall_rule
 sqlcmd -S "tcp:${source_server}.database.windows.net,1433" -d "$target_database" --authentication-method ActiveDirectoryDefault -i "$temp_dir/sql-bootstrap.sql" >/dev/null
 delete_owned_firewall_rule || fail "temporary SQL firewall rule cleanup was not verified"
@@ -1053,6 +1301,15 @@ dotnet run --project "$probe_project" --no-restore -- \
   --endpoint "$target_endpoint" --environment "$target_name" --username proof-admin --password-file "$source_password_file" \
   --workflow-id "$pre_definition" --mode verify --absent-workflow-id "$post_definition" >"$temp_dir/target-workflow.json"
 jq -e '.outcome == "passed" and .result == "Finished"' "$temp_dir/target-workflow.json" >/dev/null || fail "restored workflow verification failed"
+provider_restore_evidence_record="$(jq -n -cS \
+  --argjson deployment "$provider_restore_deployment_record" \
+  --arg databaseId "$target_db_id" --arg databaseStatus "$(jq -r '.status // .properties.status // empty' <<<"$target_db_json")" \
+  --arg preDefinition "$pre_definition" --arg postDefinition "$post_definition" \
+  '{deployment:$deployment,database:{id:$databaseId,status:$databaseStatus},
+    workflowBoundary:{prePoint:$preDefinition,postPointAbsent:$postDefinition,status:"Finished"}}')" || \
+  fail "provider restore evidence could not be canonicalized"
+provider_restore_evidence_digest="sha256:$(sha256_text "$provider_restore_evidence_record")"
+provider_restore_evidence_reference="snapshot://azure-sql-pitr/${database_restore_deployment}@${provider_restore_evidence_digest}"
 cutover_eligible_at="$(utc_now)"
 rpo_seconds="$(non_negative_age_seconds "$post_committed_at" "$provider_restore_point_utc")" || fail "incident/recovery-point age could not be measured"
 rto_seconds="$(non_negative_age_seconds "$cutover_eligible_at" "$restore_accepted_at")" || fail "restore duration could not be measured"
@@ -1068,16 +1325,22 @@ jq -n \
   --arg desiredRevisionId "$desired_revision_id" --arg desiredRevisionDigest "sha256:${desired_revision_digest}" \
   --arg resolvedPlanReference "$resolved_plan_reference" --arg resolvedPlanDigest "sha256:${resolved_plan_digest}" \
   --arg releaseManifestReference "$release_manifest_reference" --arg releaseManifestDigest "sha256:${release_manifest_digest}" \
+  --arg providerSnapshotReference "$provider_snapshot_reference" --arg providerSnapshotDigest "$provider_snapshot_digest" \
+  --arg providerRestoreEvidenceReference "$provider_restore_evidence_reference" --arg providerRestoreEvidenceDigest "$provider_restore_evidence_digest" \
   --arg image "${image_repository}@sha256:${image_digest}" --arg preDefinition "$pre_definition" --arg postDefinition "$post_definition" \
-  --argjson rpoSeconds "$rpo_seconds" --argjson rtoSeconds "$rto_seconds" \
+  --argjson databaseDrainCount "$source_database_drain_count" --argjson rpoSeconds "$rpo_seconds" --argjson rtoSeconds "$rto_seconds" \
   '{schemaVersion:1,outcome:"passed",recoveryId:$recoveryId,sourceInstance:$source,targetInstance:$target,
     sourceQuiescedAtUtc:$sourceQuiescedAt,recoveryPointUtc:$restorePoint,incidentCutoffUtc:$incidentCutoff,
     earliestRestoreDateUtc:$earliestRestoreDate,manifestDigest:$manifestDigest,immutableImage:$image,
     desiredState:{revisionId:$desiredRevisionId,revisionDigest:$desiredRevisionDigest,
       resolvedPlan:{reference:$resolvedPlanReference,digest:$resolvedPlanDigest},
       releaseManifest:{reference:$releaseManifestReference,digest:$releaseManifestDigest}},
-    quiescence:{providerConfirmed:true,activeRevisionCount:0,replicaCount:0,workloadDrainScope:"container-app"},
+    providerSnapshot:{reference:$providerSnapshotReference,digest:$providerSnapshotDigest},
+    providerRestoreEvidence:{reference:$providerRestoreEvidenceReference,digest:$providerRestoreEvidenceDigest,
+      confirmation:"azure-arm-operation-succeeded-database-online-and-workflow-boundary-verified"},
+    quiescence:{providerConfirmed:true,activeRevisionCount:0,replicaCount:0,databaseUserSessionTransactionCount:$databaseDrainCount,
+      workloadDrainScope:"container-app-and-relational-session-transaction"},
     workflow:{prePoint:$preDefinition,postPointAbsent:$postDefinition,status:"Finished"},rpoSeconds:$rpoSeconds,
     rtoSeconds:$rtoSeconds,healthBeforeEligibility:true,cutoverEligible:true,trafficMutated:false,
     targetResourcesAbsent:true,sourcePreserved:true,
-    limitations:["same-region","same-logical-sql-server","no-automatic-cutover","disposable-provider-confirmed-zero-active-zero-replica-quiescence","quiescence-does-not-prove-database-drain"]}'
+    limitations:["same-region","same-logical-sql-server","no-automatic-cutover","azure-sql-database-read-does-not-rehydrate-restore-request-fields"]}'

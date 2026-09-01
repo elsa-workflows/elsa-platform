@@ -28,6 +28,9 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
             "az containerapp revision deactivate",
             "az containerapp revision list",
             "az containerapp replica list",
+            "verify_source_database_drained",
+            "sys.dm_exec_sessions",
+            "sys.dm_tran_session_transactions",
             "source_quiesced_at=\"$(canonical_utc",
             'recovery_cutoff_utc="$source_quiesced_at"',
             "provider-confirmed zero-active and zero-replica state",
@@ -46,11 +49,48 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
     def test_source_resume_is_idempotent_and_waits_for_external_health(self) -> None:
         source = self.source
         resume = source[source.index("resume_source()") : source.index("verify_target_group_inventory()")]
+        self.assertIn("load_source_recovery_lock", resume)
+        self.assertIn("release_source_recovery_lock", resume)
         self.assertIn('revision_active="$(jq -r', resume)
         self.assertIn('if [[ "$revision_active" != true ]]', resume)
         self.assertIn("for _ in {1..180}", resume)
         self.assertIn("active_exact=", resume)
         self.assertIn('curl --fail --silent --show-error --max-time 30 "$source_endpoint/health"', resume)
+
+    def test_source_quiescence_uses_a_durable_exclusive_provider_lock(self) -> None:
+        source = self.source
+        lock = source[source.index("read_source_recovery_lock()") : source.index("verify_sql_bootstrap_identity()")]
+        for expected in (
+            "Microsoft.Authorization/locks/elsa-control-recovery",
+            "If-None-Match=*",
+            'level:"CanNotDelete"',
+            "source_recovery_lock_token",
+            "az lock delete",
+        ):
+            self.assertIn(expected, source if "Microsoft.Authorization" in expected else lock)
+        cleanup = source[source.index('if [[ "$mode" == cleanup ]]') : source.index('source_endpoint="$(verify_source)"')]
+        self.assertIn('source_endpoint="$(verify_source false)"', cleanup)
+        self.assertIn("resume_source", cleanup)
+        self.assertLess(cleanup.index("resume_source"), cleanup.index("cleanup_target"))
+        self.assertIn('if [[ -z "$expected_manifest_digest" ]]', cleanup)
+        self.assertIn("verify_no_target_state_without_manifest", cleanup)
+        self.assertIn("target state exists; cleanup requires the sealed manifest digest", cleanup)
+
+    def test_sql_drain_and_bootstrap_are_bound_to_the_governed_current_identity(self) -> None:
+        source = self.source
+        identity = source[source.index("verify_sql_bootstrap_identity()") : source.index("quiesce_source()")]
+        for expected in (
+            "az sql server ad-admin list",
+            'sql_bootstrap_object_id',
+            'sql_bootstrap_login',
+            "az account get-access-token --resource https://database.windows.net/",
+            'value.get("oid", "")',
+            "current Azure principal is not the governed SQL bootstrap identity",
+        ):
+            self.assertIn(expected, identity)
+        self.assertGreaterEqual(source.count("verify_sql_bootstrap_identity"), 4)
+        self.assertIn("verify_sql_bootstrap_identity\n  create_owned_firewall_rule", source)
+        self.assertIn("verify_sql_bootstrap_identity\ncreate_owned_firewall_rule", source)
 
     def test_rpo_uses_incident_age_and_provider_restore_point(self) -> None:
         source = self.source
@@ -105,7 +145,9 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
             ".properties.outputs.sourceDatabaseId.value",
             ".properties.outputs.restorePointUtc.value",
             "PointInTimeRestore",
-            'database_restore_deployment="elsa129-db-${target_name}"',
+            'database_restore_deployment="elsa129-db-${target_name}-${recovery_id}"',
+            'target_deployment="elsa129-target-${target_name}-${recovery_id}"',
+            'acr_deployment="elsa129-${target_name}-${recovery_id}"',
             'delete_and_verify_group_deployment "$subscription_id" "$source_resource_group" "$database_restore_deployment"',
             "restore-started-utc=\"$restore_accepted_at\"",
         ):
@@ -152,6 +194,16 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
         self.assertIn('az deployment group list --subscription "$registry_subscription_id"', source)
         self.assertNotIn("wait_for_resource_group_absence \"$target_resource_group\"", source)
         self.assertNotIn("purge_and_verify_deleted_vault", source)
+        self.assertIn("verify_no_target_state_without_manifest", source)
+        self.assertIn('target_principal_id="$assignment_principal"', source)
+
+    def test_vault_cleanup_waits_for_an_expected_tombstone_before_claiming_purge(self) -> None:
+        source = self.source
+        purge = source[source.index("purge_and_verify_target_vault()") : source.index("cleanup_owned_role_assignment()")]
+        self.assertIn('expected_tombstone="$3"', purge)
+        self.assertIn("expected_tombstone == 0 || purge_requested == 1", purge)
+        self.assertIn("continue", purge)
+        self.assertIn('purge_and_verify_target_vault "$target_vault" "${vault_location:-westeurope}" "$vault_count"', source)
 
     def test_manifest_is_safe_and_sealed(self) -> None:
         source = self.source
@@ -163,6 +215,8 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
             "jq -n -cS",
             "provider:\"azure-sql-pitr\"",
             "providerConfirmation",
+            "providerSnapshotReference",
+            "providerSnapshotDigest",
             "desiredState",
             "desiredRevisionId",
             "resolvedPlanReference",
@@ -175,6 +229,35 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
             self.assertIn(expected, manifest)
         for forbidden in ("connectionString", "signingKey", "token", "secretValue", "source_password_file"):
             self.assertNotIn(forbidden, manifest)
+
+    def test_provider_restore_evidence_binds_deployment_database_and_workflow_boundary(self) -> None:
+        source = self.source
+        verifier = source[
+            source.index("verify_provider_restore_provenance()"):
+            source.index("verify_owned_target_database()")
+        ]
+        self.assertIn("provider_restore_deployment_record", verifier)
+        self.assertIn(".properties.provisioningState == \"Succeeded\"", verifier)
+        self.assertIn(".properties.outputs.recoveryManifestDigest.value", verifier)
+        self.assertIn("az deployment operation group list", verifier)
+        self.assertIn("providerOperation", verifier)
+
+        evidence = source[
+            source.index('provider_restore_evidence_record="$(jq -n -cS'):
+            source.index('cutover_eligible_at="$(utc_now)"')
+        ]
+        for expected in (
+            '--argjson deployment "$provider_restore_deployment_record"',
+            'database:{id:$databaseId,status:$databaseStatus}',
+            'workflowBoundary:{prePoint:$preDefinition,postPointAbsent:$postDefinition,status:"Finished"}',
+            'provider_restore_evidence_digest="sha256:$(sha256_text "$provider_restore_evidence_record")"',
+        ):
+            self.assertIn(expected, evidence)
+        final_evidence = source[source.index("cleanup_target\ncurl"):]
+        self.assertNotIn("providerSnapshotPlan", final_evidence)
+        self.assertNotIn("providerRestoreEvidenceRecord", final_evidence)
+        self.assertNotIn("sourceDatabaseId", final_evidence)
+        self.assertNotIn("targetDatabaseId", final_evidence)
 
     def test_oci_subjects_are_content_bound_and_reported(self) -> None:
         source = self.source

@@ -177,6 +177,14 @@ The proof has two layers:
    - remove the target and disposable source only after exact ownership/absence
      checks pass.
 
+Azure SQL PITR does not expose a durable snapshot resource identity, and its database
+GET surface does not rehydrate the accepted source/restore-point fields after the
+restore completes. The Azure adapter therefore retains a canonical opaque recovery
+handle below the provider boundary. The executable confirmation combines the
+successful exact ARM resource operation with the restored pre-point/post-point
+workflow boundary. Portable and customer/audit evidence emits only the opaque safe
+references and digests, never the handle record or Azure resource identifiers.
+
 The exercise uses General Purpose Azure SQL short-term retention configured to 35
 days. Microsoft documents transaction-log backups at approximately ten-minute
 intervals, but the exact interval is service-controlled. The proof requires the
