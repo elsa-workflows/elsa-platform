@@ -473,19 +473,21 @@ quiesce_source() {
   }
 
   verify_source_database_drained || {
-    echo "source database did not reach a zero-user-session and zero-transaction state" >&2
+    echo "source database did not reach a zero-active-request and zero-transaction state" >&2
     return 1
   }
 
   # Azure has confirmed the blocking state, all replicas are gone, and SQL has
-  # no other user sessions or transactions. Capture the cutoff immediately
-  # after those observations; never invent a point by subtracting an interval.
-  source_quiesced_at="$(canonical_utc "$(utc_now)")" || return 1
+  # no other active user requests or transactions. Sleeping connection-pool
+  # sessions are harmless once no workload replicas remain. Capture the cutoff
+  # The SQL query returns the provider clock time of the zero-work observation,
+  # so the cutoff has no client-side gap after the relational check.
+  source_quiesced_at="$source_database_drained_at"
   recovery_cutoff_utc="$source_quiesced_at"
 }
 
 resume_source() {
-  local revision revisions_json expected_revisions_json active_exact source_healthy=0 revision_active
+  local revision revisions_json expected_revisions_json active_exact foreign_active_count source_healthy=0 revision_active
   if (( source_quiesced == 0 )); then
     load_source_recovery_lock || return 1
   fi
@@ -493,6 +495,13 @@ resume_source() {
   expected_revisions_json="$(printf '%s\n' "$source_revisions_json" | jq -Rsc 'split("\n") | map(select(length > 0)) | sort')" || return 1
   revisions_json="$(az containerapp revision list --subscription "$subscription_id" --resource-group "$source_resource_group" \
     --name "$source_app" --output json --only-show-errors)" || return 1
+  foreign_active_count="$(jq -r --argjson expected "$expected_revisions_json" \
+    '[.[] | select(.properties.active == true and ((.name as $name | $expected | index($name)) == null))] | length' \
+    <<<"$revisions_json")" || return 1
+  if (( foreign_active_count != 0 )); then
+    echo "CRITICAL: source has a foreign active revision; refusing to mutate revision state" >&2
+    return 1
+  fi
   for revision in $source_revisions_json; do
     revision_active="$(jq -r --arg revision "$revision" \
       '[.[] | select(.name == $revision and .properties.active == true)] | length == 1' <<<"$revisions_json")" || return 1
@@ -697,24 +706,29 @@ delete_owned_firewall_rule() {
 }
 
 verify_source_database_drained() {
-  local observed_count="" attempt
+  local observed_line="" observed_count="" observed_at="" attempt
   verify_sql_bootstrap_identity
   create_owned_firewall_rule
   for attempt in {1..24}; do
-    observed_count="$(sqlcmd -S "tcp:${source_server}.database.windows.net,1433" -d "$source_database" \
-      --authentication-method ActiveDirectoryDefault -b -h -1 -W -Q \
-      'SET NOCOUNT ON; SELECT (SELECT COUNT_BIG(*) FROM sys.dm_exec_sessions WHERE is_user_process = 1 AND session_id <> @@SPID) + (SELECT COUNT_BIG(*) FROM sys.dm_tran_session_transactions AS transactions INNER JOIN sys.dm_exec_sessions AS sessions ON sessions.session_id = transactions.session_id WHERE sessions.is_user_process = 1 AND transactions.session_id <> @@SPID);' \
-      2>/dev/null | tr -d '[:space:]')" || {
+    observed_line="$(sqlcmd -S "tcp:${source_server}.database.windows.net,1433" -d "$source_database" \
+      --authentication-method ActiveDirectoryAzCli -b -h -1 -W -s '|' -Q \
+      "SET NOCOUNT ON; SELECT (SELECT COUNT_BIG(*) FROM sys.dm_exec_requests AS requests INNER JOIN sys.dm_exec_sessions AS sessions ON sessions.session_id = requests.session_id WHERE sessions.is_user_process = 1 AND requests.session_id <> @@SPID) + (SELECT COUNT_BIG(*) FROM sys.dm_tran_session_transactions AS transactions INNER JOIN sys.dm_exec_sessions AS sessions ON sessions.session_id = transactions.session_id WHERE sessions.is_user_process = 1 AND transactions.session_id <> @@SPID), CONVERT(varchar(33), SYSUTCDATETIME(), 127) + 'Z';" \
+      2>/dev/null | tr -d '\r' | awk 'NF { line=$0 } END { print line }')" || {
       echo "source database drain state could not be read" >&2
       return 1
     }
+    IFS='|' read -r observed_count observed_at <<<"$observed_line"
+    observed_count="$(printf '%s' "$observed_count" | tr -d '[:space:]')"
+    observed_at="$(printf '%s' "$observed_at" | tr -d '[:space:]')"
     [[ "$observed_count" =~ ^[0-9]+$ ]] || {
       echo "source database drain state is invalid" >&2
       return 1
     }
+    observed_at="$(canonical_utc "$observed_at")" || return 1
     if (( observed_count == 0 )); then
       delete_owned_firewall_rule || return 1
       source_database_drain_count=0
+      source_database_drained_at="$observed_at"
       return 0
     fi
     (( attempt == 24 )) || sleep 5
@@ -1049,7 +1063,9 @@ cleanup_target() {
       fail "target resource group deletion was not accepted"
     wait_for_target_group_absence || fail "target resource group absence was not verified"
   fi
-  purge_and_verify_target_vault "$target_vault" "${vault_location:-westeurope}" "$vault_count" || fail "target vault purge was not verified"
+  # A sealed-manifest cleanup must never treat an eventually visible tombstone
+  # as absence, even when the resource group disappeared before this process began.
+  purge_and_verify_target_vault "$target_vault" "${vault_location:-westeurope}" 1 || fail "target vault purge was not verified"
   cleanup_source_secret_assignment || fail "source-vault access cleanup was not verified"
   target_scope_started=0
 }
@@ -1152,7 +1168,7 @@ jq -n -cS \
   --arg sourceProofName "$source_proof_name" --arg sourceResourceGroup "$source_resource_group" \
   --arg sourceDatabaseId "$source_db_id" --arg recoveryId "$recovery_id" \
   --arg recoveryCutoffUtc "$restore_point_utc" --arg incidentCutoffUtc "$post_committed_at" \
-  --arg sourceQuiescedAtUtc "$source_quiesced_at" --arg providerConfirmation "azure-container-apps-zero-active-zero-replica-and-sql-zero-user-session-transaction" \
+  --arg sourceQuiescedAtUtc "$source_quiesced_at" --arg providerConfirmation "azure-container-apps-zero-active-zero-replica-and-sql-zero-active-request-transaction" \
   --arg providerSnapshotReference "$provider_snapshot_reference" --arg providerSnapshotDigest "$provider_snapshot_digest" \
   --arg image "${image_repository}@sha256:${image_digest}" --arg imageDigest "sha256:${image_digest}" \
   --arg desiredRevisionId "$desired_revision_id" --arg desiredRevisionDigest "sha256:${desired_revision_digest}" \
@@ -1280,7 +1296,7 @@ target_sql_secret_uri="$(az keyvault secret show --subscription "$subscription_i
 sed -e "s/__WORKLOAD_IDENTITY_NAME__/${target_identity}/g" -e "s/__WORKLOAD_IDENTITY_CLIENT_ID__/${target_client_id}/g" "$proof_dir/sql-bootstrap.sql" >"$temp_dir/sql-bootstrap.sql"
 verify_sql_bootstrap_identity
 create_owned_firewall_rule
-sqlcmd -S "tcp:${source_server}.database.windows.net,1433" -d "$target_database" --authentication-method ActiveDirectoryDefault -i "$temp_dir/sql-bootstrap.sql" >/dev/null
+sqlcmd -S "tcp:${source_server}.database.windows.net,1433" -d "$target_database" --authentication-method ActiveDirectoryAzCli -i "$temp_dir/sql-bootstrap.sql" >/dev/null
 delete_owned_firewall_rule || fail "temporary SQL firewall rule cleanup was not verified"
 
 deploy_target true >"$temp_dir/target-workload.json"
@@ -1338,8 +1354,8 @@ jq -n \
     providerSnapshot:{reference:$providerSnapshotReference,digest:$providerSnapshotDigest},
     providerRestoreEvidence:{reference:$providerRestoreEvidenceReference,digest:$providerRestoreEvidenceDigest,
       confirmation:"azure-arm-operation-succeeded-database-online-and-workflow-boundary-verified"},
-    quiescence:{providerConfirmed:true,activeRevisionCount:0,replicaCount:0,databaseUserSessionTransactionCount:$databaseDrainCount,
-      workloadDrainScope:"container-app-and-relational-session-transaction"},
+    quiescence:{providerConfirmed:true,activeRevisionCount:0,replicaCount:0,databaseActiveRequestTransactionCount:$databaseDrainCount,
+      workloadDrainScope:"container-app-and-relational-active-request-transaction"},
     workflow:{prePoint:$preDefinition,postPointAbsent:$postDefinition,status:"Finished"},rpoSeconds:$rpoSeconds,
     rtoSeconds:$rtoSeconds,healthBeforeEligibility:true,cutoverEligible:true,trafficMutated:false,
     targetResourcesAbsent:true,sourcePreserved:true,

@@ -29,9 +29,10 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
             "az containerapp revision list",
             "az containerapp replica list",
             "verify_source_database_drained",
+            "sys.dm_exec_requests",
             "sys.dm_exec_sessions",
             "sys.dm_tran_session_transactions",
-            "source_quiesced_at=\"$(canonical_utc",
+            'source_quiesced_at="$source_database_drained_at"',
             'recovery_cutoff_utc="$source_quiesced_at"',
             "provider-confirmed zero-active and zero-replica state",
             "resume_source",
@@ -51,6 +52,8 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
         resume = source[source.index("resume_source()") : source.index("verify_target_group_inventory()")]
         self.assertIn("load_source_recovery_lock", resume)
         self.assertIn("release_source_recovery_lock", resume)
+        self.assertIn("foreign_active_count", resume)
+        self.assertLess(resume.index("foreign_active_count"), resume.index("az containerapp revision activate"))
         self.assertIn('revision_active="$(jq -r', resume)
         self.assertIn('if [[ "$revision_active" != true ]]', resume)
         self.assertIn("for _ in {1..180}", resume)
@@ -89,6 +92,8 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
         ):
             self.assertIn(expected, identity)
         self.assertGreaterEqual(source.count("verify_sql_bootstrap_identity"), 4)
+        self.assertEqual(2, source.count("--authentication-method ActiveDirectoryAzCli"))
+        self.assertNotIn("--authentication-method ActiveDirectoryDefault", source)
         self.assertIn("verify_sql_bootstrap_identity\n  create_owned_firewall_rule", source)
         self.assertIn("verify_sql_bootstrap_identity\ncreate_owned_firewall_rule", source)
 
@@ -203,7 +208,7 @@ class AzureWorkloadRestoreProofRunbookTests(unittest.TestCase):
         self.assertIn('expected_tombstone="$3"', purge)
         self.assertIn("expected_tombstone == 0 || purge_requested == 1", purge)
         self.assertIn("continue", purge)
-        self.assertIn('purge_and_verify_target_vault "$target_vault" "${vault_location:-westeurope}" "$vault_count"', source)
+        self.assertIn('purge_and_verify_target_vault "$target_vault" "${vault_location:-westeurope}" 1', source)
 
     def test_manifest_is_safe_and_sealed(self) -> None:
         source = self.source
