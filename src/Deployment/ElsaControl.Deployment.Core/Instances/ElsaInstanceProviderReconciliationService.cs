@@ -5,7 +5,7 @@ namespace ElsaControl.Deployment.Core.Instances;
 public sealed class ElsaInstanceProviderReconciliationService(
     IElsaInstanceProviderReconciliationStore store,
     IElsaInstanceProviderReconciliationPort provider,
-    TimeProvider? timeProvider = null)
+    TimeProvider? timeProvider = null) : IElsaInstanceProviderReconciliationService
 {
     public const string ConvergedCode = "provider.reconciliation.converged";
     public const string UnknownCode = "provider.reconciliation.unknown";

@@ -258,6 +258,8 @@ builder.Services.AddScoped<IElsaInstanceProviderSubmissionPort>(services =>
 builder.Services.AddScoped<IElsaInstanceProviderReconciliationPort>(services =>
     services.GetRequiredService<AzureElsaInstanceProvider>());
 builder.Services.AddScoped<ElsaInstanceProviderReconciliationService>();
+builder.Services.AddScoped<IElsaInstanceProviderReconciliationService>(services =>
+    services.GetRequiredService<ElsaInstanceProviderReconciliationService>());
 builder.Services.AddScoped<IManagedElsaInstanceApiStore, EfCoreManagedElsaInstanceApiStore>();
 builder.Services.Configure<ElsaInstanceLifecycleWorkerOptions>(builder.Configuration.GetSection(ElsaInstanceLifecycleWorkerOptions.ConfigurationSection));
 builder.Services.AddScoped<ICatalogStore, EfCoreCatalogStore>();
