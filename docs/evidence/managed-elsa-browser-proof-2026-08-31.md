@@ -7,7 +7,7 @@ Keycloak, issues and redeems the one-time handoff, opens Combined Studio without
 second login, performs an authorized Elsa API operation, rejects callback replay,
 revokes the runtime session on logout, and covers unavailable, membership-revoked,
 and expired-state failures. The Combined host fix is production-image PR #38 at
-`59f326a45937f2fc7ef0740fa41884bad22b9021`; it remains a local candidate until
+`d2f8094887b42a6977a84b3b43946fa3025216de`; it remains a local candidate until
 reviewed, merged, published, admitted, and proven from an immutable digest on Azure.
 
 ## Immutable inputs

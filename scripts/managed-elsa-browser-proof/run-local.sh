@@ -166,7 +166,7 @@ wait_for_url "Elsa Control console" "http://localhost:5173/admin/"
 npm --prefix "$repo_root/tests/Hosting/ElsaControl.Console.E2E" ci >/dev/null
 MANAGED_ELSA_BROWSER_PROOF=1 \
 MANAGED_ELSA_PROOF_DATABASE="$fixture_database" \
-MANAGED_ELSA_PROOF_RUNTIME_ORIGIN="$runtime_origin" \
+MANAGED_ELSA_PROOF_RUNTIME_ORIGIN="$runtime_origin/" \
 ADMIN_UI_BASE_URL=http://localhost:5173 \
 npm --prefix "$repo_root/tests/Hosting/ElsaControl.Console.E2E" run e2e -- managed-elsa-browser-proof.spec.ts --project=chromium --reporter=line
 

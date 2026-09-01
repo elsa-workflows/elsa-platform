@@ -8,7 +8,8 @@ const execFileAsync = promisify(execFile);
 const proofEnabled = process.env.MANAGED_ELSA_BROWSER_PROOF === "1";
 const keycloakUsername = process.env.MANAGED_ELSA_PROOF_USERNAME ?? "ada";
 const keycloakPassword = process.env.MANAGED_ELSA_PROOF_PASSWORD ?? "password";
-const runtimeOrigin = process.env.MANAGED_ELSA_PROOF_RUNTIME_ORIGIN ?? "https://runtime.localhost:7444";
+const runtimeOrigin = (process.env.MANAGED_ELSA_PROOF_RUNTIME_ORIGIN ?? "https://runtime.localhost:7444")
+  .replace(/\/+$/, "");
 const fixtureDatabase = process.env.MANAGED_ELSA_PROOF_DATABASE;
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const fixtureProject = process.env.MANAGED_ELSA_PROOF_FIXTURE_PROJECT ??
@@ -20,8 +21,14 @@ test.describe("managed Elsa browser proof", () => {
   test.skip(!proofEnabled, "Requires the isolated managed-Elsa proof fixture.");
   test.describe.configure({ mode: "serial" });
 
+  test.beforeAll(() => {
+    if (!fixtureDatabase)
+      throw new Error("MANAGED_ELSA_PROOF_DATABASE is required for the live browser proof.");
+  });
+
   test.afterEach(async () => {
-    await runFixture("restore");
+    if (fixtureDatabase)
+      await runFixture("restore");
   });
 
   test("opens a healthy instance, rejects replay, performs an authorized operation, and revokes the runtime session", async ({ page }) => {
