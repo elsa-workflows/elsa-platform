@@ -171,6 +171,38 @@ public sealed class ReleaseManifestAdmissionTests
     }
 
     [Fact]
+    public async Task Producer_present_non_array_evidence_is_rejected_instead_of_inherited()
+    {
+        var producer = JsonNode.Parse(ProducerFixture())!;
+        producer["distributions"]![0]!["evidence"] = new JsonObject();
+        RefreshProducerCanonicalDigest(producer);
+        var artifact = ProducerArtifact(producer.ToJsonString());
+
+        var admission = await new ReleaseManifestAdmissionService(
+                new StubSignatureVerifier(ProducerVerification(artifact)))
+            .AdmitAsync(artifact, new(ProducerSigner, "paid", "combined"));
+
+        Assert.False(admission.Accepted);
+        Assert.Contains(admission.Findings, x => x.Code == "evidence.array.required");
+    }
+
+    [Fact]
+    public async Task Producer_present_non_array_endpoints_are_rejected()
+    {
+        var producer = JsonNode.Parse(ProducerFixture())!;
+        producer["distributions"]![0]!["endpoints"] = new JsonObject();
+        RefreshProducerCanonicalDigest(producer);
+        var artifact = ProducerArtifact(producer.ToJsonString());
+
+        var admission = await new ReleaseManifestAdmissionService(
+                new StubSignatureVerifier(ProducerVerification(artifact)))
+            .AdmitAsync(artifact, new(ProducerSigner, "paid", "combined"));
+
+        Assert.False(admission.Accepted);
+        Assert.Contains(admission.Findings, x => x.Code == "endpoints.array.required");
+    }
+
+    [Fact]
     public async Task Producer_image_signature_subject_allows_the_optional_oci_scheme()
     {
         var producer = JsonNode.Parse(ProducerFixture())!;

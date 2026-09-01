@@ -534,8 +534,13 @@ internal static class ProducerReleaseManifestMapper
 
     private static IReadOnlyList<ProducerEvidence> ParseEvidence(JsonElement parent, string propertyName, List<ReleaseManifestAdmissionFinding> findings)
     {
-        if (!parent.TryGetProperty(propertyName, out var value) || value.ValueKind != JsonValueKind.Array)
+        if (!parent.TryGetProperty(propertyName, out var value))
             return [];
+        if (value.ValueKind != JsonValueKind.Array)
+        {
+            Add(findings, "evidence.array.required", "Producer evidence must be an array.", propertyName);
+            return [];
+        }
 
         var result = new List<ProducerEvidence>();
         foreach (var evidence in value.EnumerateArray())
@@ -616,8 +621,13 @@ internal static class ProducerReleaseManifestMapper
 
     private static IReadOnlyDictionary<string, string> ParseEndpoints(JsonElement parent, List<ReleaseManifestAdmissionFinding> findings)
     {
-        if (!parent.TryGetProperty("endpoints", out var endpoints) || endpoints.ValueKind != JsonValueKind.Array)
+        if (!parent.TryGetProperty("endpoints", out var endpoints))
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (endpoints.ValueKind != JsonValueKind.Array)
+        {
+            Add(findings, "endpoints.array.required", "Producer endpoints must be an array.", "endpoints");
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
 
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var endpoint in endpoints.EnumerateArray())
