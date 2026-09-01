@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 
-public sealed class GovernedReleaseCatalogStore(CatalogDbContext db) : IGovernedReleaseCatalogStore
+public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContext> dbOptions) : IGovernedReleaseCatalogStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -29,12 +29,17 @@ public sealed class GovernedReleaseCatalogStore(CatalogDbContext db) : IGoverned
         var identity = CatalogIdentity(entries[0]);
         var digest = Normalize(entries[0].ManifestDigest);
         var fingerprint = ProjectionFingerprint(entries);
-        var strategy = db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(() =>
-            StoreOnceAsync(entries, identity, digest, fingerprint, cancellationToken));
+        await using var strategyDb = new CatalogDbContext(dbOptions);
+        var strategy = strategyDb.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var attemptDb = new CatalogDbContext(dbOptions);
+            return await StoreOnceAsync(attemptDb, entries, identity, digest, fingerprint, cancellationToken);
+        });
     }
 
     private async Task<GovernedReleaseCatalogWriteResult> StoreOnceAsync(
+        CatalogDbContext db,
         IReadOnlyList<GovernedReleaseCatalogEntry> entries,
         string identity,
         string digest,
@@ -43,7 +48,7 @@ public sealed class GovernedReleaseCatalogStore(CatalogDbContext db) : IGoverned
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
 
-        var existing = await FindExistingCandidatesAsync(identity, digest, entries[0].RegistryClass, cancellationToken);
+        var existing = await FindExistingCandidatesAsync(db, identity, digest, entries[0].RegistryClass, cancellationToken);
         if (existing.Count != 0)
         {
             await transaction.RollbackAsync(cancellationToken);
@@ -62,7 +67,7 @@ public sealed class GovernedReleaseCatalogStore(CatalogDbContext db) : IGoverned
         {
             await transaction.RollbackAsync(cancellationToken);
             db.ChangeTracker.Clear();
-            existing = await FindExistingCandidatesAsync(identity, digest, entries[0].RegistryClass, cancellationToken);
+            existing = await FindExistingCandidatesAsync(db, identity, digest, entries[0].RegistryClass, cancellationToken);
             if (existing.Count == 0)
                 throw;
             return Existing(existing, fingerprint);
@@ -74,6 +79,7 @@ public sealed class GovernedReleaseCatalogStore(CatalogDbContext db) : IGoverned
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
+        await using var db = new CatalogDbContext(dbOptions);
         var roots = db.GovernedReleaseCatalog.AsNoTracking();
         roots = Exact(roots, query.DistributionId, x => x.DistributionId);
         roots = Exact(roots, query.ReleaseLine, x => x.ReleaseLine);
@@ -126,6 +132,7 @@ public sealed class GovernedReleaseCatalogStore(CatalogDbContext db) : IGoverned
     }
 
     private async Task<IReadOnlyList<GovernedReleaseCatalogEntity>> FindExistingCandidatesAsync(
+        CatalogDbContext db,
         string identity,
         string manifestDigest,
         string registryClass,
@@ -451,6 +458,7 @@ public sealed class GovernedReleaseCatalogStore(CatalogDbContext db) : IGoverned
         foreach (var entry in entries.Skip(1))
         {
             if (!string.Equals(entry.ManifestReference, first.ManifestReference, StringComparison.Ordinal)
+                || entry.SchemaVersion != first.SchemaVersion
                 || !string.Equals(entry.ManifestDigest, first.ManifestDigest, StringComparison.OrdinalIgnoreCase)
                 || !string.Equals(entry.PayloadDigest, first.PayloadDigest, StringComparison.OrdinalIgnoreCase)
                 || !string.Equals(entry.SignatureEvidenceReference, first.SignatureEvidenceReference, StringComparison.Ordinal)

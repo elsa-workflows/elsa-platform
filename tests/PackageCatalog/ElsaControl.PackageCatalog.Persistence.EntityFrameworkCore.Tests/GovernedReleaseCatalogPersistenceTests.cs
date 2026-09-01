@@ -10,10 +10,11 @@ public sealed class GovernedReleaseCatalogPersistenceTests
     [Fact]
     public async Task Stores_all_topologies_as_one_typed_release_aggregate()
     {
-        await using var db = await CreateMigratedContextAsync();
+        await using var database = await CreateMigratedDatabaseAsync();
+        var db = database.Context;
         var entries = CreateEntries();
 
-        var result = await new GovernedReleaseCatalogStore(db).StoreAsync(entries);
+        var result = await database.Store.StoreAsync(entries);
 
         Assert.Equal(GovernedReleaseCatalogWriteStatus.Stored, result.Status);
         Assert.Single(await db.GovernedReleaseCatalog.ToListAsync());
@@ -38,8 +39,9 @@ public sealed class GovernedReleaseCatalogPersistenceTests
     [Fact]
     public async Task Replaying_same_immutable_release_with_a_new_admission_time_is_unchanged()
     {
-        await using var db = await CreateMigratedContextAsync();
-        var store = new GovernedReleaseCatalogStore(db);
+        await using var database = await CreateMigratedDatabaseAsync();
+        var db = database.Context;
+        var store = database.Store;
         var original = CreateEntries(DateTimeOffset.UtcNow);
 
         var first = await store.StoreAsync(original);
@@ -56,8 +58,9 @@ public sealed class GovernedReleaseCatalogPersistenceTests
     [Fact]
     public async Task Projection_conflict_does_not_mutate_the_existing_aggregate()
     {
-        await using var db = await CreateMigratedContextAsync();
-        var store = new GovernedReleaseCatalogStore(db);
+        await using var database = await CreateMigratedDatabaseAsync();
+        var db = database.Context;
+        var store = database.Store;
         var original = CreateEntries();
         await store.StoreAsync(original);
 
@@ -89,8 +92,8 @@ public sealed class GovernedReleaseCatalogPersistenceTests
     [Fact]
     public async Task Query_filters_runtime_kind_capability_and_lifecycle_per_topology()
     {
-        await using var db = await CreateMigratedContextAsync();
-        var store = new GovernedReleaseCatalogStore(db);
+        await using var database = await CreateMigratedDatabaseAsync();
+        var store = database.Store;
         await store.StoreAsync(CreateEntries());
 
         var server = await store.QueryAsync(new GovernedReleaseCatalogQuery(RuntimeKind: "elsa.server"));
@@ -106,8 +109,9 @@ public sealed class GovernedReleaseCatalogPersistenceTests
     [Fact]
     public async Task Catalog_rows_are_immutable_through_the_db_context()
     {
-        await using var db = await CreateMigratedContextAsync();
-        await new GovernedReleaseCatalogStore(db).StoreAsync(CreateEntries());
+        await using var database = await CreateMigratedDatabaseAsync();
+        var db = database.Context;
+        await database.Store.StoreAsync(CreateEntries());
 
         var release = await db.GovernedReleaseCatalog.SingleAsync();
         release.ReleaseLine = "5.0";
@@ -119,7 +123,8 @@ public sealed class GovernedReleaseCatalogPersistenceTests
     [Fact]
     public async Task Mutable_image_reference_is_rejected_before_any_catalog_row_is_written()
     {
-        await using var db = await CreateMigratedContextAsync();
+        await using var database = await CreateMigratedDatabaseAsync();
+        var db = database.Context;
         var entries = CreateEntries()
             .Select(entry => entry with
             {
@@ -136,16 +141,28 @@ public sealed class GovernedReleaseCatalogPersistenceTests
             .ToArray();
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
-            new GovernedReleaseCatalogStore(db).StoreAsync(entries));
+            database.Store.StoreAsync(entries));
 
         Assert.Empty(await db.GovernedReleaseCatalog.ToListAsync());
     }
 
     [Fact]
+    public async Task Mixed_schema_versions_are_rejected_before_any_catalog_row_is_written()
+    {
+        await using var database = await CreateMigratedDatabaseAsync();
+        var entries = CreateEntries().ToArray();
+        entries[1] = entries[1] with { SchemaVersion = entries[0].SchemaVersion + 1 };
+
+        await Assert.ThrowsAsync<ArgumentException>(() => database.Store.StoreAsync(entries));
+
+        Assert.Empty(await database.Context.GovernedReleaseCatalog.ToListAsync());
+    }
+
+    [Fact]
     public async Task Arbitrary_release_lines_share_the_same_durable_query_path()
     {
-        await using var db = await CreateMigratedContextAsync();
-        var store = new GovernedReleaseCatalogStore(db);
+        await using var database = await CreateMigratedDatabaseAsync();
+        var store = database.Store;
         var releases = new[]
         {
             (Line: "3.8", Version: "3.8.0", Digit: 'a'),
@@ -173,15 +190,22 @@ public sealed class GovernedReleaseCatalogPersistenceTests
         Assert.Equal(2, selected.Count);
     }
 
-    private static async Task<CatalogDbContext> CreateMigratedContextAsync()
+    private static async Task<TestCatalogDatabase> CreateMigratedDatabaseAsync()
     {
         var options = new DbContextOptionsBuilder<CatalogDbContext>()
-            .UseSqlite("Data Source=:memory:")
+            .UseSqlite($"Data Source=release-catalog-{Guid.NewGuid():N};Mode=Memory;Cache=Shared")
             .Options;
         var db = new CatalogDbContext(options);
         await db.Database.OpenConnectionAsync();
         await db.Database.EnsureCreatedAsync();
-        return db;
+        return new TestCatalogDatabase(db, new GovernedReleaseCatalogStore(options));
+    }
+
+    private sealed record TestCatalogDatabase(
+        CatalogDbContext Context,
+        GovernedReleaseCatalogStore Store) : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync() => Context.DisposeAsync();
     }
 
     private static IReadOnlyList<GovernedReleaseCatalogEntry> CreateEntries(
