@@ -705,6 +705,11 @@ public static class DeploymentRecoveryProofContract
                 return false;
 
             var path = Uri.UnescapeDataString(uri.AbsolutePath);
+            var digestMarker = path.LastIndexOf("@sha256:", StringComparison.OrdinalIgnoreCase);
+            var locatorPath = digestMarker >= 0 ? path[..digestMarker] : path;
+            if (uri.Scheme == "oci" && locatorPath.Contains(':'))
+                return false;
+
             return !path.Split('/').Any(segment => segment is "." or "..");
         }
 

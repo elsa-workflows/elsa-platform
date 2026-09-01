@@ -289,7 +289,7 @@ delete_and_verify_group_deployment() {
     else
       error_text="$(<"$error_file")"
       rm -f -- "$error_file"
-      echo "Could not verify ACR deployment absence: Azure CLI read failed" >&2
+      echo "Could not verify deployment absence: Azure CLI read failed" >&2
       return 2
     fi
     if jq -e --arg name "$deployment_name" 'type == "array" and ([.[] | select(.name == $name)] | length == 0)' <<<"$deployments_json" >/dev/null; then
@@ -297,7 +297,7 @@ delete_and_verify_group_deployment() {
     fi
     (( attempt == max_attempts )) || sleep "$delay_seconds"
   done
-  echo "Proof-owned ACR deployment record remained observable after deletion" >&2
+  echo "Proof-owned deployment record remained observable after deletion" >&2
   return 1
 }
 

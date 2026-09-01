@@ -60,13 +60,17 @@ public sealed record DeploymentRecoveryPoint
         string desiredRevisionHash,
         string resolvedPlanReference,
         string resolvedPlanDigest,
-        IReadOnlyList<DeploymentRecoveryArtifact>? artifacts,
+        IReadOnlyList<DeploymentRecoveryArtifact> artifacts,
         string providerSnapshotReference,
         string providerSnapshotDigest,
-        IReadOnlyList<string>? requiredSecretReferenceKeys,
-        string? releaseManifestReference = null,
-        string? releaseManifestDigest = null)
+        IReadOnlyList<string> requiredSecretReferenceKeys,
+        string releaseManifestReference,
+        string releaseManifestDigest)
     {
+        ArgumentNullException.ThrowIfNull(artifacts);
+        ArgumentNullException.ThrowIfNull(requiredSecretReferenceKeys);
+        ArgumentNullException.ThrowIfNull(releaseManifestReference);
+        ArgumentNullException.ThrowIfNull(releaseManifestDigest);
         OrganizationId = organizationId;
         WorkspaceId = workspaceId;
         SourceInstanceId = sourceInstanceId;
@@ -80,12 +84,12 @@ public sealed record DeploymentRecoveryPoint
         DesiredRevisionHash = desiredRevisionHash;
         ResolvedPlanReference = resolvedPlanReference;
         ResolvedPlanDigest = resolvedPlanDigest;
-        Artifacts = artifacts?.ToArray() ?? [];
+        Artifacts = artifacts.ToArray();
         ProviderSnapshotReference = providerSnapshotReference;
         ProviderSnapshotDigest = providerSnapshotDigest;
-        RequiredSecretReferenceKeys = requiredSecretReferenceKeys?.ToArray() ?? [];
-        ReleaseManifestReference = releaseManifestReference ?? string.Empty;
-        ReleaseManifestDigest = releaseManifestDigest ?? string.Empty;
+        RequiredSecretReferenceKeys = requiredSecretReferenceKeys.ToArray();
+        ReleaseManifestReference = releaseManifestReference;
+        ReleaseManifestDigest = releaseManifestDigest;
     }
 
     public string OrganizationId { get; }
@@ -175,12 +179,15 @@ public sealed record DeploymentRecoveryRestoredState
         string desiredRevisionHash,
         string resolvedPlanReference,
         string resolvedPlanDigest,
-        IReadOnlyList<DeploymentRecoveryArtifact>? artifacts,
+        IReadOnlyList<DeploymentRecoveryArtifact> artifacts,
         string providerSnapshotReference,
         string providerSnapshotDigest,
-        string? releaseManifestReference = null,
-        string? releaseManifestDigest = null)
+        string releaseManifestReference,
+        string releaseManifestDigest)
     {
+        ArgumentNullException.ThrowIfNull(artifacts);
+        ArgumentNullException.ThrowIfNull(releaseManifestReference);
+        ArgumentNullException.ThrowIfNull(releaseManifestDigest);
         TargetInstanceId = targetInstanceId;
         SourceInstanceId = sourceInstanceId;
         RecoveryPointId = recoveryPointId;
@@ -188,11 +195,11 @@ public sealed record DeploymentRecoveryRestoredState
         DesiredRevisionHash = desiredRevisionHash;
         ResolvedPlanReference = resolvedPlanReference;
         ResolvedPlanDigest = resolvedPlanDigest;
-        Artifacts = artifacts?.ToArray() ?? [];
+        Artifacts = artifacts.ToArray();
         ProviderSnapshotReference = providerSnapshotReference;
         ProviderSnapshotDigest = providerSnapshotDigest;
-        ReleaseManifestReference = releaseManifestReference ?? string.Empty;
-        ReleaseManifestDigest = releaseManifestDigest ?? string.Empty;
+        ReleaseManifestReference = releaseManifestReference;
+        ReleaseManifestDigest = releaseManifestDigest;
     }
 
     public string TargetInstanceId { get; }
