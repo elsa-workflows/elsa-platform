@@ -27,6 +27,9 @@ public static class Elsa38CombinedProofResolutionFactory
     private const string DistributionId = "valence-runtime";
     private const string ReleaseLine = "3.8";
     private const string ImageRepository = "valenceruntimeimages.azurecr.io/runtime-combined";
+    private const string ComponentDeclarationsFormat = "central-package-declarations-v1";
+    private const string ComponentDeclarationsDigest = "sha256:1b12815e61c57e538729dc99f7fde637e9576e889d67e58a5928a0380ce7b482";
+    private const string SqlPackageVersion = "3.8.0-preview.5413";
 
     public static ElsaInstancePlanResolutionResult Create(Elsa38CombinedProofAdmission admission)
     {
@@ -48,16 +51,19 @@ public static class Elsa38CombinedProofResolutionFactory
             ResolvedElsaApplicationPlanSchema.CurrentVersion,
             new(DistributionId, ReleaseLine, admission.Version,
                 "https://github.com/valence-works/elsa-production-image", admission.SourceCommit,
-                admission.ManifestReference, admission.ManifestDigest),
+                admission.ManifestReference, admission.ManifestDigest,
+                new(
+                    ComponentDeclarationsFormat,
+                    ComponentDeclarationsDigest,
+                    [
+                        new(AzureWorkloadPlanTranslator.SqlWorkflowPackageId, SqlPackageVersion),
+                        new(AzureWorkloadPlanTranslator.SqlQuartzPackageId, SqlPackageVersion)
+                    ])),
             new("combined", [component]),
             [
                 new(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), "Elsa.Core", admission.Version,
                     admission.ImageDigest, ["elsa.server"],
-                    [new("runtime", "Elsa.Runtime", ["elsa.server"], ["workflow.runtime"])]),
-                new(Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"), AzureWorkloadPlanTranslator.SqlWorkflowPackageId,
-                    "3.8.0-preview.5413", admission.ImageDigest, ["elsa.server"], []),
-                new(Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"), AzureWorkloadPlanTranslator.SqlQuartzPackageId,
-                    "3.8.0-preview.342", admission.ImageDigest, ["elsa.server"], [])
+                    [new("runtime", "Elsa.Runtime", ["elsa.server"], ["workflow.runtime"])])
             ],
             new([
                 new("Database:ConnectionString", "string", true, true, false, "ELSA_DATABASE_CONNECTION", null, admission.SecretReferences["sql-connection"], null),
