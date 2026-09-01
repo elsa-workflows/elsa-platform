@@ -105,7 +105,9 @@ public sealed class DeploymentProofHarnessTests
             {
                 ["ResourceId"] = "stale-resource-id",
                 ["resourceId"] = "other-stale-resource-id",
-                ["Succeeded"] = "false"
+                ["Succeeded"] = "false",
+                ["Foo"] = "ordinal-first",
+                ["foo"] = "ordinal-second"
             });
 
         var report = await new DeploymentProofHarness().RunAsync(Input, Environment, provider);
@@ -114,7 +116,9 @@ public sealed class DeploymentProofHarnessTests
         var cleanup = report.Stages.Single(stage => stage.Stage == DeploymentProofStage.Cleanup);
         Assert.Equal("true", cleanup.Evidence["succeeded"]);
         Assert.Equal("fake-resource-3.8-combined", cleanup.Evidence["resourceId"]);
-        Assert.Equal(2, cleanup.Evidence.Count);
+        Assert.Equal("ordinal-first", cleanup.Evidence["Foo"]);
+        Assert.DoesNotContain("foo", cleanup.Evidence.Keys);
+        Assert.Equal(3, cleanup.Evidence.Count);
     }
 
     [Fact]

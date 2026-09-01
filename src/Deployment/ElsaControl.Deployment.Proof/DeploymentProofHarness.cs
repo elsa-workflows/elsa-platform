@@ -289,12 +289,12 @@ public sealed class DeploymentProofHarness(
     private static Dictionary<string, string> CleanupMetadata(DeploymentProofCleanup value)
     {
         var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var pair in value.SafeMetadata)
+        foreach (var pair in value.SafeMetadata.OrderBy(pair => pair.Key, StringComparer.Ordinal))
         {
             if (string.Equals(pair.Key, "succeeded", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(pair.Key, "resourceId", StringComparison.OrdinalIgnoreCase))
                 continue;
-            metadata[pair.Key] = pair.Value;
+            metadata.TryAdd(pair.Key, pair.Value);
         }
 
         metadata["succeeded"] = value.Succeeded.ToString().ToLowerInvariant();
