@@ -473,13 +473,13 @@ quiesce_source() {
   }
 
   verify_source_database_drained || {
-    echo "source database did not reach a zero-active-request and zero-transaction state" >&2
+    echo "source database did not reach a zero-active-mutation and zero-transaction state" >&2
     return 1
   }
 
   # Azure has confirmed the blocking state, all replicas are gone, and SQL has
-  # no other active user requests or transactions. Sleeping connection-pool
-  # sessions are harmless once no workload replicas remain. Capture the cutoff
+  # no other active mutation requests or transactions. Sleeping connection-pool
+  # sessions and transaction-free reads are harmless once no workload replicas remain. Capture the cutoff
   # The SQL query returns the provider clock time of the zero-work observation,
   # so the cutoff has no client-side gap after the relational check.
   source_quiesced_at="$source_database_drained_at"
@@ -712,7 +712,7 @@ verify_source_database_drained() {
   for attempt in {1..24}; do
     observed_line="$(sqlcmd -S "tcp:${source_server}.database.windows.net,1433" -d "$source_database" \
       --authentication-method ActiveDirectoryAzCli -b -h -1 -W -s '|' -Q \
-      "SET NOCOUNT ON; SELECT (SELECT COUNT_BIG(*) FROM sys.dm_exec_requests AS requests INNER JOIN sys.dm_exec_sessions AS sessions ON sessions.session_id = requests.session_id WHERE sessions.is_user_process = 1 AND requests.session_id <> @@SPID) + (SELECT COUNT_BIG(*) FROM sys.dm_tran_session_transactions AS transactions INNER JOIN sys.dm_exec_sessions AS sessions ON sessions.session_id = transactions.session_id WHERE sessions.is_user_process = 1 AND transactions.session_id <> @@SPID), CONVERT(varchar(33), SYSUTCDATETIME(), 127) + 'Z';" \
+      "SET NOCOUNT ON; SELECT (SELECT COUNT_BIG(*) FROM sys.dm_exec_requests AS requests INNER JOIN sys.dm_exec_sessions AS sessions ON sessions.session_id = requests.session_id WHERE sessions.is_user_process = 1 AND requests.session_id <> @@SPID AND requests.command <> 'SELECT') + (SELECT COUNT_BIG(*) FROM sys.dm_tran_session_transactions AS transactions INNER JOIN sys.dm_exec_sessions AS sessions ON sessions.session_id = transactions.session_id WHERE sessions.is_user_process = 1 AND transactions.session_id <> @@SPID), CONVERT(varchar(33), SYSUTCDATETIME(), 127) + 'Z';" \
       2>/dev/null | tr -d '\r' | awk 'NF { line=$0 } END { print line }')" || {
       echo "source database drain state could not be read" >&2
       return 1
@@ -1168,7 +1168,7 @@ jq -n -cS \
   --arg sourceProofName "$source_proof_name" --arg sourceResourceGroup "$source_resource_group" \
   --arg sourceDatabaseId "$source_db_id" --arg recoveryId "$recovery_id" \
   --arg recoveryCutoffUtc "$restore_point_utc" --arg incidentCutoffUtc "$post_committed_at" \
-  --arg sourceQuiescedAtUtc "$source_quiesced_at" --arg providerConfirmation "azure-container-apps-zero-active-zero-replica-and-sql-zero-active-request-transaction" \
+  --arg sourceQuiescedAtUtc "$source_quiesced_at" --arg providerConfirmation "azure-container-apps-zero-active-zero-replica-and-sql-zero-active-mutation-transaction" \
   --arg providerSnapshotReference "$provider_snapshot_reference" --arg providerSnapshotDigest "$provider_snapshot_digest" \
   --arg image "${image_repository}@sha256:${image_digest}" --arg imageDigest "sha256:${image_digest}" \
   --arg desiredRevisionId "$desired_revision_id" --arg desiredRevisionDigest "sha256:${desired_revision_digest}" \
@@ -1354,8 +1354,8 @@ jq -n \
     providerSnapshot:{reference:$providerSnapshotReference,digest:$providerSnapshotDigest},
     providerRestoreEvidence:{reference:$providerRestoreEvidenceReference,digest:$providerRestoreEvidenceDigest,
       confirmation:"azure-arm-operation-succeeded-database-online-and-workflow-boundary-verified"},
-    quiescence:{providerConfirmed:true,activeRevisionCount:0,replicaCount:0,databaseActiveRequestTransactionCount:$databaseDrainCount,
-      workloadDrainScope:"container-app-and-relational-active-request-transaction"},
+    quiescence:{providerConfirmed:true,activeRevisionCount:0,replicaCount:0,databaseActiveMutationTransactionCount:$databaseDrainCount,
+      workloadDrainScope:"container-app-and-relational-active-mutation-transaction"},
     workflow:{prePoint:$preDefinition,postPointAbsent:$postDefinition,status:"Finished"},rpoSeconds:$rpoSeconds,
     rtoSeconds:$rtoSeconds,healthBeforeEligibility:true,cutoverEligible:true,trafficMutated:false,
     targetResourcesAbsent:true,sourcePreserved:true,
