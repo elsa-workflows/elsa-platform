@@ -92,22 +92,22 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
         if (!string.IsNullOrWhiteSpace(query.TopologyId))
         {
             var topologyId = query.TopologyId.Trim().ToLowerInvariant();
-            roots = roots.Where(x => x.Topologies.Any(topology => topology.TopologyId.ToLower() == topologyId));
+            roots = roots.Where(x => x.Topologies.Any(topology => topology.TopologyId == topologyId));
         }
 
         if (!string.IsNullOrWhiteSpace(query.RuntimeKind))
         {
             var runtimeKind = query.RuntimeKind.Trim().ToLowerInvariant();
             roots = roots.Where(x => x.Topologies.Any(topology =>
-                topology.RuntimeKinds.Any(kind => kind.RuntimeKind.ToLower() == runtimeKind)));
+                topology.RuntimeKinds.Any(kind => kind.RuntimeKind == runtimeKind)));
         }
 
         if (!string.IsNullOrWhiteSpace(query.Capability))
         {
             var capability = query.Capability.Trim().ToLowerInvariant();
             roots = roots.Where(x => x.Topologies.Any(topology =>
-                topology.Capabilities.Any(item => item.Capability.ToLower() == capability)
-                || topology.Components.Any(component => component.Capabilities.Any(item => item.Capability.ToLower() == capability))));
+                topology.Capabilities.Any(item => item.Capability == capability)
+                || topology.Components.Any(component => component.Capabilities.Any(item => item.Capability == capability))));
         }
 
         var materialized = await AggregateQuery(roots)
@@ -140,7 +140,7 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
         await AggregateQuery(db.GovernedReleaseCatalog.AsNoTracking())
             .Where(x => x.CatalogIdentityHash == identity
                         || (x.ManifestDigest == manifestDigest
-                            && x.RegistryClass.ToLower() == Normalize(registryClass)))
+                            && x.RegistryClass == Normalize(registryClass)))
             .OrderBy(x => x.Id)
             .Take(2)
             .ToListAsync(cancellationToken);
@@ -184,19 +184,19 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
             SignatureEvidenceReference = first.SignatureEvidenceReference,
             SignatureEvidenceDigest = Normalize(first.SignatureEvidenceDigest),
             RegistryClass = Normalize(first.RegistryClass),
-            DistributionId = first.Distribution.Id,
-            Generation = first.Distribution.Generation,
-            ReleaseLine = first.Distribution.ReleaseLine,
-            ReleaseVersion = first.Distribution.ReleaseVersion,
-            Channel = first.Distribution.Channel,
-            ProducerLifecycle = first.Distribution.ProducerLifecycle,
+            DistributionId = Normalize(first.Distribution.Id),
+            Generation = Normalize(first.Distribution.Generation),
+            ReleaseLine = Normalize(first.Distribution.ReleaseLine),
+            ReleaseVersion = Normalize(first.Distribution.ReleaseVersion),
+            Channel = Normalize(first.Distribution.Channel),
+            ProducerLifecycle = Normalize(first.Distribution.ProducerLifecycle),
             Edition = first.Distribution.Edition,
             SourceRepository = first.Distribution.SourceRepository,
             SourceCommit = first.Distribution.SourceCommit,
             SourceRunId = first.Distribution.SourceRunId,
             // The application supplies the initial Control policy. Future policy
             // transitions update CatalogLifecycle only, never the producer fact.
-            CatalogLifecycle = first.CatalogLifecycle,
+            CatalogLifecycle = Normalize(first.CatalogLifecycle),
             AdmittedAtUtcTicks = first.AdmittedAt.UtcTicks
         };
 
@@ -205,13 +205,13 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
             var topology = new GovernedReleaseCatalogTopologyEntity
             {
                 Id = Guid.NewGuid(),
-                TopologyId = entry.Topology.Id,
+                TopologyId = Normalize(entry.Topology.Id),
                 PackageManifestSchema = entry.Topology.PackageManifestSchema
             };
             foreach (var value in entry.Topology.RuntimeKinds)
-                topology.RuntimeKinds.Add(new() { Id = Guid.NewGuid(), RuntimeKind = value });
+                topology.RuntimeKinds.Add(new() { Id = Guid.NewGuid(), RuntimeKind = Normalize(value) });
             foreach (var value in entry.Topology.Capabilities)
-                topology.Capabilities.Add(new() { Id = Guid.NewGuid(), Capability = value });
+                topology.Capabilities.Add(new() { Id = Guid.NewGuid(), Capability = Normalize(value) });
             foreach (var component in entry.Topology.ComponentVersions)
                 topology.ComponentVersions.Add(new() { Id = Guid.NewGuid(), ComponentId = component.Id, Version = component.Version });
             foreach (var evidence in entry.Topology.Evidence)
@@ -232,7 +232,7 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
                 foreach (var role in component.Roles)
                     image.Roles.Add(new() { Id = Guid.NewGuid(), Role = role });
                 foreach (var capability in component.Capabilities)
-                    image.Capabilities.Add(new() { Id = Guid.NewGuid(), Capability = capability });
+                    image.Capabilities.Add(new() { Id = Guid.NewGuid(), Capability = Normalize(capability) });
                 foreach (var endpoint in component.Endpoints)
                     image.Endpoints.Add(new()
                     {
@@ -321,9 +321,8 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
         if (string.IsNullOrWhiteSpace(value))
             return rows;
         var normalized = value.Trim().ToLowerInvariant();
-        var lowered = Expression.Call(selector.Body, typeof(string).GetMethod(nameof(string.ToLower), Type.EmptyTypes)!);
         return rows.Where(Expression.Lambda<Func<GovernedReleaseCatalogEntity, bool>>(
-            Expression.Equal(lowered, Expression.Constant(normalized)), selector.Parameters));
+            Expression.Equal(selector.Body, Expression.Constant(normalized)), selector.Parameters));
     }
 
     private static string CatalogIdentity(GovernedReleaseCatalogEntry entry) => Fingerprint(string.Join('\n',

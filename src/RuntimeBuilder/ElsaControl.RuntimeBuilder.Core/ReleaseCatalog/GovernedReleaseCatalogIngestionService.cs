@@ -155,7 +155,7 @@ public sealed class GovernedReleaseCatalogIngestionService(
     private static IReadOnlyList<string> CanonicalStrings(IEnumerable<string>? values) =>
         (values ?? [])
             .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Select(value => value.Trim())
+            .Select(value => value.Trim().ToLowerInvariant())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Order(StringComparer.OrdinalIgnoreCase)
             .ToArray();

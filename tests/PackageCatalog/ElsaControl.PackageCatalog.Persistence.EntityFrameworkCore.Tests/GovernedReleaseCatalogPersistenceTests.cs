@@ -2,6 +2,7 @@ using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models;
 using ElsaControl.RuntimeBuilder.Abstractions.ReleaseCatalog;
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
 
 namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests;
 
@@ -188,6 +189,57 @@ public sealed class GovernedReleaseCatalogPersistenceTests
             all.Select(x => x.Distribution.ReleaseLine).ToArray());
         Assert.All(selected, entry => Assert.Equal("4.1.0", entry.Distribution.ReleaseVersion));
         Assert.Equal(2, selected.Count);
+    }
+
+    [Fact]
+    public async Task Query_uses_invariant_normalized_identity_columns_under_turkish_culture()
+    {
+        await using var database = await CreateMigratedDatabaseAsync();
+        var entries = CreateEntries()
+            .Select((entry, index) => entry with
+            {
+                CatalogLifecycle = "IDENTITY",
+                Distribution = entry.Distribution with
+                {
+                    Id = "IDENTITY",
+                    Generation = "IDENTITY",
+                    Channel = "IDENTITY",
+                    ProducerLifecycle = "IDENTITY"
+                },
+                Topology = entry.Topology with
+                {
+                    Id = $"IDENTITY-{index}",
+                    RuntimeKinds = ["IDENTITY"],
+                    Capabilities = ["IDENTITY"],
+                    Components = entry.Topology.Components
+                        .Select(component => component with { Capabilities = ["IDENTITY"] })
+                        .ToArray()
+                }
+            })
+            .ToArray();
+        await database.Store.StoreAsync(entries);
+
+        var previousCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("tr-TR");
+            var result = await database.Store.QueryAsync(new GovernedReleaseCatalogQuery(
+                DistributionId: "IDENTITY",
+                Channel: "IDENTITY",
+                ProducerLifecycle: "IDENTITY",
+                CatalogLifecycle: "IDENTITY",
+                TopologyId: "IDENTITY-0",
+                RuntimeKind: "IDENTITY",
+                Capability: "IDENTITY"));
+
+            Assert.Single(result);
+            Assert.Equal("identity", result[0].Distribution.Id);
+            Assert.Equal("identity-0", result[0].Topology.Id);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
+        }
     }
 
     private static async Task<TestCatalogDatabase> CreateMigratedDatabaseAsync()
