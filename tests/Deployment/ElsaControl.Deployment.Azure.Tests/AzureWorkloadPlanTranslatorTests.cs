@@ -137,6 +137,32 @@ public sealed class AzureWorkloadPlanTranslatorTests
     }
 
     [Fact]
+    public void Manifest_payload_digest_is_admission_evidence_not_a_second_Azure_intent_identity()
+    {
+        var plan = CreatePlan();
+        var firstPlan = plan with
+        {
+            Evidence = plan.Evidence.Select(x => x.Kind == ReleaseManifestEvidenceKinds.Manifest
+                ? x with { PayloadDigest = "sha256:" + new string('c', 64) }
+                : x).ToArray()
+        };
+        var secondPlan = plan with
+        {
+            Evidence = plan.Evidence.Select(x => x.Kind == ReleaseManifestEvidenceKinds.Manifest
+                ? x with { PayloadDigest = "sha256:" + new string('d', 64) }
+                : x).ToArray()
+        };
+
+        var first = AzureWorkloadPlanTranslator.Translate(firstPlan, new("workload-a", "westeurope"));
+        var second = AzureWorkloadPlanTranslator.Translate(secondPlan, new("workload-a", "westeurope"));
+
+        Assert.True(first.IsAccepted);
+        Assert.True(second.IsAccepted);
+        Assert.Equal(first.Plan?.Fingerprint, second.Plan?.Fingerprint);
+        Assert.Equal(ManifestDigest, first.Plan?.ReleaseManifestDigest);
+    }
+
+    [Fact]
     public void Equivalent_source_commit_whitespace_does_not_change_the_provider_plan_fingerprint()
     {
         var plan = CreatePlan();

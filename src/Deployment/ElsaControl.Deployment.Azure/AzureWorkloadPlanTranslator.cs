@@ -81,7 +81,9 @@ public static class AzureWorkloadPlanTranslator
             imageDigest = component.Image.Digest.ToLowerInvariant(),
             releaseManifestReference = evidence.Reference,
             releaseManifestDigest = evidence.Digest!.ToLowerInvariant(),
-            releaseManifestPayloadDigest = evidence.PayloadDigest?.ToLowerInvariant(),
+            // The verified OCI manifest digest already binds its payload descriptor.
+            // PayloadDigest remains admission evidence in the resolved plan, not a
+            // second Azure deployment-intent identity that would be lost on resume.
             releaseManifestSignatureReference = signatureEvidence.Reference,
             releaseManifestSignatureDigest = signatureEvidence.Digest!.ToLowerInvariant(),
             secretReferences = secretReferences
