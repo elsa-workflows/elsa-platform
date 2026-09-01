@@ -41,6 +41,13 @@ catch (DeploymentProofStageException exception)
     Console.WriteLine(DeploymentProofWorkflowProbeOutput.Failure(exception.Code, exception.Message));
     return failedExitCode;
 }
+catch (PrivateCredentialFileException)
+{
+    Console.WriteLine(DeploymentProofWorkflowProbeOutput.Failure(
+        "workflow-probe.credentials.invalid",
+        "The workflow probe credential file is invalid."));
+    return failedExitCode;
+}
 catch (ArgumentException)
 {
     Console.WriteLine(DeploymentProofWorkflowProbeOutput.Failure(
@@ -117,13 +124,13 @@ file sealed class PrivateFileCredentialSource : IElsaProofCredentialSource, IAsy
         this.path = path;
         var info = new FileInfo(path);
         if (!info.Exists || info.LinkTarget is not null || info.Length is <= 0 or > MaximumCharacters * 4)
-            throw new InvalidOperationException("The private credential file is invalid.");
+            throw new PrivateCredentialFileException();
         if (!OperatingSystem.IsWindows())
         {
             var unsafeBits = UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute |
                              UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute;
             if ((File.GetUnixFileMode(path) & unsafeBits) != 0)
-                throw new InvalidOperationException("The private credential file permissions are invalid.");
+                throw new PrivateCredentialFileException();
         }
     }
 
@@ -150,10 +157,10 @@ file sealed class PrivateFileCredentialSource : IElsaProofCredentialSource, IAsy
                 count += read;
             }
             if (count is 0 or > MaximumCharacters)
-                throw new InvalidOperationException("The private credential file is invalid.");
+                throw new PrivateCredentialFileException();
             count = DeploymentProofCredentialText.TrimSingleTrailingLineEnding(buffer.AsSpan(), count);
             if (count == 0)
-                throw new InvalidOperationException("The private credential file is invalid.");
+                throw new PrivateCredentialFileException();
             return new AzureSecretLease(buffer.AsSpan(0, count));
         }
         finally
@@ -164,4 +171,8 @@ file sealed class PrivateFileCredentialSource : IElsaProofCredentialSource, IAsy
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+file sealed class PrivateCredentialFileException : Exception
+{
 }
