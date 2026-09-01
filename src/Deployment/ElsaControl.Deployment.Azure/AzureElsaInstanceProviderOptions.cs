@@ -13,7 +13,7 @@ public sealed record AzureElsaInstanceProviderOptions
     /// <summary>Fingerprint of the checked-in template authority.</summary>
     public string TemplateFingerprint { get; init; } = DefaultTemplateFingerprint;
 
-    /// <summary>Optional provider scope fingerprint bound by the runner.</summary>
+    /// <summary>Provider scope fingerprint bound by the runner.</summary>
     public string? ProviderScopeFingerprint { get; init; }
 
     public const string DefaultTemplateFingerprint =
@@ -25,7 +25,7 @@ public sealed record AzureElsaInstanceProviderOptions
             throw new InvalidOperationException("The managed-instance Azure provider is not enabled.");
         if (!IsFingerprint(TemplateFingerprint))
             throw new ArgumentException("A valid Azure template fingerprint is required.", nameof(TemplateFingerprint));
-        if (ProviderScopeFingerprint is not null && !IsFingerprint(ProviderScopeFingerprint))
+        if (!IsFingerprint(ProviderScopeFingerprint))
             throw new ArgumentException("The Azure provider scope fingerprint is invalid.", nameof(ProviderScopeFingerprint));
     }
 

@@ -25,7 +25,7 @@ public sealed class AzureElsaInstanceProviderTests
         var provider = new AzureElsaInstanceProvider(
             service,
             new CapturingOperationStore(),
-            new AzureElsaInstanceProviderOptions { Enabled = true });
+            EnabledOptions());
         var request = CreateSubmission(workspaceId, instanceId, operationId, plan);
 
         var first = await provider.SubmitAsync(request);
@@ -61,7 +61,7 @@ public sealed class AzureElsaInstanceProviderTests
         var provider = new AzureElsaInstanceProvider(
             new CapturingOperationService(operation),
             new CapturingOperationStore(operation),
-            new AzureElsaInstanceProviderOptions { Enabled = true });
+            EnabledOptions());
 
         var observation = await provider.ObserveAsync(new(
             workspaceId,
@@ -103,7 +103,7 @@ public sealed class AzureElsaInstanceProviderTests
         var provider = new AzureElsaInstanceProvider(
             new CapturingOperationService(operation),
             new CapturingOperationStore(operation),
-            new AzureElsaInstanceProviderOptions { Enabled = true });
+            EnabledOptions());
 
         var observation = await provider.ObserveAsync(new(
             workspaceId,
@@ -132,7 +132,7 @@ public sealed class AzureElsaInstanceProviderTests
         var provider = new AzureElsaInstanceProvider(
             new CapturingOperationService(null),
             new CapturingOperationStore(),
-            new AzureElsaInstanceProviderOptions { Enabled = true });
+            EnabledOptions());
 
         var observation = await provider.ObserveAsync(new(
             workspaceId,
@@ -172,7 +172,7 @@ public sealed class AzureElsaInstanceProviderTests
             new AzureElsaInstanceProviderOptions
             {
                 Enabled = true,
-                ProviderScopeFingerprint = mismatch == "scope" ? new string('b', 64) : null
+                ProviderScopeFingerprint = mismatch == "scope" ? new string('b', 64) : new string('a', 64)
             });
 
         var observation = await provider.ObserveAsync(new(
@@ -205,6 +205,22 @@ public sealed class AzureElsaInstanceProviderTests
             CreateSubmission(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), plan)));
         Assert.Empty(service.Submissions);
     }
+
+    [Fact]
+    public void Enabled_provider_requires_a_valid_scope_fingerprint()
+    {
+        Assert.Throws<ArgumentException>(() => new AzureElsaInstanceProviderOptions { Enabled = true }.Validate());
+        Assert.Throws<ArgumentException>(() => new AzureElsaInstanceProviderOptions
+        {
+            Enabled = true,
+            ProviderScopeFingerprint = "not-a-fingerprint"
+        }.Validate());
+
+        EnabledOptions().Validate();
+    }
+
+    private static AzureElsaInstanceProviderOptions EnabledOptions() =>
+        new() { Enabled = true, ProviderScopeFingerprint = new string('a', 64) };
 
     private static AzureWorkloadPlan Translate(string releaseLine, string version) =>
         AzureWorkloadPlanTranslator.Translate(
@@ -269,7 +285,8 @@ public sealed class AzureElsaInstanceProviderTests
             null,
             plan.ReleaseManifestReference,
             plan.ReleaseManifestSignatureReference,
-            plan.SecretReferences);
+            plan.SecretReferences,
+            ProviderScopeFingerprint: new string('a', 64));
 
     private sealed class CapturingOperationService(AzureProviderOperation? operation) : IAzureProviderOperationService, IAzureProviderOperationReplayService
     {

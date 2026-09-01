@@ -254,15 +254,8 @@ builder.Services.AddScoped<IElsaInstanceLifecycleResolutionInputSource>(services
 builder.Services.AddScoped<IElsaInstancePlanResolver, ElsaInstancePlanResolver>();
 builder.Services.AddScoped<ElsaInstanceLifecycleService>();
 builder.Services.AddScoped<ElsaInstanceLifecycleWorker>();
-builder.Services.Configure<AzureElsaInstanceProviderOptions>(
-    builder.Configuration.GetSection(AzureElsaInstanceProviderOptions.ConfigurationSection));
-builder.Services.AddScoped<AzureElsaInstanceProviderOptions>(services =>
-    services.GetRequiredService<IOptions<AzureElsaInstanceProviderOptions>>().Value);
-builder.Services.AddScoped<AzureElsaInstanceProvider>();
-builder.Services.AddScoped<IElsaInstanceProviderSubmissionPort>(services =>
-    services.GetRequiredService<AzureElsaInstanceProvider>());
-builder.Services.AddScoped<IElsaInstanceProviderReconciliationPort>(services =>
-    services.GetRequiredService<AzureElsaInstanceProvider>());
+var azureInstanceLifecycleEnabled = AzureInstanceLifecycleComposition.AddProviderPorts(
+    builder.Services, builder.Configuration);
 builder.Services.AddScoped<ElsaInstanceProviderReconciliationService>();
 builder.Services.AddScoped<IElsaInstanceProviderReconciliationService>(services =>
     services.GetRequiredService<ElsaInstanceProviderReconciliationService>());
@@ -406,8 +399,6 @@ if (deploymentQueueWorkerEnabled && !builder.Environment.IsEnvironment("Testing"
 var instanceLifecycleWorkerEnabled = builder.Configuration.GetValue(ElsaInstanceLifecycleWorkerOptions.ConfigurationSection + ":Enabled", false);
 if (instanceLifecycleWorkerEnabled && !builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddHostedService<ElsaInstanceLifecycleHostedService>();
-var azureInstanceLifecycleEnabled = builder.Configuration.GetValue(
-    AzureElsaInstanceProviderOptions.ConfigurationSection + ":Enabled", false);
 if (instanceLifecycleWorkerEnabled && azureInstanceLifecycleEnabled && !builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddHostedService<ElsaInstanceProviderReconciliationHostedService>();
 var azureProviderWorkerEnabled = builder.Configuration.GetValue("Deployment:AzureProvider:WorkerEnabled", false);

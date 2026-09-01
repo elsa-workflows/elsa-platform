@@ -92,6 +92,39 @@ public sealed class ElsaInstanceLifecycleWorkerTests
     }
 
     [Fact]
+    public async Task Successful_replay_upgrades_uncertain_handoff_and_stops_future_submission_replays()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var accepted = await service.CreateAsync(CreateRequest("claims-provider-replay", "create-provider-replay"));
+        store.RegisterResolutionInput(accepted.Operation.Id, ResolutionInput(accepted.Instance));
+
+        var provider = new RecordingSubmissionPort(throwOnSubmit: true);
+        await new ElsaInstanceLifecycleWorker(
+                store,
+                new RecordingResolver(SuccessfulResolution(WorkspaceId, accepted.Instance.Id)),
+                new StaticTimeProvider(Now),
+                provider,
+                store)
+            .ProcessAvailableAsync("lifecycle-worker-1");
+
+        var pendingBeforeReplay = Assert.Single(await store.ListPendingProviderOperationsAsync(16));
+        Assert.NotNull(pendingBeforeReplay.Submission);
+
+        await store.CommitProviderSubmissionAsync(new(
+            WorkspaceId,
+            accepted.Instance.Id,
+            accepted.Operation.Id,
+            accepted.Operation.AttemptNumber,
+            "provider-operation-replayed",
+            Now.AddSeconds(1)));
+
+        var pendingAfterReplay = Assert.Single(await store.ListPendingProviderOperationsAsync(16));
+        Assert.Null(pendingAfterReplay.Submission);
+        Assert.Equal("provider.submission.accepted", Assert.Single(store.DeploymentRuns).Run.RecoveryReason);
+    }
+
+    [Fact]
     public async Task In_memory_finalization_uses_store_clock_for_lease_expiry()
     {
         var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now.AddMinutes(6)));

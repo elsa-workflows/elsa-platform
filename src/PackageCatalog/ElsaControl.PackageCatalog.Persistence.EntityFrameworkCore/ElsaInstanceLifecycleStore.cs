@@ -487,7 +487,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 // that provision an explicit deployment target in the same
                 // acceptance flow (including existing migration/test fixtures).
                 if (operation.Action == ElsaInstanceOperationAction.Create &&
-                    context?.ActorAccountId is { } actorAccountId && actorAccountId != Guid.Empty)
+                    context?.ActorAccountId is { } actorAccountId && actorAccountId != Guid.Empty &&
+                    string.Equals(instance.PlacementIntent.TargetMode, "managed", StringComparison.OrdinalIgnoreCase))
                     await AddManagedDeploymentTargetAsync(instanceEntity, outbox.CreatedAt, cancellationToken);
             }
             else
@@ -1590,6 +1591,31 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         if (operation.State == ElsaInstanceOperationState.RecoveryRequired &&
             run.Status == WorkspaceDeploymentRunStatus.RecoveryRequired)
         {
+            // A provider call can be accepted remotely while its response is lost. A
+            // successful replay upgrades the uncertain marker to an accepted hand-off;
+            // subsequent polls must reconcile only and never submit again.
+            if ((operation.FailureCode == "provider.submission.uncertain" ||
+                 run.RecoveryReason == "provider.submission.uncertain") &&
+                commit.CorrelationId != "provider-submission-uncertain")
+            {
+                operation.FailureCode = null;
+                operation.FailureSummary = null;
+                operation.UpdatedAt = commit.SubmittedAt.ToUniversalTime();
+                run.RecoveryReason = "provider.submission.accepted";
+                run.WorkerId = null;
+                run.WorkerHeartbeatAt = null;
+                await dbContext.ElsaInstanceAuditEvents.AddAsync(await CreateAuditEventAsync(
+                    instance,
+                    operation,
+                    instance.ObservedLifecycle,
+                    commit.SubmittedAt,
+                    cancellationToken,
+                    "lifecycle.provider-submitted",
+                    run.Id,
+                    diagnosticCode: run.RecoveryReason), cancellationToken);
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+
             await transaction.CommitAsync(cancellationToken);
             return;
         }

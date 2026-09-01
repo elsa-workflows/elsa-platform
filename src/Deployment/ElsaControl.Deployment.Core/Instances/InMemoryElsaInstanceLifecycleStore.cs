@@ -159,9 +159,27 @@ public sealed class InMemoryElsaInstanceLifecycleStore(
                 !_instances.TryGetValue(commit.InstanceId, out var instance) ||
                 operation.InstanceId != commit.InstanceId || operation.AttemptNumber != commit.AttemptNumber)
                 throw new ElsaInstanceLifecycleConflictException("Provider submission correlation is invalid.");
-            if (operation.State is ElsaInstanceOperationState.Succeeded or ElsaInstanceOperationState.Failed or
-                ElsaInstanceOperationState.RecoveryRequired)
+            if (operation.State is ElsaInstanceOperationState.Succeeded or ElsaInstanceOperationState.Failed)
                 return Task.CompletedTask;
+            if (operation.State == ElsaInstanceOperationState.RecoveryRequired)
+            {
+                var existingRun = _deploymentRuns.Values.SingleOrDefault(x => x.Operation.Id == commit.OperationId);
+                if (existingRun is null || existingRun.Run.Status != WorkspaceDeploymentRunStatus.RecoveryRequired)
+                    throw new ElsaInstanceLifecycleConflictException("Provider submission reservation is no longer recoverable.");
+
+                // An uncertain provider call may have been accepted remotely. Once a later
+                // replay returns a concrete correlation, upgrade the durable marker so future
+                // polls reconcile only and never submit the same operation again.
+                if (existingRun.Run.RecoveryReason == "provider.submission.uncertain" &&
+                    commit.CorrelationId != "provider-submission-uncertain")
+                {
+                    _deploymentRuns[existingRun.Run.Id] = existingRun with
+                    {
+                        Run = existingRun.Run with { RecoveryReason = "provider.submission.accepted" }
+                    };
+                }
+                return Task.CompletedTask;
+            }
             if (operation.State != ElsaInstanceOperationState.Queued)
                 throw new ElsaInstanceLifecycleConflictException("Provider submission reservation is no longer queued.");
 

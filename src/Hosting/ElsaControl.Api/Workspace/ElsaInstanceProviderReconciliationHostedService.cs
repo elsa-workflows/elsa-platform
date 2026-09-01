@@ -56,6 +56,9 @@ public sealed class ElsaInstanceProviderReconciliationHostedService(
     /// </summary>
     internal async Task ProcessPendingAsync(CancellationToken stoppingToken)
     {
+        if (!options.Value.Enabled)
+            return;
+
         await using var scope = scopeFactory.CreateAsyncScope();
         var pending = scope.ServiceProvider.GetRequiredService<IElsaInstanceProviderPendingOperationStore>();
         var provider = scope.ServiceProvider.GetRequiredService<IElsaInstanceProviderSubmissionPort>();

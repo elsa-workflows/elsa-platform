@@ -42,6 +42,20 @@ public sealed class ElsaInstanceProviderReconciliationHostedServiceTests
         Assert.Equal((WorkspaceId, OperationId), Assert.Single(reconciler.Requests));
     }
 
+    [Fact]
+    public async Task Disabled_lifecycle_options_do_not_process_pending_provider_work()
+    {
+        var provider = new RecordingSubmissionPort();
+        var reconciler = new RecordingReconciliationService();
+        await using var services = CreateServices(provider, reconciler, [Pending(withSubmission: true)]);
+        var hosted = CreateHostedService(services, enabled: false);
+
+        await hosted.ProcessPendingAsync(CancellationToken.None);
+
+        Assert.Equal(0, provider.Calls);
+        Assert.Equal(0, reconciler.Calls);
+    }
+
     private static ServiceProvider CreateServices(
         IElsaInstanceProviderSubmissionPort provider,
         IElsaInstanceProviderReconciliationService reconciler,
@@ -55,10 +69,12 @@ public sealed class ElsaInstanceProviderReconciliationHostedServiceTests
         return services.BuildServiceProvider();
     }
 
-    private static ElsaInstanceProviderReconciliationHostedService CreateHostedService(ServiceProvider services) =>
+    private static ElsaInstanceProviderReconciliationHostedService CreateHostedService(
+        ServiceProvider services,
+        bool enabled = true) =>
         new(
             services.GetRequiredService<IServiceScopeFactory>(),
-            Options.Create(new ElsaInstanceLifecycleWorkerOptions { Enabled = true }),
+            Options.Create(new ElsaInstanceLifecycleWorkerOptions { Enabled = enabled }),
             NullLogger<ElsaInstanceProviderReconciliationHostedService>.Instance);
 
     private static ElsaInstanceProviderPendingOperation Pending(bool withSubmission) =>
@@ -91,7 +107,7 @@ public sealed class ElsaInstanceProviderReconciliationHostedServiceTests
             CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
-    private sealed class RecordingSubmissionPort(Exception? failure) : IElsaInstanceProviderSubmissionPort
+    private sealed class RecordingSubmissionPort(Exception? failure = null) : IElsaInstanceProviderSubmissionPort
     {
         public int Calls { get; private set; }
         public OperationCanceledException? Cancellation { get; } = failure as OperationCanceledException;
