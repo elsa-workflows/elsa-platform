@@ -199,7 +199,11 @@ delete_and_verify_role_assignment() {
       echo "Could not verify ACR role assignment absence: Azure CLI read failed" >&2
       return 2
     fi
-    if jq -e --arg id "$assignment_id" 'type == "array" and ([.[] | select((.id | ascii_downcase) == ($id | ascii_downcase))] | length == 0)' <<<"$assignments_json" >/dev/null; then
+    if ! jq -e 'type == "array"' <<<"$assignments_json" >/dev/null; then
+      echo "Could not verify ACR role assignment absence: Azure CLI output was invalid" >&2
+      return 2
+    fi
+    if jq -e --arg id "$assignment_id" '[.[] | select((.id | ascii_downcase) == ($id | ascii_downcase))] | length == 0' <<<"$assignments_json" >/dev/null; then
       return 0
     fi
     (( attempt == max_attempts )) || sleep "$delay_seconds"
@@ -292,7 +296,11 @@ delete_and_verify_group_deployment() {
       echo "Could not verify deployment absence: Azure CLI read failed" >&2
       return 2
     fi
-    if jq -e --arg name "$deployment_name" 'type == "array" and ([.[] | select(.name == $name)] | length == 0)' <<<"$deployments_json" >/dev/null; then
+    if ! jq -e 'type == "array"' <<<"$deployments_json" >/dev/null; then
+      echo "Could not verify deployment absence: Azure CLI output was invalid" >&2
+      return 2
+    fi
+    if jq -e --arg name "$deployment_name" '[.[] | select(.name == $name)] | length == 0' <<<"$deployments_json" >/dev/null; then
       return 0
     fi
     (( attempt == max_attempts )) || sleep "$delay_seconds"

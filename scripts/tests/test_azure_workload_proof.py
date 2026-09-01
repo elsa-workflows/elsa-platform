@@ -717,6 +717,26 @@ delete_and_verify_role_assignment proof-sub /subscriptions/proof/resourceGroups/
         self.assertEqual(1, result.returncode)
         self.assertIn("remained observable", result.stderr)
 
+    def test_role_cleanup_fails_closed_on_invalid_list_shape(self) -> None:
+        script = r'''
+source "$1"
+az() {
+  if [[ "$*" == *"role assignment delete"* ]]; then return 0; fi
+  printf '{"id":"not-an-array"}\n'
+}
+sleep() { echo 'sleep must not run' >&2; return 99; }
+delete_and_verify_role_assignment proof-sub /subscriptions/proof/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/acr /subscriptions/proof/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/acr/providers/Microsoft.Authorization/roleAssignments/00000000-0000-0000-0000-000000000001 4 0
+'''
+        result = subprocess.run(
+            ["bash", "-c", script, "test", str(RUNBOOK_LIB)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(2, result.returncode)
+        self.assertIn("output was invalid", result.stderr)
+        self.assertNotIn("sleep must not run", result.stderr)
+
     def test_external_deployment_cleanup_waits_for_absence(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             state = Path(temp_dir) / "state"
@@ -746,6 +766,26 @@ delete_and_verify_group_deployment proof-sub proof-rg proof-acr 4 0
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual("3", state.read_text())
             self.assertTrue(all("--subscription proof-sub" in line for line in calls.read_text().splitlines()))
+
+    def test_external_deployment_cleanup_fails_closed_on_malformed_json(self) -> None:
+        script = r'''
+source "$1"
+az() {
+  if [[ "$*" == *"deployment group delete"* ]]; then return 0; fi
+  printf 'not-json\n'
+}
+sleep() { echo 'sleep must not run' >&2; return 99; }
+delete_and_verify_group_deployment proof-sub proof-rg proof-acr 4 0
+'''
+        result = subprocess.run(
+            ["bash", "-c", script, "test", str(RUNBOOK_LIB)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(2, result.returncode)
+        self.assertIn("output was invalid", result.stderr)
+        self.assertNotIn("sleep must not run", result.stderr)
 
     def test_group_cleanup_waits_through_slow_scheduled_deletion(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
