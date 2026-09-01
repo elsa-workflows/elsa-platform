@@ -217,7 +217,13 @@ public sealed class GovernedReleaseCatalogPersistenceTests
                 }
             })
             .ToArray();
-        await database.Store.StoreAsync(entries);
+        var write = await database.Store.StoreAsync(entries);
+
+        Assert.All(write.Entries, entry =>
+        {
+            Assert.Equal(entry.Distribution.Id.ToLowerInvariant(), entry.Distribution.Id);
+            Assert.Equal(entry.Topology.Id.ToLowerInvariant(), entry.Topology.Id);
+        });
 
         var previousCulture = CultureInfo.CurrentCulture;
         try

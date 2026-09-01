@@ -61,7 +61,7 @@ public sealed class GovernedReleaseCatalogStore(DbContextOptions<CatalogDbContex
         {
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return new(GovernedReleaseCatalogWriteStatus.Stored, entries);
+            return new(GovernedReleaseCatalogWriteStatus.Stored, ToEntries(entity));
         }
         catch (DbUpdateException)
         {
