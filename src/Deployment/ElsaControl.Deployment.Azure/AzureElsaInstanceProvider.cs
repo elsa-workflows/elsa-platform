@@ -1,0 +1,122 @@
+using ElsaControl.Deployment.Abstractions.Instances;
+using ElsaControl.Deployment.Core.Instances;
+using ElsaControl.RuntimeBuilder.Abstractions.Plans;
+
+namespace ElsaControl.Deployment.Azure;
+
+/// <summary>
+/// Bridges the provider-neutral managed-instance lifecycle to the durable Azure
+/// operation store. Only immutable plan identities and safe observed facts cross
+/// this boundary; Azure resource IDs stay in the provider store.
+/// </summary>
+public sealed class AzureElsaInstanceProvider(
+    IAzureProviderOperationService operationService,
+    IAzureProviderOperationStore operationStore,
+    AzureElsaInstanceProviderOptions? options = null) :
+    IElsaInstanceProviderSubmissionPort,
+    IElsaInstanceProviderReconciliationPort
+{
+    private readonly AzureElsaInstanceProviderOptions _options = options ?? new();
+
+    public async Task<ElsaInstanceProviderSubmissionResult> SubmitAsync(
+        ElsaInstanceProviderSubmission request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        request.Validate();
+        EnsureEnabled();
+
+        var location = request.Location?.Trim();
+        if (string.IsNullOrWhiteSpace(location))
+            throw new InvalidOperationException("Managed instance provider placement is unavailable.");
+
+        var target = new AzureWorkloadTarget(WorkloadName(request.InstanceId), location);
+        var translation = AzureWorkloadPlanTranslator.Translate(request.Plan, target);
+        if (!translation.IsAccepted)
+            throw new InvalidOperationException("The resolved plan is outside the governed Azure provider profile.");
+
+        var operation = await operationService.SubmitAsync(
+            request.WorkspaceId,
+            new AzureProviderOperationSubmission(
+                IdempotencyKey(request.OperationId),
+                _options.TemplateFingerprint,
+                translation.Plan!,
+                _options.ProviderScopeFingerprint),
+            cancellationToken);
+        return new(operation.OperationIdentity, Replayed: operation.AttemptNumber > 1);
+    }
+
+    public async Task<ElsaInstanceProviderObservation> ObserveAsync(
+        ElsaInstanceProviderReconciliationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.WorkspaceId == Guid.Empty || request.InstanceId == Guid.Empty || request.OperationId == Guid.Empty ||
+            request.AttemptNumber < 1)
+            throw new ArgumentException("Provider reconciliation request identity is invalid.", nameof(request));
+        EnsureEnabled();
+
+        var operation = await operationStore.GetLatestReconcileAsync(
+            request.WorkspaceId,
+            WorkloadName(request.InstanceId),
+            _options.ProviderScopeFingerprint,
+            cancellationToken);
+        if (operation is null)
+            return Unknown(request);
+
+        var correlation = operation.OperationIdentity;
+        return operation.Status switch
+        {
+            AzureProviderOperationStatus.Succeeded when operation.Health == AzureProviderHealth.Healthy =>
+                new(ElsaInstanceProviderObservationKind.Confirmed, ElsaObservedLifecycle.Ready,
+                    ElsaInstanceProviderHealthGate.Passed, request.OperationId, request.AttemptNumber,
+                    correlation, retryEvidence: null, currentDeploymentReference: CurrentDeployment(operation)),
+            AzureProviderOperationStatus.Succeeded when operation.Health == AzureProviderHealth.Degraded =>
+                new(ElsaInstanceProviderObservationKind.Confirmed, ElsaObservedLifecycle.Ready,
+                    ElsaInstanceProviderHealthGate.Failed, request.OperationId, request.AttemptNumber,
+                    correlation, retryEvidence: null, currentDeploymentReference: CurrentDeployment(operation)),
+            AzureProviderOperationStatus.Succeeded when operation.Health == AzureProviderHealth.Unreachable =>
+                new(ElsaInstanceProviderObservationKind.Confirmed, ElsaObservedLifecycle.Ready,
+                    ElsaInstanceProviderHealthGate.Unknown, request.OperationId, request.AttemptNumber,
+                    correlation),
+            AzureProviderOperationStatus.Succeeded when operation.Health == AzureProviderHealth.Failed =>
+                new(ElsaInstanceProviderObservationKind.Confirmed, ElsaObservedLifecycle.Failed,
+                    ElsaInstanceProviderHealthGate.Failed, request.OperationId, request.AttemptNumber,
+                    correlation),
+            AzureProviderOperationStatus.Failed =>
+                new(ElsaInstanceProviderObservationKind.Confirmed, ElsaObservedLifecycle.Failed,
+                    ElsaInstanceProviderHealthGate.Failed, request.OperationId, request.AttemptNumber,
+                    correlation),
+            AzureProviderOperationStatus.Cancelled =>
+                new(ElsaInstanceProviderObservationKind.Confirmed, ElsaObservedLifecycle.Failed,
+                    ElsaInstanceProviderHealthGate.Failed, request.OperationId, request.AttemptNumber,
+                    correlation),
+            _ => new(ElsaInstanceProviderObservationKind.Confirmed, ElsaObservedLifecycle.Provisioning,
+                ElsaInstanceProviderHealthGate.Unknown, request.OperationId, request.AttemptNumber, correlation)
+        };
+    }
+
+    private void EnsureEnabled()
+    {
+        try
+        {
+            _options.Validate();
+        }
+        catch (ArgumentException)
+        {
+            throw new InvalidOperationException("Managed instance provider authority is invalid.");
+        }
+    }
+
+    private static ElsaInstanceProviderObservation Unknown(ElsaInstanceProviderReconciliationRequest request) =>
+        new(ElsaInstanceProviderObservationKind.Unknown, ElsaObservedLifecycle.Unknown,
+            ElsaInstanceProviderHealthGate.Unknown, request.OperationId, request.AttemptNumber,
+            "provider-operation-unavailable");
+
+    private static ElsaCurrentDeploymentReference? CurrentDeployment(AzureProviderOperation operation) =>
+        new(operation.OperationIdentity, $"attempt-{operation.AttemptNumber}", operation.Endpoint);
+
+    internal static string WorkloadName(Guid instanceId) => $"e{instanceId:N}"[..16];
+
+    internal static string IdempotencyKey(Guid operationId) => $"elsa-instance-operation:{operationId:D}";
+}

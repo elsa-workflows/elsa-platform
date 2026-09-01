@@ -6,8 +6,8 @@ namespace ElsaControl.Deployment.Azure.Tests;
 
 public sealed class AzureWorkloadPlanTranslatorTests
 {
-    private const string ManifestDigest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-    private const string ImageDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    internal const string ManifestDigest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    internal const string ImageDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     [Fact]
     public void Rejects_missing_inputs_without_throwing()
@@ -448,7 +448,7 @@ public sealed class AzureWorkloadPlanTranslatorTests
     }
 
     [Fact]
-    public void Later_Elsa_version_remains_data_and_is_rejected_as_provider_policy()
+    public void Later_Elsa_version_remains_data_and_is_accepted_when_admitted()
     {
         var plan = CreatePlan("5.0", "5.0.0") with
         {
@@ -457,11 +457,13 @@ public sealed class AzureWorkloadPlanTranslatorTests
 
         var result = AzureWorkloadPlanTranslator.Translate(plan, new("workload-a", "westeurope"));
 
-        Assert.Contains(result.Findings, x => x.Code == "azure.releaseLine.unsupported");
-        Assert.Equal("release.releaseLine", result.Findings.Single(x => x.Code == "azure.releaseLine.unsupported").Scope);
+        Assert.True(result.IsAccepted);
+        Assert.Empty(result.Findings);
+        Assert.Equal("5.0", result.Plan?.ReleaseLine);
+        Assert.Equal("5.0.0", result.Plan?.ElsaVersion);
     }
 
-    private static ResolvedElsaApplicationPlan CreatePlan(string releaseLine = "3.8", string version = "3.8.0-preview.5413")
+    internal static ResolvedElsaApplicationPlan CreatePlan(string releaseLine = "3.8", string version = "3.8.0-preview.5413")
     {
         var component = new ResolvedElsaComponent(
             "runtime",

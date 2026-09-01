@@ -1312,7 +1312,6 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             throw new InvalidOperationException("The Azure operation is not bound to the configured target scope.");
         if (!string.Equals(command.Plan.Topology, AzureWorkloadPlanTranslator.SupportedTopology, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(command.Plan.Isolation, AzureWorkloadPlanTranslator.SupportedIsolation, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(command.Plan.ReleaseLine, AzureWorkloadPlanTranslator.SupportedReleaseLine, StringComparison.OrdinalIgnoreCase) ||
             !BelongsToReleaseLine(command.Plan.ReleaseLine, command.Plan.ElsaVersion) ||
             !string.Equals(command.Plan.ImageRepository, SupportedImageRepository, StringComparison.Ordinal) ||
             !AzureWorkloadPlanTranslator.IsSupportedLocation(command.Plan.Location) ||

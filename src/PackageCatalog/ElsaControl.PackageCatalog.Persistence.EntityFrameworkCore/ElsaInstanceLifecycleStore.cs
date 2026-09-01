@@ -27,6 +27,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
     TimeProvider? timeProvider = null) :
     IElsaInstanceLifecycleStore,
     IElsaInstanceLifecycleWorkerStore,
+    IElsaInstanceProviderSubmissionStore,
+    IElsaInstanceProviderPendingOperationStore,
     IElsaInstanceProviderReconciliationStore,
     IElsaInstanceDeletionStore
 {
@@ -477,7 +479,17 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             var priorObservedLifecycle = storedInstance?.ObservedLifecycle;
             var instanceEntity = storedInstance ?? ToEntity(instance, outbox.CreatedAt);
             if (storedInstance is null)
+            {
                 await dbContext.ElsaInstances.AddAsync(instanceEntity, cancellationToken);
+                // API-created managed instances carry the authenticated actor
+                // context and receive their control-owned target shell here.
+                // Keep the lower-level provider-neutral store usable for callers
+                // that provision an explicit deployment target in the same
+                // acceptance flow (including existing migration/test fixtures).
+                if (operation.Action == ElsaInstanceOperationAction.Create &&
+                    context?.ActorAccountId is { } actorAccountId && actorAccountId != Guid.Empty)
+                    await AddManagedDeploymentTargetAsync(instanceEntity, outbox.CreatedAt, cancellationToken);
+            }
             else
             {
                 ApplyAggregate(instanceEntity, instance);
@@ -594,6 +606,71 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             dbContext.ChangeTracker.Clear();
             throw;
         }
+    }
+
+    /// <summary>
+    /// A managed instance owns one control-plane deployment target. Creating the
+    /// small application/environment/engine shell with the lifecycle acceptance
+    /// transaction makes an API-created instance immediately eligible for the
+    /// existing run reservation and provider queues. It contains no provider
+    /// resource identity or secret; the provider supplies those only as observed
+    /// state after a successful apply.
+    /// </summary>
+    private async Task AddManagedDeploymentTargetAsync(
+        ElsaInstanceEntity instance,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken)
+    {
+        var application = new DeploymentApplicationEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = instance.WorkspaceId,
+            Name = $"Managed {instance.Slug}",
+            Description = "Control-owned managed Elsa instance target.",
+            CreatedAt = createdAt.ToUniversalTime(),
+            UpdatedAt = createdAt.ToUniversalTime()
+        };
+        var environment = new DeploymentEnvironmentEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = instance.WorkspaceId,
+            ApplicationId = application.Id,
+            ElsaInstanceId = instance.Id,
+            Name = "managed",
+            Tier = EnvironmentTier.Production,
+            DeploymentStatus = DeploymentStatus.Blocked,
+            DriftStatus = DriftStatus.Unknown,
+            DesiredRevisionId = DeterministicGuid(instance.Id, "desired-revision"),
+            CreatedAt = createdAt.ToUniversalTime(),
+            UpdatedAt = createdAt.ToUniversalTime()
+        };
+        var engine = new WorkflowEngineEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkspaceId = instance.WorkspaceId,
+            EnvironmentId = environment.Id,
+            Name = "managed",
+            BaseUrl = "https://managed.invalid/",
+            CertificateStatus = CertificateStatus.Untrusted,
+            CredentialProvider = "provider-managed",
+            CredentialReference = $"managed-instance:{instance.Id:D}",
+            CredentialAssignmentStatus = EngineCredentialAssignmentStatus.Deferred,
+            CredentialVerificationStatus = CredentialVerificationStatus.NotVerifiable,
+            Health = DeploymentHealth.Unreachable,
+            VerificationMessage = "The managed provider has not established a healthy endpoint.",
+            HostingProvider = "managed",
+            CreatedAt = createdAt.ToUniversalTime(),
+            UpdatedAt = createdAt.ToUniversalTime()
+        };
+        environment.Engines.Add(engine);
+        application.Environments.Add(environment);
+        await dbContext.DeploymentApplications.AddAsync(application, cancellationToken);
+    }
+
+    private static Guid DeterministicGuid(Guid seed, string purpose)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes($"elsa-control:{purpose}:{seed:D}"));
+        return new Guid(bytes[..16]);
     }
 
     private async Task<ElsaInstanceLifecycleAcceptance?> TryReplayCommittedAcceptanceAsync(
@@ -1473,6 +1550,191 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         {
             dbContext.ChangeTracker.Clear();
             throw;
+        }
+    }
+
+    public async Task CommitProviderSubmissionAsync(
+        ElsaInstanceProviderSubmissionCommit commit,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(commit);
+        commit.Validate();
+        dbContext.ChangeTracker.Clear();
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable, cancellationToken);
+        var operation = await dbContext.ElsaInstanceOperations.SingleOrDefaultAsync(
+            x => x.WorkspaceId == commit.WorkspaceId && x.Id == commit.OperationId,
+            cancellationToken);
+        var instance = operation?.InstanceId is { } instanceId
+            ? await LoadTrackedInstanceAsync(instanceId, cancellationToken)
+            : null;
+        var run = operation?.DeploymentRunId is { } runId
+            ? await dbContext.DeploymentRuns.SingleOrDefaultAsync(
+                x => x.WorkspaceId == commit.WorkspaceId && x.Id == runId,
+                cancellationToken)
+            : null;
+        if (operation is null || instance is null || run is null ||
+            operation.InstanceId != commit.InstanceId || operation.AttemptNumber != commit.AttemptNumber ||
+            instance.Id != commit.InstanceId || instance.WorkspaceId != commit.WorkspaceId ||
+            run.ElsaInstanceId != commit.InstanceId)
+            throw Conflict("Provider submission correlation is invalid.");
+
+        if (operation.State is ElsaInstanceOperationState.Succeeded or ElsaInstanceOperationState.Failed)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return;
+        }
+
+        if (operation.State == ElsaInstanceOperationState.RecoveryRequired &&
+            run.Status == WorkspaceDeploymentRunStatus.RecoveryRequired)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return;
+        }
+
+        if (operation.State != ElsaInstanceOperationState.Queued ||
+            run.Status != WorkspaceDeploymentRunStatus.Queued)
+            throw Conflict("Provider submission reservation is no longer queued.");
+
+        operation.State = ElsaInstanceOperationState.RecoveryRequired;
+        operation.FailureCode = commit.CorrelationId == "provider-submission-uncertain"
+            ? "provider.submission.uncertain"
+            : null;
+        operation.FailureSummary = null;
+        operation.WorkerId = null;
+        operation.LeaseTokenHash = null;
+        operation.LeaseExpiresAt = null;
+        operation.HeartbeatAt = null;
+        operation.UpdatedAt = commit.SubmittedAt.ToUniversalTime();
+        run.Status = WorkspaceDeploymentRunStatus.RecoveryRequired;
+        run.RecoveryReason = commit.CorrelationId == "provider-submission-uncertain"
+            ? "provider.submission.uncertain"
+            : "provider.submission.accepted";
+        run.WorkerId = null;
+        run.WorkerHeartbeatAt = null;
+        await dbContext.ElsaInstanceAuditEvents.AddAsync(await CreateAuditEventAsync(
+            instance,
+            operation,
+            instance.ObservedLifecycle,
+            commit.SubmittedAt,
+            cancellationToken,
+            "lifecycle.provider-submitted",
+            run.Id,
+            diagnosticCode: run.RecoveryReason), cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ElsaInstanceProviderPendingOperation>> ListPendingProviderOperationsAsync(
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        if (limit is < 1 or > 256)
+            throw new ArgumentOutOfRangeException(nameof(limit));
+        dbContext.ChangeTracker.Clear();
+        var operationEntities = await dbContext.ElsaInstanceOperations
+            .AsNoTracking()
+            .Where(operation => operation.InstanceId != null &&
+                                (operation.State == ElsaInstanceOperationState.Queued ||
+                                 operation.State == ElsaInstanceOperationState.RecoveryRequired) &&
+                                operation.DeploymentRunId != null &&
+                                dbContext.DeploymentRuns.Any(run =>
+                                    run.Id == operation.DeploymentRunId &&
+                                    run.WorkspaceId == operation.WorkspaceId &&
+                                    run.ElsaInstanceId == operation.InstanceId &&
+                                    (run.Status == WorkspaceDeploymentRunStatus.Queued ||
+                                     run.Status == WorkspaceDeploymentRunStatus.RecoveryRequired)))
+            .OrderBy(operation => operation.UpdatedAt)
+            .ThenBy(operation => operation.Id)
+            .Take(limit)
+            .ToArrayAsync(cancellationToken);
+
+        var pending = new List<ElsaInstanceProviderPendingOperation>(operationEntities.Length);
+        foreach (var operation in operationEntities)
+        {
+            if (operation.InstanceId is not { } instanceId || operation.DeploymentRunId is not { } runId ||
+                operation.ResolvedPlanId is null)
+            {
+                pending.Add(new(operation.WorkspaceId, operation.Id));
+                continue;
+            }
+
+            // The worker may have crashed after the provider operation was
+            // submitted but before the hand-off marker was committed. Rebuild
+            // the typed submission from the immutable plan/run records so the
+            // next poll can safely replay the same provider idempotency key.
+            var instance = await dbContext.ElsaInstances.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.WorkspaceId == operation.WorkspaceId && x.Id == instanceId,
+                    cancellationToken);
+            var run = await dbContext.DeploymentRuns.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.WorkspaceId == operation.WorkspaceId && x.Id == runId &&
+                                           x.ElsaInstanceId == instanceId,
+                    cancellationToken);
+            var plan = await dbContext.ElsaInstanceResolvedPlans.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.WorkspaceId == operation.WorkspaceId &&
+                                           x.InstanceId == instanceId && x.PlanId == operation.ResolvedPlanId,
+                    cancellationToken);
+
+            if (instance is null || run is null || plan is null ||
+                !TryRestoreResolvedPlan(plan, operation.ResolvedPlanId, out var resolvedPlan))
+            {
+                pending.Add(new(operation.WorkspaceId, operation.Id));
+                continue;
+            }
+
+            var target = new ElsaInstanceLifecycleDeploymentTarget(
+                run.ApplicationId,
+                run.EnvironmentId,
+                run.EngineId,
+                run.SourceRevisionId,
+                run.ConfirmationId,
+                run.ActorAccountId);
+            try
+            {
+                target.Validate();
+                pending.Add(new(
+                    operation.WorkspaceId,
+                    operation.Id,
+                    new ElsaInstanceProviderSubmission(
+                        operation.WorkspaceId,
+                        instanceId,
+                        operation.Id,
+                        operation.AttemptNumber,
+                        (ElsaDesiredLifecycle)instance.DesiredLifecycle,
+                        resolvedPlan,
+                        target,
+                        instance.RegionCode)));
+            }
+            catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+            {
+                pending.Add(new(operation.WorkspaceId, operation.Id));
+            }
+        }
+
+        return pending;
+    }
+
+    private static bool TryRestoreResolvedPlan(
+        ElsaInstanceResolvedPlanEntity entity,
+        string expectedPlanId,
+        out ResolvedElsaApplicationPlan plan)
+    {
+        plan = null!;
+        try
+        {
+            var restored = ResolvedElsaApplicationPlanSerialization.Deserialize(entity.SerializedPlan);
+            if (!string.Equals(restored.SchemaVersion, entity.SchemaVersion.ToString(), StringComparison.Ordinal) ||
+                !string.Equals(ResolvedElsaApplicationPlanSerialization.ComputeContentHash(restored), entity.ContentHash,
+                    StringComparison.Ordinal) ||
+                ResolvedElsaApplicationPlanValidator.Validate(restored).Count != 0 ||
+                !string.Equals(expectedPlanId, entity.PlanId, StringComparison.Ordinal))
+                return false;
+            plan = restored;
+            return true;
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or FormatException or JsonException or NotSupportedException)
+        {
+            return false;
         }
     }
 

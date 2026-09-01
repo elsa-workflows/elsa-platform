@@ -27,7 +27,12 @@ public static class AzureWorkloadPlanTranslator
         !string.IsNullOrWhiteSpace(location) && SupportedLocations.Contains(location.Trim());
     public const string SupportedTopology = "combined";
     public const string SupportedIsolation = "Dedicated";
-    public const string SupportedReleaseLine = "3.8";
+    /// <summary>
+    /// Release lines are governed catalog data, not a finite provider enum. The
+    /// provider profile validates the immutable image/evidence shape while the
+    /// catalog admission boundary determines which Elsa versions are available.
+    /// </summary>
+    public const string SupportedReleaseLine = "*";
     public const string SupportedRegistryClass = "paid";
     public const string SupportedRegistryHost = "valenceruntimeimages.azurecr.io";
     public static AzureWorkloadPlanTranslation Translate(
@@ -149,9 +154,6 @@ public static class AzureWorkloadPlanTranslator
 
         if (!string.Equals(plan.Isolation, SupportedIsolation, StringComparison.OrdinalIgnoreCase))
             findings.Add(new("azure.isolation.unsupported", "The requested isolation profile is not supported by the initial Azure provider profile.", "isolation"));
-
-        if (plan.Release is not null && !string.Equals(plan.Release.ReleaseLine, SupportedReleaseLine, StringComparison.OrdinalIgnoreCase))
-            findings.Add(new("azure.releaseLine.unsupported", "The requested Elsa release line is not supported by the initial Azure provider profile.", "release.releaseLine"));
 
         if (plan.Network is not null &&
             (!string.Equals(plan.Network.Ingress, "public", StringComparison.OrdinalIgnoreCase) ||

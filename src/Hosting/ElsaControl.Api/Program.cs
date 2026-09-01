@@ -240,12 +240,24 @@ builder.Services.AddCatalogDbContext(builder.Configuration);
 builder.Services.AddScoped<EfCoreElsaInstanceLifecycleStore>();
 builder.Services.AddScoped<IElsaInstanceLifecycleStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
 builder.Services.AddScoped<IElsaInstanceLifecycleWorkerStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
+builder.Services.AddScoped<IElsaInstanceProviderSubmissionStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
+builder.Services.AddScoped<IElsaInstanceProviderPendingOperationStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
 builder.Services.AddScoped<IElsaInstanceProviderReconciliationStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
 builder.Services.AddScoped<IElsaInstanceDeletionStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
-builder.Services.AddScoped<IElsaInstanceLifecycleResolutionInputSource, UnavailableElsaInstanceLifecycleResolutionInputSource>();
+builder.Services.AddScoped<IElsaInstanceLifecycleResolutionInputSource, CatalogElsaInstanceLifecycleResolutionInputSource>();
 builder.Services.AddScoped<IElsaInstancePlanResolver, ElsaInstancePlanResolver>();
 builder.Services.AddScoped<ElsaInstanceLifecycleService>();
 builder.Services.AddScoped<ElsaInstanceLifecycleWorker>();
+builder.Services.Configure<AzureElsaInstanceProviderOptions>(
+    builder.Configuration.GetSection(AzureElsaInstanceProviderOptions.ConfigurationSection));
+builder.Services.AddScoped<AzureElsaInstanceProviderOptions>(services =>
+    services.GetRequiredService<IOptions<AzureElsaInstanceProviderOptions>>().Value);
+builder.Services.AddScoped<AzureElsaInstanceProvider>();
+builder.Services.AddScoped<IElsaInstanceProviderSubmissionPort>(services =>
+    services.GetRequiredService<AzureElsaInstanceProvider>());
+builder.Services.AddScoped<IElsaInstanceProviderReconciliationPort>(services =>
+    services.GetRequiredService<AzureElsaInstanceProvider>());
+builder.Services.AddScoped<ElsaInstanceProviderReconciliationService>();
 builder.Services.AddScoped<IManagedElsaInstanceApiStore, EfCoreManagedElsaInstanceApiStore>();
 builder.Services.Configure<ElsaInstanceLifecycleWorkerOptions>(builder.Configuration.GetSection(ElsaInstanceLifecycleWorkerOptions.ConfigurationSection));
 builder.Services.AddScoped<ICatalogStore, EfCoreCatalogStore>();
@@ -386,6 +398,10 @@ if (deploymentQueueWorkerEnabled && !builder.Environment.IsEnvironment("Testing"
 var instanceLifecycleWorkerEnabled = builder.Configuration.GetValue(ElsaInstanceLifecycleWorkerOptions.ConfigurationSection + ":Enabled", false);
 if (instanceLifecycleWorkerEnabled && !builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddHostedService<ElsaInstanceLifecycleHostedService>();
+var azureInstanceLifecycleEnabled = builder.Configuration.GetValue(
+    AzureElsaInstanceProviderOptions.ConfigurationSection + ":Enabled", false);
+if (instanceLifecycleWorkerEnabled && azureInstanceLifecycleEnabled && !builder.Environment.IsEnvironment("Testing"))
+    builder.Services.AddHostedService<ElsaInstanceProviderReconciliationHostedService>();
 var azureProviderWorkerEnabled = builder.Configuration.GetValue("Deployment:AzureProvider:WorkerEnabled", false);
 if (azureProviderWorkerEnabled && !builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddHostedService<AzureProviderOperationHostedService>();

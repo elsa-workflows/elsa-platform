@@ -1268,6 +1268,31 @@ public sealed class ElsaInstanceLifecycleStoreTests
     }
 
     [Fact]
+    public async Task Queued_managed_run_reconstructs_a_safe_provider_submission_after_restart()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var (workspace, accepted) = await QueueManagedLifecycleRunAsync(db, "Provider restart replay");
+
+        db.ChangeTracker.Clear();
+        var pending = await new EfCoreElsaInstanceLifecycleStore(
+            db,
+            EmptyResolutionInputSource.Instance,
+            new FixedTimeProvider(Now)).ListPendingProviderOperationsAsync(16);
+
+        var item = Assert.Single(pending);
+        Assert.Equal(workspace.Id, item.WorkspaceId);
+        Assert.Equal(accepted.Operation.Id, item.OperationId);
+        Assert.NotNull(item.Submission);
+        Assert.Equal("5.0", item.Submission!.Plan.Release.ReleaseLine);
+        Assert.Equal(accepted.Instance.Id, item.Submission.InstanceId);
+        Assert.Equal(accepted.Operation.Id, item.Submission.OperationId);
+        Assert.Equal("westeurope", item.Submission.Location);
+    }
+
+    [Fact]
     public async Task Recovery_resume_requeues_the_managed_deployment_run()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

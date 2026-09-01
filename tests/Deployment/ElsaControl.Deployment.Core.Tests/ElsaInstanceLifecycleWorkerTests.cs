@@ -42,6 +42,55 @@ public sealed class ElsaInstanceLifecycleWorkerTests
     }
 
     [Fact]
+    public async Task Provider_submission_happens_after_reservation_and_leaves_one_reconciliation_target()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var accepted = await service.CreateAsync(CreateRequest("claims-provider", "create-provider"));
+        store.RegisterResolutionInput(accepted.Operation.Id, ResolutionInput(accepted.Instance));
+        var provider = new RecordingSubmissionPort();
+
+        var result = await new ElsaInstanceLifecycleWorker(
+                store,
+                new RecordingResolver(SuccessfulResolution(WorkspaceId, accepted.Instance.Id)),
+                new StaticTimeProvider(Now),
+                provider,
+                store)
+            .ProcessAvailableAsync("lifecycle-worker-1");
+
+        Assert.Equal(1, result.ProviderInvocations);
+        Assert.Equal(accepted.Operation.Id, Assert.Single(provider.Submissions).OperationId);
+        Assert.Equal(ElsaInstanceOperationState.RecoveryRequired, Assert.Single(store.Operations).State);
+        Assert.Equal(WorkspaceDeploymentRunStatus.RecoveryRequired, Assert.Single(store.DeploymentRuns).Run.Status);
+        var pending = await store.ListPendingProviderOperationsAsync(16);
+        Assert.Equal(accepted.Operation.Id, Assert.Single(pending).OperationId);
+    }
+
+    [Fact]
+    public async Task Uncertain_provider_submission_is_recoverable_without_inserting_another_run()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var accepted = await service.CreateAsync(CreateRequest("claims-provider-uncertain", "create-provider-uncertain"));
+        store.RegisterResolutionInput(accepted.Operation.Id, ResolutionInput(accepted.Instance));
+        var provider = new RecordingSubmissionPort(throwOnSubmit: true);
+
+        var result = await new ElsaInstanceLifecycleWorker(
+                store,
+                new RecordingResolver(SuccessfulResolution(WorkspaceId, accepted.Instance.Id)),
+                new StaticTimeProvider(Now),
+                provider,
+                store)
+            .ProcessAvailableAsync("lifecycle-worker-1");
+
+        Assert.Equal(1, result.ProviderInvocations);
+        Assert.Equal(ElsaInstanceOperationState.RecoveryRequired, Assert.Single(store.Operations).State);
+        Assert.Equal("provider.submission.uncertain", Assert.Single(store.DeploymentRuns).Run.RecoveryReason);
+        Assert.Single(store.DeploymentRuns);
+        Assert.NotNull((await store.ListPendingProviderOperationsAsync(16)).Single().Submission);
+    }
+
+    [Fact]
     public async Task In_memory_finalization_uses_store_clock_for_lease_expiry()
     {
         var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now.AddMinutes(6)));
@@ -383,6 +432,25 @@ public sealed class ElsaInstanceLifecycleWorkerTests
         {
             Calls++;
             return Task.FromResult(result);
+        }
+    }
+
+    private sealed class RecordingSubmissionPort(bool throwOnSubmit = false) : IElsaInstanceProviderSubmissionPort
+    {
+        public List<ElsaInstanceProviderSubmission> Submissions { get; } = [];
+
+        public Task<ElsaInstanceProviderSubmissionResult> SubmitAsync(
+            ElsaInstanceProviderSubmission request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            request.Validate();
+            Submissions.Add(request);
+            if (throwOnSubmit)
+                throw new InvalidOperationException("provider unavailable");
+            return Task.FromResult(new ElsaInstanceProviderSubmissionResult(
+                $"provider-operation-{request.OperationId:N}",
+                Replayed: Submissions.Count > 1));
         }
     }
 

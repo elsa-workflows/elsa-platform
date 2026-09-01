@@ -1,6 +1,8 @@
+using System.Text.Json;
 using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Core.Cockpit;
 using ElsaControl.Deployment.Core.Workspace;
+using ElsaControl.RuntimeBuilder.Abstractions.Plans;
 
 namespace ElsaControl.Deployment.Core.Instances;
 
@@ -30,7 +32,7 @@ public sealed record ElsaInstanceRecoveryRequestEnvelope(
 public sealed class InMemoryElsaInstanceLifecycleStore(
     TimeProvider? timeProvider = null,
     IElsaInstanceDeleteConfirmationAuthority? deleteConfirmationAuthority = null)
-    : IElsaInstanceLifecycleStore, IElsaInstanceLifecycleWorkerStore, IElsaInstanceProviderReconciliationStore, IElsaInstanceDeletionStore
+    : IElsaInstanceLifecycleStore, IElsaInstanceLifecycleWorkerStore, IElsaInstanceProviderSubmissionStore, IElsaInstanceProviderPendingOperationStore, IElsaInstanceProviderReconciliationStore, IElsaInstanceDeletionStore
 {
     private static readonly TimeSpan WorkerLeaseDuration = TimeSpan.FromMinutes(5);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
@@ -141,6 +143,113 @@ public sealed class InMemoryElsaInstanceLifecycleStore(
                 instance.DesiredStateRevisionId, instance.ResolvedPlanReference, instance.CurrentResolvedRelease,
                 instance.CurrentDeploymentReference, instance.PlacementAssignmentReference, instance.ElsaTenantReference,
                 instance.LastOperationId);
+        }
+    }
+
+    public Task CommitProviderSubmissionAsync(
+        ElsaInstanceProviderSubmissionCommit commit,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(commit);
+        commit.Validate();
+        lock (_gate)
+        {
+            if (!_operations.TryGetValue(commit.OperationId, out var operation) ||
+                !_instances.TryGetValue(commit.InstanceId, out var instance) ||
+                operation.InstanceId != commit.InstanceId || operation.AttemptNumber != commit.AttemptNumber)
+                throw new ElsaInstanceLifecycleConflictException("Provider submission correlation is invalid.");
+            if (operation.State is ElsaInstanceOperationState.Succeeded or ElsaInstanceOperationState.Failed or
+                ElsaInstanceOperationState.RecoveryRequired)
+                return Task.CompletedTask;
+            if (operation.State != ElsaInstanceOperationState.Queued)
+                throw new ElsaInstanceLifecycleConflictException("Provider submission reservation is no longer queued.");
+
+            var recovered = operation.TransitionTo(ElsaInstanceOperationState.Running)
+                .TransitionTo(ElsaInstanceOperationState.RecoveryRequired);
+            _operations[commit.OperationId] = recovered;
+            var run = _deploymentRuns.Values.SingleOrDefault(x => x.Operation.Id == commit.OperationId);
+            if (run is not null)
+                _deploymentRuns[run.Run.Id] = run with
+                {
+                    Operation = recovered,
+                    Run = run.Run with
+                    {
+                        Status = WorkspaceDeploymentRunStatus.RecoveryRequired,
+                        RecoveryReason = commit.CorrelationId == "provider-submission-uncertain"
+                            ? "provider.submission.uncertain"
+                            : "provider.submission.accepted"
+                    }
+                };
+            _instances[instance.Id] = ElsaInstance.Hydrate(
+                instance.Id, instance.OrganizationId, instance.WorkspaceId, instance.Name, instance.Slug,
+                instance.Intent, ElsaObservedLifecycle.Unknown, ElsaInstanceHealth.Unknown, instance.Version,
+                instance.IdentityBinding, instance.DesiredStateRevisionId, instance.ResolvedPlanReference,
+                instance.CurrentResolvedRelease, instance.CurrentDeploymentReference,
+                instance.PlacementAssignmentReference, instance.ElsaTenantReference, instance.LastOperationId);
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<ElsaInstanceProviderPendingOperation>> ListPendingProviderOperationsAsync(
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (limit is < 1 or > 256)
+            throw new ArgumentOutOfRangeException(nameof(limit));
+        lock (_gate)
+        {
+            var operations = _operations.Values
+                .Where(operation => (operation.State == ElsaInstanceOperationState.Queued ||
+                                     operation.State == ElsaInstanceOperationState.RecoveryRequired) &&
+                                    _deploymentRuns.Values.Any(run => run.Operation.Id == operation.Id &&
+                                        (run.Run.Status == WorkspaceDeploymentRunStatus.Queued ||
+                                         run.Run.Status == WorkspaceDeploymentRunStatus.RecoveryRequired)))
+                .OrderBy(operation => operation.AcceptedAt)
+                .ThenBy(operation => operation.Id)
+                .Take(limit)
+                .Select(operation =>
+                {
+                    var instance = _instances[operation.InstanceId];
+                    var run = _deploymentRuns.Values.Single(x => x.Operation.Id == operation.Id);
+                    var planId = instance.ResolvedPlanReference?.PlanId;
+                    var plan = planId is null
+                        ? null
+                        : _resolvedPlans.GetValueOrDefault(PlanKey(instance.WorkspaceId, instance.Id, planId));
+                    ElsaInstanceProviderSubmission? submission = null;
+                    if (plan is not null)
+                    {
+                        try
+                        {
+                            var typedPlan = ResolvedElsaApplicationPlanSerialization.Deserialize(plan.SerializedPlan);
+                            var target = new ElsaInstanceLifecycleDeploymentTarget(
+                                run.Run.ApplicationId,
+                                run.Run.EnvironmentId,
+                                run.Run.EngineId,
+                                run.Run.SourceRevisionId,
+                                run.Run.ConfirmationId,
+                                run.Run.ActorAccountId);
+                            target.Validate();
+                            submission = new ElsaInstanceProviderSubmission(
+                                instance.WorkspaceId,
+                                instance.Id,
+                                operation.Id,
+                                operation.AttemptNumber,
+                                instance.DesiredLifecycle,
+                                typedPlan,
+                                target,
+                                instance.PlacementIntent.RegionCode);
+                        }
+                        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or FormatException or JsonException or NotSupportedException)
+                        {
+                            submission = null;
+                        }
+                    }
+                    return new ElsaInstanceProviderPendingOperation(instance.WorkspaceId, operation.Id, submission);
+                })
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<ElsaInstanceProviderPendingOperation>>(operations);
         }
     }
 
