@@ -187,7 +187,9 @@ public sealed class AzureProviderOperationWorkerTests
             null,
             null,
             null,
-            new Dictionary<string, string>());
+            new Dictionary<string, string>(),
+            SqlWorkflowPackageVersion: "3.8.0-preview.5413",
+            SqlQuartzPackageVersion: "3.8.0-preview.5413");
         return WithComputedMetadata(operation);
     }
 
@@ -211,7 +213,10 @@ public sealed class AzureProviderOperationWorkerTests
             operation.ReleaseManifestSignatureDigest,
             operation.ReleaseManifestReference,
             operation.ReleaseManifestSignatureReference,
-            operation.SafeSecretReferences);
+            operation.SafeSecretReferences,
+            operation.ProviderScopeFingerprint,
+            operation.SqlWorkflowPackageVersion,
+            operation.SqlQuartzPackageVersion);
         return operation with
         {
             RequestHash = AzureProviderOperationValidation.ComputeRequestHash(request),

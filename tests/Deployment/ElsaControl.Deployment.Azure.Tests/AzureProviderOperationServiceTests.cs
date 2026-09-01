@@ -56,6 +56,21 @@ public sealed class AzureProviderOperationServiceTests
         Assert.Equal(first.Operation.Id, replay.Operation.Id);
     }
 
+    [Fact]
+    public async Task Restore_fails_closed_when_legacy_operation_lacks_release_package_metadata()
+    {
+        var service = new AzureProviderOperationService(new CapturingStore(), new FixedTimeProvider(Now));
+        var operation = await service.SubmitAsync(
+            WorkspaceId,
+            new AzureProviderOperationSubmission("request-1", new('b', 64), CreatePlan() with
+            {
+                SqlWorkflowPackageVersion = null,
+                SqlQuartzPackageVersion = null
+            }));
+
+        Assert.Null(AzureProviderOperationService.TryRestorePlan(operation));
+    }
+
     [Theory]
     [InlineData("secret://vault/../database")]
     [InlineData("secret://vault/database%2Fconnection")]
@@ -245,7 +260,9 @@ public sealed class AzureProviderOperationServiceTests
         {
             ["database:connectionstring"] = "secret://vault/database"
         },
-        new('a', 64));
+        new('a', 64),
+        "3.8.0-preview.5413",
+        "3.8.0-preview.5413");
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {

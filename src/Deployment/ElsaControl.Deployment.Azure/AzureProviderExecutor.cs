@@ -848,6 +848,8 @@ public sealed class AzureProviderExecutor
             !string.Equals(plan.ReleaseManifestSignatureDigest, operation.ReleaseManifestSignatureDigest, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(plan.ReleaseManifestReference, operation.ReleaseManifestReference, StringComparison.Ordinal) ||
             !string.Equals(plan.ReleaseManifestSignatureReference, operation.ReleaseManifestSignatureReference, StringComparison.Ordinal) ||
+            !string.Equals(plan.SqlWorkflowPackageVersion, operation.SqlWorkflowPackageVersion, StringComparison.Ordinal) ||
+            !string.Equals(plan.SqlQuartzPackageVersion, operation.SqlQuartzPackageVersion, StringComparison.Ordinal) ||
             !SecretReferencesMatch(plan.SecretReferences, operation.SecretReferences))
             throw new ArgumentException("The provider plan does not match the operation request.", nameof(request));
 
@@ -861,10 +863,17 @@ public sealed class AzureProviderExecutor
         if (string.IsNullOrWhiteSpace(plan.ImageRepository) ||
             !plan.ImageRepository.StartsWith($"{AzureWorkloadPlanTranslator.SupportedRegistryHost}/", StringComparison.Ordinal))
             throw new ArgumentException("The provider plan image must use the governed Azure registry authority.", nameof(request));
+        if (!IsRequiredPackageVersion(plan.SqlWorkflowPackageVersion) ||
+            !IsRequiredPackageVersion(plan.SqlQuartzPackageVersion))
+            throw new ArgumentException("The provider plan must include safe release package metadata.", nameof(request));
 
         if (!AzureProviderOperationValidation.IsSafeSecretReferences(plan.SecretReferences))
             throw new ArgumentException("Secret references must be safe provider locators.", nameof(request));
     }
+
+    private static bool IsRequiredPackageVersion(string? value) =>
+        value is { Length: > 0 and <= 128 } &&
+        !value.Any(character => char.IsControl(character) || char.IsWhiteSpace(character));
 
     private static AzureProviderExecutionOutcome MapOutcome(AzureProviderOperationStatus status) =>
         status switch

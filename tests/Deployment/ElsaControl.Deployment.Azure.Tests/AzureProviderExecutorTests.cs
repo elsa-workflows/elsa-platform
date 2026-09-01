@@ -678,7 +678,10 @@ public sealed class AzureProviderExecutorTests
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["database:connectionstring"] = "secret://database"
-        });
+        },
+        null,
+        "3.8.0-preview.5413",
+        "3.8.0-preview.5413");
 
     private static AzureWorkloadPlan CreatePlan() => new(
         "workload-a",
@@ -697,7 +700,9 @@ public sealed class AzureProviderExecutorTests
         {
             ["database:connectionstring"] = "secret://database"
         },
-        new('a', 64));
+        new('a', 64),
+        "3.8.0-preview.5413",
+        "3.8.0-preview.5413");
 
     private sealed class StaticTimeProvider(DateTimeOffset now) : TimeProvider
     {
