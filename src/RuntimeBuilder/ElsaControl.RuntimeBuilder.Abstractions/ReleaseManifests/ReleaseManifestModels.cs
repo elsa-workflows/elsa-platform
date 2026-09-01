@@ -36,8 +36,11 @@ public sealed record ReleaseManifestDistribution(
     string Lifecycle,
     ReleaseManifestSource Source,
     /// <summary>
-    /// Optional producer release edition. Image registry classes remain the
-    /// provider-neutral selection identity when a release contains multiple editions.
+    /// The current producer schema requires the governed <c>commercial</c> edition.
+    /// This remains nullable only for historical Control-only manifests that omit it
+    /// when explicitly admitted through the legacy-schema path. Image registry classes
+    /// remain the provider-neutral selection identity when a release contains multiple
+    /// editions.
     /// </summary>
     string? Edition = null);
 
