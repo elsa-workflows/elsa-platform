@@ -213,12 +213,15 @@ public sealed class InMemoryElsaInstanceLifecycleStore(
                 {
                     var instance = _instances[operation.InstanceId];
                     var run = _deploymentRuns.Values.Single(x => x.Operation.Id == operation.Id);
+                    var shouldReplaySubmission = operation.State == ElsaInstanceOperationState.Queued ||
+                        operation.State == ElsaInstanceOperationState.RecoveryRequired &&
+                        string.Equals(run.Run.RecoveryReason, "provider.submission.uncertain", StringComparison.Ordinal);
                     var planId = instance.ResolvedPlanReference?.PlanId;
                     var plan = planId is null
                         ? null
                         : _resolvedPlans.GetValueOrDefault(PlanKey(instance.WorkspaceId, instance.Id, planId));
                     ElsaInstanceProviderSubmission? submission = null;
-                    if (plan is not null)
+                    if (shouldReplaySubmission && plan is not null)
                     {
                         try
                         {

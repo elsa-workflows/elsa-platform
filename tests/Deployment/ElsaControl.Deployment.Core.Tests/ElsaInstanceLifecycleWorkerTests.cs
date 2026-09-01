@@ -64,6 +64,7 @@ public sealed class ElsaInstanceLifecycleWorkerTests
         Assert.Equal(WorkspaceDeploymentRunStatus.RecoveryRequired, Assert.Single(store.DeploymentRuns).Run.Status);
         var pending = await store.ListPendingProviderOperationsAsync(16);
         Assert.Equal(accepted.Operation.Id, Assert.Single(pending).OperationId);
+        Assert.Null(pending.Single().Submission);
     }
 
     [Fact]

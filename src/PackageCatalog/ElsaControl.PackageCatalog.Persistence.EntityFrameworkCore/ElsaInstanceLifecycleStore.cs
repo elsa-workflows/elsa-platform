@@ -1652,6 +1652,15 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         var pending = new List<ElsaInstanceProviderPendingOperation>(operationEntities.Length);
         foreach (var operation in operationEntities)
         {
+            var shouldReplaySubmission = operation.State == ElsaInstanceOperationState.Queued ||
+                operation.State == ElsaInstanceOperationState.RecoveryRequired &&
+                string.Equals(operation.FailureCode, "provider.submission.uncertain", StringComparison.Ordinal);
+            if (!shouldReplaySubmission)
+            {
+                pending.Add(new(operation.WorkspaceId, operation.Id));
+                continue;
+            }
+
             if (operation.InstanceId is not { } instanceId || operation.DeploymentRunId is not { } runId ||
                 operation.ResolvedPlanId is null)
             {

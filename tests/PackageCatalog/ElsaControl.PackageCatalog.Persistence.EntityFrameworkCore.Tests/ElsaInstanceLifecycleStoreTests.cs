@@ -1293,6 +1293,31 @@ public sealed class ElsaInstanceLifecycleStoreTests
     }
 
     [Fact]
+    public async Task Accepted_provider_handoff_does_not_replay_submission_on_every_poll()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var (workspace, accepted) = await QueueManagedLifecycleRunAsync(db, "Provider accepted handoff");
+        var store = new EfCoreElsaInstanceLifecycleStore(
+            db, EmptyResolutionInputSource.Instance, new FixedTimeProvider(Now));
+
+        await store.CommitProviderSubmissionAsync(new(
+            workspace.Id,
+            accepted.Instance.Id,
+            accepted.Operation.Id,
+            accepted.Operation.AttemptNumber,
+            "provider-operation-accepted",
+            Now));
+
+        db.ChangeTracker.Clear();
+        var item = Assert.Single(await store.ListPendingProviderOperationsAsync(16));
+        Assert.Equal(accepted.Operation.Id, item.OperationId);
+        Assert.Null(item.Submission);
+    }
+
+    [Fact]
     public async Task Recovery_resume_requeues_the_managed_deployment_run()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
