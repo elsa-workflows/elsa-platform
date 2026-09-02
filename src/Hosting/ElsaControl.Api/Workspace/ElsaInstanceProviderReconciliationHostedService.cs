@@ -129,7 +129,16 @@ public sealed class ElsaInstanceProviderReconciliationHostedService(
 
         try
         {
-            await reconciler.ReconcileAsync(operation.WorkspaceId, operation.OperationId, stoppingToken);
+            var result = await reconciler.ReconcileAsync(operation.WorkspaceId, operation.OperationId, stoppingToken);
+            logger.LogInformation(
+                "Managed Elsa provider reconciliation completed for workspace {WorkspaceId}, instance {InstanceId}, operation {OperationId}, outcome {Outcome}, diagnostic {DiagnosticCode}.",
+                operation.WorkspaceId,
+                result.Projection.InstanceId,
+                operation.OperationId,
+                result.Outcome,
+                ManagedLifecycleOperationalHealthDiagnosticCodes.IsSafe(result.DiagnosticCode)
+                    ? result.DiagnosticCode
+                    : ManagedLifecycleOperationalHealthDiagnosticCodes.Unknown);
         }
         catch (OperationCanceledException)
         {

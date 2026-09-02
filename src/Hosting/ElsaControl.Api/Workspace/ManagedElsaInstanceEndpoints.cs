@@ -184,6 +184,20 @@ public static class ManagedElsaInstanceEndpoints
             return Results.Ok(response);
         }).RequireWorkspaceAccess();
 
+        group.MapGet("/{instanceId:guid}/health", async (
+            Guid workspaceId,
+            Guid instanceId,
+            IManagedElsaInstanceOperationalStore operationalStore,
+            ManagedLifecycleOperationalHealthEvaluator evaluator,
+            CancellationToken cancellationToken) =>
+        {
+            var snapshot = await operationalStore.GetSnapshotAsync(workspaceId, instanceId, cancellationToken);
+            if (snapshot is null)
+                return Results.NotFound();
+
+            return Results.Ok(ToOperationalHealthResponse(snapshot, evaluator.Evaluate(snapshot)));
+        }).RequireWorkspaceAccess();
+
         group.MapMethods("/{instanceId:guid}", [HttpMethods.Patch], async (
             Guid workspaceId,
             Guid instanceId,
@@ -407,6 +421,41 @@ public static class ManagedElsaInstanceEndpoints
         return entries.Take(2).Count() == 1;
     }
 
+    private static ManagedElsaInstanceOperationalHealthResponse ToOperationalHealthResponse(
+        ManagedLifecycleOperationalHealthSnapshot snapshot,
+        ManagedLifecycleOperationalHealthResult result) =>
+        new(
+            result.Status,
+            result.DiagnosticCode,
+            result.EvaluatedAt,
+            snapshot.ReconciledAt,
+            snapshot.Operation is null
+                ? null
+                : new ManagedElsaInstanceOperationalOperationResponse(
+                    snapshot.Operation.Id,
+                    snapshot.Operation.State,
+                    snapshot.Operation.AttemptNumber,
+                    snapshot.Operation.AcceptedAt,
+                    snapshot.Operation.StartedAt,
+                    snapshot.Operation.HeartbeatAt,
+                    snapshot.Operation.LastProgressAt,
+                    snapshot.Operation.DiagnosticCode),
+            snapshot.Run is null
+                ? null
+                : new ManagedElsaInstanceOperationalRunResponse(
+                    snapshot.Run.Id,
+                    snapshot.Run.Status,
+                    snapshot.Run.AttemptNumber,
+                    snapshot.Run.QueuedAt,
+                    snapshot.Run.StartedAt,
+                    snapshot.Run.HeartbeatAt,
+                    snapshot.Run.LastProgressAt,
+                    snapshot.Run.DiagnosticCode),
+            result.Alerts.Select(alert => new ManagedElsaInstanceOperationalAlertResponse(
+                alert.Code,
+                alert.Severity,
+                alert.DedupeIdentity)).ToArray());
+
     private static bool MatchesInitialLaunchProfile(ElsaPlacementIntent placement) =>
         Equal(placement.TargetMode, InitialLaunchProfile.TargetMode) &&
         Equal(placement.RegionCode, InitialLaunchProfile.RegionCode) &&
@@ -464,7 +513,7 @@ public static class ManagedElsaInstanceEndpoints
         Guid organizationId,
         CancellationToken cancellationToken) =>
         await accountStore.GetLatestOrganizationEntitlementAsync(organizationId, cancellationToken) is
-            { ManagedHostingEnabled: true };
+        { ManagedHostingEnabled: true };
 
     private static async Task<ManagedElsaInstanceResponse> ToResponseAsync(
         ElsaInstance instance,
@@ -518,6 +567,7 @@ public static class ManagedElsaInstanceEndpoints
             {
                 ["self"] = $"/api/workspaces/{workspaceId:D}/instances/{instance.Id:D}",
                 ["operations"] = $"/api/workspaces/{workspaceId:D}/instances/{instance.Id:D}/operations",
+                ["health"] = $"/api/workspaces/{workspaceId:D}/instances/{instance.Id:D}/health",
                 ["revisions"] = $"/api/workspaces/{workspaceId:D}/instances/{instance.Id:D}/revisions",
                 ["deployments"] = $"/api/workspaces/{workspaceId:D}/instances/{instance.Id:D}/deployments",
                 ["audit"] = $"/api/workspaces/{workspaceId:D}/instances/{instance.Id:D}/audit"
@@ -637,6 +687,36 @@ public sealed record ManagedElsaInstanceIdentityBindingResponse(string Audience,
 public sealed record ManagedElsaInstanceRevisionsResponse(IReadOnlyList<ElsaInstanceIntentRevisionSummary> Items);
 public sealed record ManagedElsaInstanceDeploymentsResponse(IReadOnlyList<ElsaInstanceDeploymentSummary> Items);
 public sealed record ManagedElsaInstanceAuditResponse(IReadOnlyList<ElsaInstanceAuditEventSummary> Items);
+public sealed record ManagedElsaInstanceOperationalHealthResponse(
+    ManagedLifecycleOperationalHealthStatus Status,
+    string DiagnosticCode,
+    DateTimeOffset EvaluatedAt,
+    DateTimeOffset? ReconciledAt,
+    ManagedElsaInstanceOperationalOperationResponse? Operation,
+    ManagedElsaInstanceOperationalRunResponse? Run,
+    IReadOnlyList<ManagedElsaInstanceOperationalAlertResponse> Alerts);
+public sealed record ManagedElsaInstanceOperationalOperationResponse(
+    Guid Id,
+    ElsaInstanceOperationState State,
+    int AttemptNumber,
+    DateTimeOffset AcceptedAt,
+    DateTimeOffset? StartedAt,
+    DateTimeOffset? HeartbeatAt,
+    DateTimeOffset? LastProgressAt,
+    string? DiagnosticCode);
+public sealed record ManagedElsaInstanceOperationalRunResponse(
+    Guid Id,
+    WorkspaceDeploymentRunStatus Status,
+    int AttemptNumber,
+    DateTimeOffset QueuedAt,
+    DateTimeOffset? StartedAt,
+    DateTimeOffset? HeartbeatAt,
+    DateTimeOffset? LastProgressAt,
+    string? DiagnosticCode);
+public sealed record ManagedElsaInstanceOperationalAlertResponse(
+    string Code,
+    ManagedLifecycleOperationalHealthAlertSeverity Severity,
+    string DedupeIdentity);
 
 internal enum IdempotencyKeyState { Missing, Invalid, Valid }
 internal sealed record IdempotencyKeyReadResult(IdempotencyKeyState State, string? Value);

@@ -60,10 +60,12 @@ public sealed class ManagedElsaInstanceApiTests
         var client = app.CreateTrustedWorkspaceClient("managed-ineligible-release-owner");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
         await EnableManagedHostingAsync(app, workspaceId);
-        var intent = Intent() with {
+        var intent = Intent() with
+        {
             Release = new ElsaReleaseIntent("unavailable-runtime", "5.0", "5.0.1", "stable")
         };
-        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/workspaces/{workspaceId}/instances") {
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/workspaces/{workspaceId}/instances")
+        {
             Content = JsonContent.Create(
                 new ManagedElsaInstanceCreateRequest("Future runtime", "future-runtime", intent),
                 options: ControlApiTestApplication.JsonOptions)
@@ -84,10 +86,12 @@ public sealed class ManagedElsaInstanceApiTests
         var client = app.CreateTrustedWorkspaceClient("managed-placement-owner");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
         await EnableManagedHostingAsync(app, workspaceId);
-        var intent = Intent() with {
+        var intent = Intent() with
+        {
             Placement = new ElsaPlacementIntent("managed", "eastus", "dedicated", "standard-small", "public", "managed")
         };
-        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/workspaces/{workspaceId}/instances") {
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/workspaces/{workspaceId}/instances")
+        {
             Content = JsonContent.Create(
                 new ManagedElsaInstanceCreateRequest("Altered placement", "altered-placement", intent),
                 options: ControlApiTestApplication.JsonOptions)
@@ -808,6 +812,42 @@ public sealed class ManagedElsaInstanceApiTests
 
         Assert.Equal(HttpStatusCode.NotFound, otherWorkspace.StatusCode);
         Assert.Equal(unknown.StatusCode, otherWorkspace.StatusCode);
+    }
+
+    [Fact]
+    public async Task Operational_health_is_safe_and_does_not_reveal_cross_workspace_existence()
+    {
+        await using var app = CreateApplication([]);
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var owner = app.CreateTrustedWorkspaceClient("managed-health-owner");
+        var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, workspaceId);
+        var accepted = await CreateCanonicalInstanceAsync(owner, workspaceId, "managed-health-runtime");
+        var instanceId = accepted.Instance.InstanceId;
+        Assert.Equal(
+            $"/api/workspaces/{workspaceId:D}/instances/{instanceId:D}/health",
+            accepted.Instance.Links["health"]);
+
+        var response = await owner.GetAsync($"/api/workspaces/{workspaceId}/instances/{instanceId}/health");
+        var responseJson = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var health = await response.Content.ReadControlJsonAsync<ManagedElsaInstanceOperationalHealthResponse>();
+        Assert.NotNull(health);
+        Assert.Equal(ManagedLifecycleOperationalHealthStatus.Unknown, health.Status);
+        Assert.NotEqual(default, health.EvaluatedAt);
+        Assert.DoesNotContain("managed-health-runtime", responseJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("Claims runtime", responseJson, StringComparison.Ordinal);
+
+        var other = app.CreateTrustedWorkspaceClient("managed-health-other-owner");
+        var otherWorkspaceId = await other.GetDefaultWorkspaceIdAsync();
+        var crossWorkspace = await other.GetAsync(
+            $"/api/workspaces/{otherWorkspaceId}/instances/{instanceId}/health");
+        var unknown = await other.GetAsync(
+            $"/api/workspaces/{otherWorkspaceId}/instances/{Guid.NewGuid()}/health");
+
+        Assert.Equal(HttpStatusCode.NotFound, crossWorkspace.StatusCode);
+        Assert.Equal(unknown.StatusCode, crossWorkspace.StatusCode);
     }
 
     private static ControlApiTestApplication CreateApplication(

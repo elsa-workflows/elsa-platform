@@ -31,7 +31,18 @@ public sealed class ElsaInstanceLifecycleHostedService(
             {
                 await using var scope = scopeFactory.CreateAsyncScope();
                 var worker = scope.ServiceProvider.GetRequiredService<ElsaInstanceLifecycleWorker>();
-                await worker.ProcessAvailableAsync(_workerId, stoppingToken);
+                var batch = await worker.ProcessAvailableAsync(_workerId, stoppingToken);
+                foreach (var result in batch.Results)
+                {
+                    logger.LogInformation(
+                        "Managed Elsa lifecycle operation completed for organization {OrganizationId}, workspace {WorkspaceId}, instance {InstanceId}, operation {OperationId}, outcome {Outcome}, diagnostic {DiagnosticCode}.",
+                        result.Instance.OrganizationId,
+                        result.Instance.WorkspaceId,
+                        result.Instance.Id,
+                        result.Operation.Id,
+                        result.Outcome,
+                        SafeDiagnosticCode(result.FailureCode));
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -59,4 +70,11 @@ public sealed class ElsaInstanceLifecycleHostedService(
 
     internal static string CreateWorkerId() =>
         $"api-instance-lifecycle-{Environment.ProcessId}-{Guid.NewGuid():N}";
+
+    private static string SafeDiagnosticCode(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? "none"
+            : ManagedLifecycleOperationalHealthDiagnosticCodes.IsSafe(value)
+            ? value!
+            : ManagedLifecycleOperationalHealthDiagnosticCodes.Unknown;
 }
