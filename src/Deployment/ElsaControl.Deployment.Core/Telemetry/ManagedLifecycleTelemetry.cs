@@ -290,6 +290,28 @@ public static class ManagedLifecycleTelemetry
             _activity?.SetStatus(_errorRecorded ? ActivityStatusCode.Error : ActivityStatusCode.Ok);
         }
 
+        public void CompleteReplay(
+            ElsaDesiredLifecycle? desiredLifecycle,
+            ElsaObservedLifecycle observedLifecycle,
+            ElsaInstanceHealth health,
+            ElsaInstanceOperationState? operationState,
+            string? diagnosticCode = null)
+        {
+            EnsureActive();
+            var tags = ManagedLifecycleTelemetry.Tags(
+                _action,
+                "already_completed",
+                desiredLifecycle,
+                observedLifecycle,
+                health,
+                operationState,
+                diagnosticCode);
+            Apply(_activity, tags);
+            _lastTags = tags;
+            _durationRecorded = true;
+            _activity?.SetStatus(ActivityStatusCode.Ok);
+        }
+
         public void RecordError(
             ElsaDesiredLifecycle? desiredLifecycle,
             ElsaObservedLifecycle observedLifecycle,

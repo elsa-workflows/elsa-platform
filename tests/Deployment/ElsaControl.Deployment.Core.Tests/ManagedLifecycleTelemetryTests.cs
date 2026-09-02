@@ -165,6 +165,47 @@ public sealed class ManagedLifecycleTelemetryTests
     }
 
     [Fact]
+    public async Task Replayed_reconciliation_is_traceable_without_recounting_completed_work()
+    {
+        using var capture = new TelemetryCapture();
+        var workspaceId = Guid.Parse("10000000-0000-0000-0000-000000000003");
+        var instanceId = Guid.Parse("20000000-0000-0000-0000-000000000003");
+        var operationId = Guid.Parse("30000000-0000-0000-0000-000000000003");
+        var replay = new ElsaInstanceProviderReconciliationResult(
+            ElsaInstanceProviderReconciliationOutcome.Converged,
+            new(
+                workspaceId,
+                instanceId,
+                operationId,
+                1,
+                ElsaObservedLifecycle.Ready,
+                ElsaInstanceHealth.Healthy,
+                2,
+                ElsaInstanceOperationState.Succeeded),
+            ElsaInstanceProviderReconciliationService.ConvergedCode,
+            false,
+            false,
+            DateTimeOffset.UtcNow);
+        var service = new ElsaInstanceProviderReconciliationService(
+            new ReplayReconciliationStore(replay),
+            new ConfirmingProvider());
+
+        var result = await service.ReconcileAsync(workspaceId, operationId);
+
+        Assert.True(result.Replayed);
+        Assert.Contains(capture.Activities, activity =>
+            activity.OperationName == ManagedLifecycleTelemetry.ReconciliationActivityName &&
+            activity.GetTagItem(ManagedLifecycleTelemetry.OutcomeTag)?.ToString() == "already_completed" &&
+            activity.GetTagItem(ManagedLifecycleTelemetry.WorkspaceIdTag)?.ToString() == workspaceId.ToString("D") &&
+            activity.GetTagItem(ManagedLifecycleTelemetry.InstanceIdTag)?.ToString() == instanceId.ToString("D") &&
+            activity.GetTagItem(ManagedLifecycleTelemetry.OperationIdTag)?.ToString() == operationId.ToString("D"));
+        Assert.DoesNotContain(capture.Measurements, measurement =>
+            measurement.InstrumentName is ManagedLifecycleTelemetry.CompletionCounterName or
+                ManagedLifecycleTelemetry.EndpointHealthCounterName or
+                ManagedLifecycleTelemetry.DurationHistogramName);
+    }
+
+    [Fact]
     public async Task Lifecycle_worker_records_failed_completion_without_leaking_work_item_details()
     {
         using var capture = new TelemetryCapture();
@@ -322,6 +363,27 @@ public sealed class ManagedLifecycleTelemetryTests
                 ElsaObservedLifecycle.Ready,
                 ElsaInstanceProviderHealthGate.Passed,
                 "telemetry-observation").Correlate(request));
+    }
+
+    private sealed class ReplayReconciliationStore(ElsaInstanceProviderReconciliationResult replay)
+        : IElsaInstanceProviderReconciliationStore
+    {
+        public Task<ElsaInstanceProviderReconciliationTarget?> GetTargetAsync(
+            Guid workspaceId,
+            Guid operationId,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("A replay must not load a reconciliation target.");
+
+        public Task<ElsaInstanceProviderReconciliationResult?> GetResultAsync(
+            Guid workspaceId,
+            Guid operationId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<ElsaInstanceProviderReconciliationResult?>(replay);
+
+        public Task<ElsaInstanceProviderReconciliationResult> CommitAsync(
+            ElsaInstanceProviderReconciliationCommit commit,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("A replay must not commit reconciliation state.");
     }
 
     private sealed class FailedWorkerStore(ElsaInstanceLifecycleWorkItem item) : IElsaInstanceLifecycleWorkerStore

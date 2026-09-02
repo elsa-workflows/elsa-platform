@@ -46,8 +46,12 @@ public sealed class ElsaInstanceProviderReconciliationService(
             if (replay is not null)
             {
                 var replayed = replay with { Replayed = true };
-                telemetry.Complete(
-                    replayed.Outcome.ToString(),
+                telemetry.SetCorrelation(
+                    null,
+                    replayed.Projection.WorkspaceId,
+                    replayed.Projection.InstanceId,
+                    replayed.Projection.OperationId);
+                telemetry.CompleteReplay(
                     null,
                     replayed.Projection.ObservedLifecycle,
                     replayed.Projection.Health,

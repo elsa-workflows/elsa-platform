@@ -99,6 +99,10 @@ The provider-neutral activity source and meter are
 `managed_lifecycle.operations.duration` is the operation-duration histogram in
 milliseconds.
 
+Durably completed reconciliation replays remain visible as spans with outcome
+`already_completed`, but do not increment completion, duration, or endpoint
+health measurements again.
+
 Use the operation outcome, lifecycle/health state, operation state, and
 diagnostic code tags to filter these signals. Metric diagnostics use an explicit
 fixed-code allow-list and collapse anything else to `unknown`. The allowed tag

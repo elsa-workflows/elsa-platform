@@ -72,7 +72,9 @@ public sealed class ElsaInstanceLifecycleHostedService(
         $"api-instance-lifecycle-{Environment.ProcessId}-{Guid.NewGuid():N}";
 
     private static string SafeDiagnosticCode(string? value) =>
-        ManagedLifecycleOperationalHealthDiagnosticCodes.IsSafe(value)
+        string.IsNullOrWhiteSpace(value)
+            ? "none"
+            : ManagedLifecycleOperationalHealthDiagnosticCodes.IsSafe(value)
             ? value!
             : ManagedLifecycleOperationalHealthDiagnosticCodes.Unknown;
 }
