@@ -41,6 +41,7 @@ export function ManagedElsaCreatePanel({ workspaceId }: { workspaceId: string })
     enabled: pending !== null,
     retry: false,
     refetchInterval: (query) => {
+      if (query.state.status === "error") return false;
       const result = query.state.data;
       return result && pending && matchesPendingOperation(pending, result) && isTerminal(result.state) ? false : 2000;
     }
