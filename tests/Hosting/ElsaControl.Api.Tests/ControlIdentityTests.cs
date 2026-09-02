@@ -8,12 +8,16 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class ControlIdentityTests
+public sealed class ControlIdentityTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public ControlIdentityTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Me_workspaces_accepts_valid_control_jwt_identity()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateControlIdentityClient();
 
@@ -28,7 +32,7 @@ public sealed class ControlIdentityTests
     [Fact]
     public async Task Me_workspaces_rejects_wrong_issuer_control_jwt_identity()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateControlIdentityClient(issuer: "https://evil.example.test");
 
@@ -71,7 +75,7 @@ public sealed class ControlIdentityTests
     [Fact]
     public async Task Me_workspaces_rejects_wrong_audience_control_jwt_identity()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateControlIdentityClient(audience: "wrong-audience");
 
@@ -98,7 +102,7 @@ public sealed class ControlIdentityTests
     [Fact]
     public async Task Me_workspaces_rejects_invalid_bearer_token_without_falling_back_to_trusted_headers()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "not-a-valid-token");
@@ -116,7 +120,7 @@ public sealed class ControlIdentityTests
     [Fact]
     public async Task Me_workspaces_rejects_expired_control_jwt_identity()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateControlIdentityClient(expires: DateTimeOffset.UtcNow.AddMinutes(-5));
 
@@ -128,7 +132,7 @@ public sealed class ControlIdentityTests
     [Fact]
     public async Task Me_workspaces_rejects_control_jwt_without_subject()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateControlIdentityClient(subject: "");
 
@@ -166,7 +170,7 @@ public sealed class ControlIdentityTests
     [Fact]
     public async Task Me_workspaces_ignores_browser_supplied_identity_authority()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateControlIdentityClient(subject: "real-subject");
         client.DefaultRequestHeaders.Add("X-Account-Id", Guid.NewGuid().ToString());
@@ -181,7 +185,7 @@ public sealed class ControlIdentityTests
     [Fact]
     public async Task Me_workspaces_updates_profile_metadata_for_same_control_identity()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var firstClient = app.CreateControlIdentityClient(subject: "same-subject");
         var secondClient = app.CreateControlIdentityClient(
@@ -204,7 +208,7 @@ public sealed class ControlIdentityTests
     [Fact]
     public async Task Workspace_endpoint_does_not_provision_unknown_identity_on_denied_access()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateControlIdentityClient(subject: "unknown-user");
 
@@ -221,7 +225,7 @@ public sealed class ControlIdentityTests
     [Fact]
     public async Task Workspace_endpoint_does_not_update_profile_metadata_on_denied_access()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var ownerClient = app.CreateControlIdentityClient(subject: "owner");
         var workspaceId = (await ownerClient.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Workspaces.Single().Id;
