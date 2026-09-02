@@ -33,3 +33,54 @@ The script creates a unique temporary directory, Docker network, containers, Com
 Runtime and Control signing material is generated per run and is never printed. The live Playwright spec disables trace capture because the callback form contains one-time security material. It retains only test names and pass/fail outcomes; it does not inspect or print token, verifier, cookie, callback form, credential, workflow payload, or browser storage values.
 
 Playwright ignores local HTTPS errors because its bundled Chromium does not consume the macOS `mkcert` trust state reliably. Browser traffic remains HTTPS, the runtime requires Secure cookies, and the runtime-to-Control redemption client validates the fixture CA through a derived image. Azure proof must use publicly trusted TLS and must not enable this browser exception.
+
+## Azure public-TLS journey
+
+The Azure mode reuses the production console and runtime without fixture-only database
+mutations. It launches an isolated headed Chromium window and waits for an operator to
+complete the real Microsoft Entra sign-in and MFA flow. It does not reuse a personal
+browser profile, automate credentials, or retain browser storage, callback values,
+tokens, screenshots, traces, or video. Origin inputs may include trailing slashes; the
+wrapper canonicalizes them before comparing the named Azure resources.
+
+Azure mode additionally requires an authenticated Azure CLI with read access to the
+named App Service and Container App, plus `jq` and `curl`.
+
+```bash
+ADMIN_UI_BASE_URL=https://control.example.test \
+MANAGED_ELSA_PROOF_CONTROL_RESOURCE_GROUP=rg-control \
+MANAGED_ELSA_PROOF_CONTROL_APP_NAME=control-app \
+MANAGED_ELSA_PROOF_EXPECTED_CONTROL_IMAGE_ID=<40-character-commit> \
+MANAGED_ELSA_PROOF_EXPECTED_CONTROL_BUILD_NUMBER=<build-number> \
+MANAGED_ELSA_PROOF_RUNTIME_ORIGIN=https://runtime.example.test \
+MANAGED_ELSA_PROOF_RUNTIME_RESOURCE_GROUP=rg-runtime \
+MANAGED_ELSA_PROOF_RUNTIME_APP_NAME=runtime-app \
+MANAGED_ELSA_PROOF_EXPECTED_IMAGE=registry.example/runtime-combined@sha256:<digest> \
+MANAGED_ELSA_PROOF_INSTANCE_ID=<lowercase-canonical-instance-id> \
+MANAGED_ELSA_PROOF_STATE_LIFETIME_SECONDS=60 \
+  ./scripts/managed-elsa-browser-proof/run-azure.sh
+```
+
+Before opening Chromium, the wrapper uses Azure CLI and safe health probes to fail
+closed unless the supplied origins match the named resources, the runtime uses the
+expected immutable image and state lifetime, exactly one active revision is healthy
+with exactly one configured and running replica and all traffic, and Control is running
+with HTTPS-only enforcement and the expected commit/build identity. The runtime's
+instance ID, audience, Control base URL, Control continuation, and callback URI must
+also match the exact proof inputs, and the Combined runtime's server-side backend URL
+must be `http://localhost:8080/elsa/api`. ASP.NET Core forwarded-header processing must
+be enabled so external redirects retain HTTPS behind Azure TLS termination. Both health probes
+must return HTTP 200 within 20 seconds and
+the runtime body must be exactly `Healthy`. The proof waits five seconds beyond the
+configured bounded state lifetime rather than assuming a hidden default. The wrapper
+stores Playwright's transient failure context in a unique temporary directory and
+deletes it on exit, whether the proof passes or fails.
+
+After the interactive sign-in, the test opens the verified healthy instance, performs
+an authorized Elsa API operation, rejects callback replay, logs out and observes a
+`401` from the protected API, then delays a second issue request beyond the bounded
+browser-state lifetime and requires the callback to fail closed with `400`.
+
+Unavailable-instance and membership-revocation simulations remain fixture-only checks:
+mutating production catalog state is not part of the Azure proof. Evidence must report
+those local checks separately from the Azure public-TLS journey.
