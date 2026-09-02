@@ -8,6 +8,13 @@ using Xunit;
 
 namespace ElsaControl.Deployment.Core.Tests;
 
+[CollectionDefinition("Managed lifecycle telemetry", DisableParallelization = true)]
+public sealed class ManagedLifecycleTelemetryTestCollection
+{
+    public const string CollectionName = "Managed lifecycle telemetry";
+}
+
+[Collection(ManagedLifecycleTelemetryTestCollection.CollectionName)]
 public sealed class ManagedLifecycleTelemetryTests
 {
     [Fact]
@@ -425,6 +432,8 @@ public sealed class ManagedLifecycleTelemetryTests
         private readonly ActivityListener _activityListener;
         private readonly MeterListener _meterListener;
         private readonly object _gate = new();
+        private readonly List<Activity> _activities = [];
+        private readonly List<Measurement> _measurements = [];
 
         public TelemetryCapture()
         {
@@ -435,7 +444,7 @@ public sealed class ManagedLifecycleTelemetryTests
                 ActivityStopped = activity =>
                 {
                     lock (_gate)
-                        Activities.Add(activity);
+                        _activities.Add(activity);
                 }
             };
             ActivitySource.AddActivityListener(_activityListener);
@@ -451,14 +460,28 @@ public sealed class ManagedLifecycleTelemetryTests
             _meterListener.SetMeasurementEventCallback<long>((instrument, value, tags, _) =>
             {
                 lock (_gate)
-                    Measurements.Add(new(instrument.Name, value, tags.ToArray()));
+                    _measurements.Add(new(instrument.Name, value, tags.ToArray()));
             });
             _meterListener.Start();
         }
 
-        public List<Activity> Activities { get; } = [];
+        public IReadOnlyList<Activity> Activities
+        {
+            get
+            {
+                lock (_gate)
+                    return _activities.ToArray();
+            }
+        }
 
-        public List<Measurement> Measurements { get; } = [];
+        public IReadOnlyList<Measurement> Measurements
+        {
+            get
+            {
+                lock (_gate)
+                    return _measurements.ToArray();
+            }
+        }
 
         public void Dispose()
         {
