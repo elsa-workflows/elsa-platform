@@ -344,7 +344,9 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             .OrderByDescending(x => x.Sequence)
             .Select(x => x.Code)
             .FirstOrDefaultAsync(cancellationToken);
-        var endpoint = checkpoint.Endpoint ?? entity.Endpoint;
+        var endpoint = checkpoint.Endpoint is null
+            ? entity.Endpoint
+            : AzureProviderOperationValidation.NormalizeEndpoint(checkpoint.Endpoint);
         var health = checkpoint.Health == AzureProviderHealth.Unknown ? entity.Health : checkpoint.Health;
         if (entity.Phase == checkpoint.Phase && entity.Endpoint == endpoint && entity.Health == health &&
             entity.DiagnosticsJson == diagnosticsJson && ResourcesEqual(entity, resources) &&

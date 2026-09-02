@@ -107,7 +107,7 @@ public sealed class ElsaInstanceProviderReconciliationServiceTests
     {
         var (store, accepted) = await RecoveryTargetAsync();
         var current = new ElsaCurrentDeploymentReference(
-            "deployment-1", endpointUri: "https://managed.example.test/runtime/health");
+            "deployment-1", endpointUri: "https://managed.example.test");
         _ = await Service(store, new RecordingPort(new(
                 ElsaInstanceProviderObservationKind.Confirmed,
                 ElsaObservedLifecycle.Ready,

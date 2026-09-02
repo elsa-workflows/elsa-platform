@@ -19,14 +19,14 @@ internal static class ManagedElsaIdentityBindingMapper
         callbackUri = null;
         var persisted = entity.IdentityBinding;
         if (persisted is null ||
-            !Uri.TryCreate(entity.CurrentDeploymentEndpointUri, UriKind.Absolute, out var endpoint))
+            !ElsaManagedEndpointOrigin.TryCreate(entity.CurrentDeploymentEndpointUri, out var endpointOrigin))
             return false;
 
         try
         {
             var current = ElsaInstanceIdentityBinding.Hydrate(
                 entity.Id,
-                endpoint.GetLeftPart(UriPartial.Authority),
+                endpointOrigin.Value,
                 persisted.BindingVersion,
                 persisted.ChangedAt);
             if (!string.Equals(persisted.Audience, current.Audience, StringComparison.Ordinal) ||

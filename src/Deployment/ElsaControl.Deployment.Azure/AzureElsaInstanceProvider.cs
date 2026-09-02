@@ -107,6 +107,11 @@ public sealed class AzureElsaInstanceProvider(
             return CorrelationMismatch(request);
 
         var correlation = operation.OperationIdentity;
+        if (operation.Status == AzureProviderOperationStatus.Succeeded &&
+            operation.Health is AzureProviderHealth.Healthy or AzureProviderHealth.Degraded &&
+            !ElsaManagedEndpointOrigin.TryCreate(operation.Endpoint, out _))
+            return EndpointInvalid(request);
+
         return operation.Status switch
         {
             AzureProviderOperationStatus.Succeeded when operation.Health == AzureProviderHealth.Healthy =>
@@ -159,6 +164,11 @@ public sealed class AzureElsaInstanceProvider(
         new(ElsaInstanceProviderObservationKind.Ambiguous, ElsaObservedLifecycle.Unknown,
             ElsaInstanceProviderHealthGate.Unknown, request.OperationId, request.AttemptNumber,
             "provider-operation-correlation-mismatch");
+
+    private static ElsaInstanceProviderObservation EndpointInvalid(ElsaInstanceProviderReconciliationRequest request) =>
+        new(ElsaInstanceProviderObservationKind.Ambiguous, ElsaObservedLifecycle.Unknown,
+            ElsaInstanceProviderHealthGate.Unknown, request.OperationId, request.AttemptNumber,
+            "provider-operation-endpoint-invalid");
 
     private static ElsaCurrentDeploymentReference? CurrentDeployment(AzureProviderOperation operation) =>
         new(operation.OperationIdentity, $"attempt-{operation.AttemptNumber}", operation.Endpoint);

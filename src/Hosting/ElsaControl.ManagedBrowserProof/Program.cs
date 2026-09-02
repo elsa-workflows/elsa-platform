@@ -15,7 +15,7 @@ var command = args[0];
 var databasePath = Path.GetFullPath(args[1]);
 if (!File.Exists(databasePath))
     return Fail("The fixture database does not exist.");
-if (!TryGetRuntimeOrigin(args[2], out var runtimeOrigin))
+if (!ElsaManagedEndpointOrigin.TryCreate(args[2], out var runtimeOrigin))
     return Fail("The runtime origin must be an absolute HTTPS origin without credentials, path, query, or fragment.");
 
 var options = new DbContextOptionsBuilder<CatalogDbContext>()
@@ -50,17 +50,17 @@ var accountId = accountIds[0];
 switch (command)
 {
     case "seed":
-        await SeedAsync(database, organizationId, workspaceId, accountId, instanceId, runtimeOrigin!);
+        await SeedAsync(database, organizationId, workspaceId, accountId, instanceId, runtimeOrigin);
         break;
     case "revoke":
         await SetMembershipAsync(database, organizationId, accountId, disabled: true);
         break;
     case "restore":
         await SetMembershipAsync(database, organizationId, accountId, disabled: false);
-        await SetAvailabilityAsync(database, instanceId, available: true, runtimeOrigin!);
+        await SetAvailabilityAsync(database, instanceId, available: true, runtimeOrigin);
         break;
     case "unavailable":
-        await SetAvailabilityAsync(database, instanceId, available: false, runtimeOrigin!);
+        await SetAvailabilityAsync(database, instanceId, available: false, runtimeOrigin);
         break;
 }
 
@@ -70,7 +70,7 @@ Console.WriteLine(JsonSerializer.Serialize(new
     organizationId,
     workspaceId,
     instanceId,
-    runtimeOrigin = runtimeOrigin!.AbsoluteUri.TrimEnd('/'),
+    runtimeOrigin = runtimeOrigin.Value,
     status = "succeeded"
 }));
 return 0;
@@ -81,7 +81,7 @@ static async Task SeedAsync(
     Guid workspaceId,
     Guid accountId,
     Guid instanceId,
-    Uri runtimeOrigin)
+    ElsaManagedEndpointOrigin runtimeOrigin)
 {
     var entitlement = await database.OrganizationEntitlementSnapshots
         .OrderByDescending(x => x.SyncedAt)
@@ -124,7 +124,7 @@ static async Task SeedAsync(
     var identities = new EfCoreManagedElsaInstanceIdentityStore(database);
     var existing = await identities.FindAsync(organizationId, instanceId);
     if (existing is not null &&
-        (!string.Equals(existing.CallbackUri.GetLeftPart(UriPartial.Authority), runtimeOrigin.AbsoluteUri.TrimEnd('/'), StringComparison.Ordinal) ||
+        (!string.Equals(existing.CallbackUri.GetLeftPart(UriPartial.Authority), runtimeOrigin.Value, StringComparison.Ordinal) ||
          !string.Equals(existing.Audience, ElsaInstanceIdentityBinding.AudienceFor(instanceId), StringComparison.Ordinal)))
     {
         throw new InvalidOperationException("The existing proof identity binding conflicts with the requested runtime origin.");
@@ -137,7 +137,7 @@ static async Task SeedAsync(
             organizationId,
             workspaceId,
             instanceId,
-            runtimeOrigin.AbsoluteUri.TrimEnd('/'),
+            runtimeOrigin.Value,
             expectedBindingVersion: null,
             DateTimeOffset.UtcNow);
         if (!binding.Succeeded)
@@ -154,31 +154,19 @@ static async Task SetMembershipAsync(CatalogDbContext database, Guid organizatio
     await database.SaveChangesAsync();
 }
 
-static async Task SetAvailabilityAsync(CatalogDbContext database, Guid instanceId, bool available, Uri runtimeOrigin)
+static async Task SetAvailabilityAsync(
+    CatalogDbContext database,
+    Guid instanceId,
+    bool available,
+    ElsaManagedEndpointOrigin runtimeOrigin)
 {
-    var endpoint = new Uri(runtimeOrigin, "/health").AbsoluteUri;
+    var endpoint = runtimeOrigin.Value;
     var observedLifecycle = available ? ElsaObservedLifecycle.Ready : ElsaObservedLifecycle.Unknown;
     var health = available ? ElsaInstanceHealth.Healthy : ElsaInstanceHealth.Unknown;
     var affected = await database.Database.ExecuteSqlInterpolatedAsync(
         $"UPDATE ElsaInstances SET CurrentDeploymentId = {"deployment-managed-browser-proof"}, CurrentDeploymentEndpointUri = {endpoint}, DesiredLifecycle = {ElsaDesiredLifecycle.Running.ToString()}, ObservedLifecycle = {observedLifecycle.ToString()}, Health = {health.ToString()} WHERE Id = {instanceId}");
     if (affected != 1)
         throw new InvalidOperationException("The proof instance was not found.");
-}
-
-static bool TryGetRuntimeOrigin(string value, out Uri? origin)
-{
-    if (!Uri.TryCreate(value, UriKind.Absolute, out origin) ||
-        !string.Equals(origin.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
-        !string.IsNullOrEmpty(origin.UserInfo) ||
-        !string.IsNullOrEmpty(origin.Query) ||
-        !string.IsNullOrEmpty(origin.Fragment) ||
-        origin.AbsolutePath is not ("" or "/"))
-    {
-        origin = null;
-        return false;
-    }
-
-    return true;
 }
 
 static int Fail(string message)

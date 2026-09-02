@@ -1,4 +1,6 @@
+using System.Text.Json;
 using ElsaControl.Deployment.Abstractions.Instances;
+using ElsaControl.Deployment.Azure;
 using ElsaControl.Deployment.Core.Cockpit;
 using ElsaControl.Deployment.Core.Instances;
 using ElsaControl.Deployment.Core.Workspace;
@@ -1572,7 +1574,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
                 ElsaInstanceProviderHealthGate.Passed, "provider-observation-2",
                 retryEvidence: null,
                 currentDeploymentReference: new ElsaCurrentDeploymentReference(
-                    "deployment-reconciled", endpointUri: "https://managed.example.test/runtime/health")));
+                    "deployment-reconciled", endpointUri: "https://managed.example.test")));
         var lifecycleStore = new EfCoreElsaInstanceLifecycleStore(
             db, EmptyResolutionInputSource.Instance, new FixedTimeProvider(Now.AddMinutes(11)));
         var service = new ElsaInstanceProviderReconciliationService(
@@ -1672,6 +1674,166 @@ public sealed class ElsaInstanceLifecycleStoreTests
             null,
             null,
             Now.AddMinutes(12))));
+    }
+
+    [Fact]
+    public async Task Azure_provider_reconciliation_persists_safe_origin_and_identity_in_EF_projection()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+
+        var workspace = await CreateWorkspaceAsync(db, "Azure provider EF integration workspace");
+        var accepted = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now))
+            .CreateAsync(new ElsaInstanceCreateRequest(
+                workspace.OrganizationId,
+                workspace.Id,
+                "Managed Elsa",
+                "azure-provider-ef",
+                WorkerIntent(),
+                "azure-provider-ef-create"));
+        var targetIds = await AddManagedEnvironmentAsync(db, workspace, accepted.Instance.Id);
+        db.ChangeTracker.Clear();
+
+        var lifecycleStore = new EfCoreElsaInstanceLifecycleStore(
+            db,
+            new StaticResolutionInputSource(accepted.Instance, targetIds),
+            new FixedTimeProvider(Now));
+        var item = await lifecycleStore.TryClaimNextAsync("resolver-worker", Now)
+            ?? throw new InvalidOperationException("Expected a claimed lifecycle operation.");
+        var resolved = AzureProviderResolution(workspace.Id, accepted.Instance.Id);
+        var translated = AzureWorkloadPlanTranslator.Translate(
+            resolved.Plan,
+            new("azure-provider", "westeurope"));
+        Assert.True(translated.IsAccepted,
+            string.Join("; ", translated.Findings.Select(x => $"{x.Code}:{x.Scope}")));
+        Assert.Equal(ElsaInstanceLifecycleWorkerOutcome.Queued,
+            (await lifecycleStore.CommitResolvedAsync(
+                CreateResolutionCommit(item, resolved, Now, "resolver-worker"))).Outcome);
+
+        db.ChangeTracker.Clear();
+        var run = await db.DeploymentRuns.SingleAsync(x => x.ElsaInstanceId == accepted.Instance.Id);
+        var deploymentTarget = new ElsaInstanceLifecycleDeploymentTarget(
+            run.ApplicationId,
+            run.EnvironmentId,
+            run.EngineId,
+            run.SourceRevisionId,
+            run.ConfirmationId,
+            run.ActorAccountId);
+        var providerScopeFingerprint = new string('a', 64);
+        var operationStore = new AzureProviderOperationStore(db);
+        var provider = new AzureElsaInstanceProvider(
+            new AzureProviderOperationService(operationStore, new FixedTimeProvider(Now)),
+            operationStore,
+            new AzureElsaInstanceProviderOptions
+            {
+                Enabled = true,
+                TemplateFingerprint = new string('b', 64),
+                ProviderScopeFingerprint = providerScopeFingerprint
+            });
+        var submission = await provider.SubmitAsync(new(
+            workspace.Id,
+            accepted.Instance.Id,
+            accepted.Operation.Id,
+            accepted.Operation.AttemptNumber,
+            ElsaDesiredLifecycle.Running,
+            resolved.Plan!,
+            deploymentTarget,
+            "westeurope"));
+        Assert.False(submission.Replayed);
+
+        var providerOperation = Assert.Single(await operationStore.ListRunnableAsync(Now, 16));
+        await lifecycleStore.CommitProviderSubmissionAsync(new(
+            workspace.Id,
+            accepted.Instance.Id,
+            accepted.Operation.Id,
+            accepted.Operation.AttemptNumber,
+            submission.CorrelationId,
+            Now));
+
+        const string subscriptionId = "11111111-1111-1111-1111-111111111111";
+        const string resourceGroupName = "elsa-managed";
+        var foundationDeploymentId =
+            $"/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Resources/deployments/foundation";
+        var workloadDeploymentId =
+            $"/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Resources/deployments/workload";
+        var workloadResourceId =
+            $"/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.App/containerApps/{providerOperation.TargetKey}";
+        var claimed = await operationStore.ClaimAsync(
+            workspace.Id,
+            providerOperation.Id,
+            "azure-worker",
+            "azure-lease",
+            TimeSpan.FromMinutes(5),
+            Now);
+        Assert.NotNull(claimed);
+        var checkpoint = Assert.IsType<AzureProviderOperation>(await operationStore.CheckpointAsync(
+            workspace.Id,
+            providerOperation.Id,
+            "azure-lease",
+            new(
+                AzureProviderOperationPhase.HealthVerified,
+                "health.verified",
+                "Azure workload health verified.",
+                new(
+                    ResourceGroupName: resourceGroupName,
+                    FoundationDeploymentId: foundationDeploymentId,
+                    WorkloadDeploymentId: workloadDeploymentId,
+                    WorkloadResourceId: workloadResourceId),
+                "https://runtime.example.test",
+                AzureProviderHealth.Healthy,
+                []),
+            Now,
+            claimed.Version));
+        var finalized = await operationStore.FinalizeAsync(
+            workspace.Id,
+            providerOperation.Id,
+            "azure-lease",
+            AzureProviderOperationStatus.Succeeded,
+            "operation.succeeded",
+            Now,
+            checkpoint.Version);
+        Assert.Equal(AzureProviderOperationStatus.Succeeded, finalized?.Status);
+        Assert.Equal(AzureProviderHealth.Healthy, finalized?.Health);
+        Assert.Equal("https://runtime.example.test", finalized?.Endpoint);
+
+        db.ChangeTracker.Clear();
+        var reconciled = await new ElsaInstanceProviderReconciliationService(
+                lifecycleStore,
+                provider,
+                new FixedTimeProvider(Now.AddMinutes(1)))
+            .ReconcileAsync(workspace.Id, accepted.Operation.Id);
+
+        Assert.Equal(ElsaInstanceProviderReconciliationOutcome.Converged, reconciled.Outcome);
+        Assert.Equal(ElsaObservedLifecycle.Ready, reconciled.Projection.ObservedLifecycle);
+        Assert.Equal(ElsaInstanceHealth.Healthy, reconciled.Projection.Health);
+
+        db.ChangeTracker.Clear();
+        var persisted = await db.ElsaInstances
+            .Include(x => x.IdentityBinding)
+            .SingleAsync(x => x.Id == accepted.Instance.Id);
+        Assert.Equal(ElsaObservedLifecycle.Ready, persisted.ObservedLifecycle);
+        Assert.Equal(ElsaInstanceHealth.Healthy, persisted.Health);
+        Assert.Equal("https://runtime.example.test", persisted.CurrentDeploymentEndpointUri);
+        Assert.Equal(ElsaInstanceIdentityBinding.AudienceFor(accepted.Instance.Id), persisted.IdentityBinding?.Audience);
+        Assert.Equal(
+            "https://runtime.example.test/managed-elsa/handoff/callback",
+            persisted.IdentityBinding?.CanonicalCallbackUri);
+
+        var customerProjection = Assert.Single(
+            (await new EfCoreManagedElsaInstanceApiStore(db).ListInstancesAsync(workspace.Id, 1, 10)).Items);
+        Assert.Equal(ElsaObservedLifecycle.Ready, customerProjection.ObservedLifecycle);
+        Assert.Equal(ElsaInstanceHealth.Healthy, customerProjection.Health);
+        Assert.Equal("https://runtime.example.test", customerProjection.CurrentDeploymentReference?.EndpointUri);
+        Assert.Equal(ElsaInstanceIdentityBinding.AudienceFor(accepted.Instance.Id),
+            customerProjection.IdentityBinding?.Audience);
+        Assert.Equal("https://runtime.example.test/managed-elsa/handoff/callback",
+            customerProjection.IdentityBinding?.CanonicalCallbackUri);
+        var customerJson = JsonSerializer.Serialize(customerProjection);
+        Assert.DoesNotContain(foundationDeploymentId, customerJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(workloadDeploymentId, customerJson, StringComparison.Ordinal);
+        Assert.DoesNotContain(workloadResourceId, customerJson, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1994,6 +2156,91 @@ public sealed class ElsaInstanceLifecycleStoreTests
             "paid",
             "server-studio",
             []);
+
+    private static ElsaInstancePlanResolutionResult AzureProviderResolution(Guid workspaceId, Guid instanceId)
+    {
+        var baseline = SuccessfulResolution(workspaceId, instanceId);
+        var baselinePlan = baseline.Plan!;
+        const string imageDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        const string manifestDigest = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+        const string signatureDigest = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+        var manifestReference = baselinePlan.Release.ReleaseManifestReference;
+        var component = baselinePlan.Topology.Components.Single();
+        var plan = baselinePlan with
+        {
+            Release = baselinePlan.Release with
+            {
+                ComponentDeclarations = new(
+                    "1",
+                    imageDigest,
+                    [
+                        new(AzureWorkloadPlanTranslator.SqlWorkflowPackageId, "5.0.0-preview.1"),
+                        new(AzureWorkloadPlanTranslator.SqlQuartzPackageId, "5.0.0-preview.1")
+                    ])
+            },
+            Topology = baselinePlan.Topology with
+            {
+                Id = AzureWorkloadPlanTranslator.SupportedTopology,
+                Components =
+                [
+                    component with
+                    {
+                        Image = component.Image with
+                        {
+                            Repository = AzureWorkloadPlanTranslator.SupportedRepository,
+                            Reference = $"{AzureWorkloadPlanTranslator.SupportedRepository}@{imageDigest}",
+                            Digest = imageDigest
+                        }
+                    }
+                ]
+            },
+            Network = baselinePlan.Network with
+            {
+                Ingress = "public",
+                Egress = "unrestricted",
+                RequiresPrivateConnectivity = false,
+                Endpoints = baselinePlan.Network.Endpoints
+                    .Select(endpoint => endpoint with
+                    {
+                        Visibility = "public",
+                        Protocol = "https",
+                        RequiresTls = true
+                    })
+                    .ToArray()
+            },
+            Isolation = AzureWorkloadPlanTranslator.SupportedIsolation,
+            Configuration = new(
+            [
+                new("database:connectionstring", "string", true, true, false, null, null,
+                    "secret://vault/database-connection", null),
+                new("identity:signingkey", "string", true, true, false, null, null,
+                    "secret://vault/identity-signing-key", null),
+                new("admin:password", "string", true, true, false, null, null,
+                    "secret://vault/admin-password", null)
+            ]),
+            Evidence =
+            [
+                new(ReleaseManifestEvidenceKinds.Manifest, manifestReference, manifestDigest,
+                    ReleaseManifestEvidenceContract.DescriptionFor(ReleaseManifestEvidenceKinds.Manifest)),
+                new(ReleaseManifestEvidenceKinds.Signature,
+                    "https://example.test/signatures/5.0.0-preview.1.sig", signatureDigest,
+                    ReleaseManifestEvidenceContract.DescriptionFor(ReleaseManifestEvidenceKinds.Signature))
+            ]
+        };
+        var reference = new ElsaResolvedPlanReference(
+            "plan_worker_01",
+            1,
+            ResolvedElsaApplicationPlanSerialization.ComputeContentHash(plan),
+            $"https://control.example.test/api/workspaces/{workspaceId:D}/instances/{instanceId:D}/resolved-plans/plan_worker_01");
+        return new(
+            true,
+            plan,
+            reference,
+            new(reference, baselinePlan.Release.DistributionId, baselinePlan.Release.ReleaseLine,
+                baselinePlan.Release.Version, manifestDigest,
+                [new(component.Id, imageDigest)]),
+            []);
+    }
 
     private static ElsaInstanceLifecycleResolutionCommit CreateResolutionCommit(
         ElsaInstanceLifecycleWorkItem item,

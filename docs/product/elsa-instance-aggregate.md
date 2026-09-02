@@ -302,6 +302,23 @@ userinfo, wildcard hosts and non-HTTPS schemes (except localhost HTTP in local
 development), and a callback-domain collision is a `409` domain conflict (separate
 from the workspace slug conflict).
 
+For the initial managed Azure path, `CurrentDeploymentReference.EndpointUri` is the
+canonical direct Container Apps managed-TLS **origin**, not a health URL or provider
+resource locator. It therefore uses HTTPS, has a non-empty host, and has no path,
+userinfo, query or fragment. The provider appends `/health` only while verifying the
+runtime; that probe path is not persisted or exposed as the customer endpoint. A
+missing or malformed origin projects provider uncertainty and cannot create an
+identity binding or an openable instance. Front Door, WAF, custom DNS, private
+ingress and multi-region routing remain later endpoint realizations of the same
+provider-neutral origin contract.
+
+Customer-readable provider-operation status exposes only lifecycle status, health,
+the canonical safe origin, stable diagnostic codes and timestamps. Provider
+resource handles, workload keys, request hashes, worker/lease state and transition
+messages remain internal. A legacy path-bearing endpoint is treated as unavailable
+and cleared on the next unrelated instance write; it is never converted into a
+trusted origin.
+
 The identity binding contains `BindingVersion`, `Audience`, `CanonicalCallbackUri`,
 the verified endpoint-origin reference and `ChangedAt`. Endpoint or custom-domain
 rotation atomically increments `BindingVersion` and replaces the exact callback;

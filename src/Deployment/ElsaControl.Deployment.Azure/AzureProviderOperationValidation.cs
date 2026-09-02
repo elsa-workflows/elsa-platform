@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Collections.ObjectModel;
+using ElsaControl.Deployment.Abstractions.Instances;
 using NuGet.Versioning;
 
 namespace ElsaControl.Deployment.Azure;
@@ -73,13 +74,15 @@ public static class AzureProviderOperationValidation
 
     public static void ValidateEndpoint(string? endpoint)
     {
-        if (endpoint is null) return;
-        if (endpoint.Length > 2048 || endpoint.Contains("%2e", StringComparison.OrdinalIgnoreCase) ||
-            endpoint.Contains("%2f", StringComparison.OrdinalIgnoreCase) || endpoint.Contains("%5c", StringComparison.OrdinalIgnoreCase) ||
-            !Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps || string.IsNullOrEmpty(uri.Host) ||
-            !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment) ||
-            Uri.UnescapeDataString(uri.AbsolutePath).Contains("..", StringComparison.Ordinal) || uri.AbsolutePath.Any(char.IsControl))
-            throw new ArgumentException("Endpoint must be a safe HTTPS URI.", nameof(endpoint));
+        _ = NormalizeEndpoint(endpoint);
+    }
+
+    public static string? NormalizeEndpoint(string? endpoint)
+    {
+        if (endpoint is null) return null;
+        if (!ElsaManagedEndpointOrigin.TryCreate(endpoint, out var origin))
+            throw new ArgumentException("Endpoint must be a safe HTTPS origin.", nameof(endpoint));
+        return origin.Value;
     }
 
     /// <summary>

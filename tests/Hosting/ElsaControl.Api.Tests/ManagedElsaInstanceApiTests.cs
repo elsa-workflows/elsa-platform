@@ -311,7 +311,7 @@ public sealed class ManagedElsaInstanceApiTests
             organizationId = await db.Workspaces.Where(x => x.Id == workspaceId)
                 .Select(x => x.OrganizationId)
                 .SingleAsync();
-            await SetOpenableDeploymentEndpointAsync(db, instanceId, "https://old-managed.example.test/runtime/health");
+            await SetOpenableDeploymentEndpointAsync(db, instanceId, "https://old-managed.example.test");
             var identities = scope.ServiceProvider.GetRequiredService<IManagedElsaInstanceIdentityStore>();
             var bound = await identities.BindAsync(organizationId, workspaceId, instanceId,
                 "https://old-managed.example.test", expectedBindingVersion: null, DateTimeOffset.UtcNow);
@@ -327,7 +327,7 @@ public sealed class ManagedElsaInstanceApiTests
         await using (var scope = app.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
-            await SetOpenableDeploymentEndpointAsync(db, instanceId, "https://rotated-managed.example.test/runtime/health");
+            await SetOpenableDeploymentEndpointAsync(db, instanceId, "https://rotated-managed.example.test");
         }
 
         var stale = await client.GetControlJsonAsync<ManagedElsaInstanceResponse>(

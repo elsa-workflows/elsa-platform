@@ -82,6 +82,50 @@ public sealed class AzureElsaInstanceProviderTests
     }
 
     [Theory]
+    [InlineData(AzureProviderHealth.Healthy, null)]
+    [InlineData(AzureProviderHealth.Healthy, "https://runtime.example.test/api")]
+    [InlineData(AzureProviderHealth.Degraded, null)]
+    [InlineData(AzureProviderHealth.Degraded, "https://runtime.example.test/?token=secret")]
+    public async Task Succeeded_healthy_or_degraded_operation_with_invalid_endpoint_is_ambiguous_and_value_free(
+        AzureProviderHealth health,
+        string? endpoint)
+    {
+        var workspaceId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var operationId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        var plan = Translate("5.0", "5.0.0");
+        var operation = CreateOperation(workspaceId, plan, operationId) with
+        {
+            Status = AzureProviderOperationStatus.Succeeded,
+            Health = health,
+            Endpoint = endpoint
+        };
+        var provider = new AzureElsaInstanceProvider(
+            new CapturingOperationService(operation),
+            new CapturingOperationStore(operation),
+            EnabledOptions());
+
+        var request = new ElsaInstanceProviderReconciliationRequest(
+            workspaceId,
+            TestInstanceId,
+            operationId,
+            1,
+            ElsaDesiredLifecycle.Running,
+            null,
+            null);
+        var first = await provider.ObserveAsync(request);
+        var second = await provider.ObserveAsync(request);
+
+        Assert.Equal(ElsaInstanceProviderObservationKind.Ambiguous, first.Kind);
+        Assert.Equal(ElsaObservedLifecycle.Unknown, first.ObservedLifecycle);
+        Assert.Equal(ElsaInstanceProviderHealthGate.Unknown, first.HealthGate);
+        Assert.Equal("provider-operation-endpoint-invalid", first.CorrelationId);
+        Assert.Equal(first.CorrelationId, second.CorrelationId);
+        Assert.DoesNotContain("secret", first.CorrelationId, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(first.CurrentDeploymentReference);
+        Assert.False(first.HasCurrentDeploymentProjection);
+    }
+
+    [Theory]
     [InlineData(AzureProviderOperationStatus.Succeeded, AzureProviderHealth.Degraded, ElsaObservedLifecycle.Ready, ElsaInstanceProviderHealthGate.Failed)]
     [InlineData(AzureProviderOperationStatus.Succeeded, AzureProviderHealth.Unreachable, ElsaObservedLifecycle.Ready, ElsaInstanceProviderHealthGate.Unknown)]
     [InlineData(AzureProviderOperationStatus.Succeeded, AzureProviderHealth.Failed, ElsaObservedLifecycle.Failed, ElsaInstanceProviderHealthGate.Failed)]
@@ -99,7 +143,15 @@ public sealed class AzureElsaInstanceProviderTests
         var instanceId = Guid.Parse("22222222-2222-2222-2222-222222222222");
         var operationId = Guid.Parse("33333333-3333-3333-3333-333333333333");
         var plan = Translate("5.0", "5.0.0");
-        var operation = CreateOperation(workspaceId, plan, operationId) with { Status = status, Health = health };
+        var operation = CreateOperation(workspaceId, plan, operationId) with
+        {
+            Status = status,
+            Health = health,
+            Endpoint = status == AzureProviderOperationStatus.Succeeded &&
+                       health is AzureProviderHealth.Healthy or AzureProviderHealth.Degraded
+                ? "https://runtime.example.test/"
+                : null
+        };
         var provider = new AzureElsaInstanceProvider(
             new CapturingOperationService(operation),
             new CapturingOperationStore(operation),

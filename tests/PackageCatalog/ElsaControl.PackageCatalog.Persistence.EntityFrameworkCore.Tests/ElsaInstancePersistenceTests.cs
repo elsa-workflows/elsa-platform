@@ -357,6 +357,25 @@ public sealed class ElsaInstancePersistenceTests
     }
 
     [Fact]
+    public async Task Managed_instance_deployment_endpoint_must_be_an_https_origin()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = new Workspace { Name = "Managed endpoint workspace" };
+        db.Workspaces.Add(workspace);
+        await db.SaveChangesAsync();
+        var instance = NewInstance(workspace.OrganizationId, workspace.Id);
+        instance.CurrentDeploymentId = "deployment-managed";
+        instance.CurrentDeploymentEndpointUri = "https://runtime.example.test/health";
+        db.ElsaInstances.Add(instance);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
+        Assert.Equal("Managed deployment endpoint origin is invalid.", exception.Message);
+    }
+
+    [Fact]
     public async Task Managed_instance_catalog_omits_stale_binding_values()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -368,7 +387,8 @@ public sealed class ElsaInstancePersistenceTests
         await db.SaveChangesAsync();
 
         var instance = NewInstance(workspace.OrganizationId, workspace.Id);
-        instance.CurrentDeploymentEndpointUri = "https://control.example/runtime";
+        instance.CurrentDeploymentId = "deployment-current";
+        instance.CurrentDeploymentEndpointUri = "https://control.example";
         db.ElsaInstances.Add(instance);
         db.ElsaInstanceIdentityBindings.Add(NewBinding(
             instance.Id,
@@ -383,7 +403,28 @@ public sealed class ElsaInstancePersistenceTests
         Assert.Equal(1, current.BindingVersion);
 
         await db.Database.ExecuteSqlInterpolatedAsync(
-            $"UPDATE ElsaInstances SET CurrentDeploymentEndpointUri = {"https://different.example/runtime"} WHERE Id = {instance.Id}");
+            $"UPDATE ElsaInstances SET CurrentDeploymentEndpointUri = {"https://control.example/runtime"} WHERE Id = {instance.Id}");
+        db.ChangeTracker.Clear();
+
+        var malformed = Assert.Single(await catalog.ListAsync(workspace.Id));
+        Assert.Null(malformed.Audience);
+        Assert.Null(malformed.CallbackUri);
+        Assert.Null(malformed.BindingVersion);
+
+        var legacyEntity = await db.ElsaInstances
+            .Include(x => x.IdentityBinding)
+            .SingleAsync(x => x.Id == instance.Id);
+        var legacyInstance = EfCoreElsaInstanceLifecycleStore.MapInstance(legacyEntity);
+        Assert.Equal("deployment-current", legacyInstance.CurrentDeploymentReference?.DeploymentId);
+        Assert.Null(legacyInstance.CurrentDeploymentReference?.EndpointUri);
+        Assert.Null(legacyInstance.IdentityBinding);
+
+        legacyEntity.Name = "Managed instance after legacy endpoint read";
+        await db.SaveChangesAsync();
+        Assert.Null(legacyEntity.CurrentDeploymentEndpointUri);
+
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE ElsaInstances SET CurrentDeploymentEndpointUri = {"https://different.example"} WHERE Id = {instance.Id}");
         db.ChangeTracker.Clear();
 
         var stale = Assert.Single(await catalog.ListAsync(workspace.Id));

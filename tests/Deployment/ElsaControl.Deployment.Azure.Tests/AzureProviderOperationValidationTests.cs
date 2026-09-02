@@ -104,6 +104,31 @@ public sealed class AzureProviderOperationValidationTests
                 SqlServerFqdn: "different.database.windows.net")));
     }
 
+    [Theory]
+    [InlineData("https://runtime.example.test", "https://runtime.example.test")]
+    [InlineData("HTTPS://Runtime.Example.Test:443/", "https://runtime.example.test")]
+    [InlineData("https://runtime.example.test:8443/", "https://runtime.example.test:8443")]
+    public void Accepts_and_canonicalizes_absolute_https_origins_with_empty_or_root_path(
+        string endpoint,
+        string expected)
+    {
+        AzureProviderOperationValidation.ValidateEndpoint(endpoint);
+        Assert.Equal(expected, AzureProviderOperationValidation.NormalizeEndpoint(endpoint));
+    }
+
+    [Theory]
+    [InlineData("https://runtime.example.test/api")]
+    [InlineData("https:///")]
+    [InlineData("https://user:secret@runtime.example.test/")]
+    [InlineData("https://runtime.example.test/?token=secret")]
+    [InlineData("https://runtime.example.test/#fragment")]
+    [InlineData("http://runtime.example.test/")]
+    [InlineData("https://runtime.example.test/\r\n")]
+    public void Rejects_non_origin_provider_endpoints(string endpoint)
+    {
+        Assert.Throws<ArgumentException>(() => AzureProviderOperationValidation.ValidateEndpoint(endpoint));
+    }
+
     [Fact]
     public void Normalizes_safe_identity_and_digests()
     {
