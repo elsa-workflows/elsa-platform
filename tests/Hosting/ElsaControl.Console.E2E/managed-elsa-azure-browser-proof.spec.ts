@@ -4,6 +4,8 @@ const proofEnabled = process.env.MANAGED_ELSA_AZURE_BROWSER_PROOF === "1";
 const controlOrigin = (process.env.ADMIN_UI_BASE_URL ?? "").replace(/\/+$/, "");
 const runtimeOrigin = (process.env.MANAGED_ELSA_PROOF_RUNTIME_ORIGIN ?? "").replace(/\/+$/, "");
 const stateLifetimeSeconds = Number(process.env.MANAGED_ELSA_PROOF_STATE_LIFETIME_SECONDS ?? "");
+const interactiveSignInTimeoutMs = 300_000;
+const postSignInBudgetMs = 120_000;
 
 test.use({ ignoreHTTPSErrors: false, trace: "off", screenshot: "off", video: "off" });
 
@@ -12,10 +14,10 @@ test.describe("managed Elsa Azure browser proof", () => {
   test.describe.configure({ mode: "serial" });
 
   test("completes the public-TLS handoff and fails closed on replay and expiry", async ({ page }) => {
-    test.setTimeout(480_000);
     requirePublicHttpsOrigin(controlOrigin, "ADMIN_UI_BASE_URL");
     requirePublicHttpsOrigin(runtimeOrigin, "MANAGED_ELSA_PROOF_RUNTIME_ORIGIN");
     requireBoundedStateLifetime(stateLifetimeSeconds);
+    test.setTimeout(interactiveSignInTimeoutMs + ((stateLifetimeSeconds + 5) * 1_000) + postSignInBudgetMs);
 
     await signInInteractively(page);
 
@@ -68,7 +70,7 @@ async function signInInteractively(page: Page) {
 }
 
 async function waitForControlReturn(page: Page) {
-  const deadline = Date.now() + 300_000;
+  const deadline = Date.now() + interactiveSignInTimeoutMs;
   while (Date.now() < deadline) {
     const current = new URL(page.url());
     if (current.origin === controlOrigin && current.pathname === "/admin/runtimes")

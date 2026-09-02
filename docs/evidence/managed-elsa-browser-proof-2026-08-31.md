@@ -6,7 +6,7 @@ The four-scenario local real-browser proof passes against the immutable linux/am
 image selected from the admitted build-120 release. The shared Azure deployment is
 healthy and the production Control API is running the provider-integration merge.
 The final public-TLS browser journey is ready but still requires the account owner's
-interactive Microsoft Entra sign-in and MFA; the unattended attempt timed out safely
+interactive Microsoft Entra sign-in and MFA; the unattended attempts timed out safely
 without retaining browser artifacts or one-time handoff material.
 
 ## Immutable inputs
@@ -33,19 +33,19 @@ without retaining browser artifacts or one-time handoff material.
 | Local Control login | Pass | Isolated Chromium completed the real Keycloak authorization-code flow and returned to `/admin/runtimes`. |
 | Local proof fixture | Pass | The fixture migrated an isolated catalog copy, seeded the deterministic instance twice, rejected a conflicting runtime origin, and restored availability and membership state between tests. Direct health projection is a fixture boundary, not provider evidence. |
 | Local healthy journey | Pass | Chromium opened the real Combined Studio without a second login, called the protected workflow-definitions API (`200`), logged out (`204`), and then received `401` from the protected API. |
-| Callback replay | Pass locally | Reposting the already-consumed callback form returned `400`. This proves callback replay rejection; separate API tests cover one-time Control redemption/JTI replay. No callback values were retained. |
-| Expired browser state | Pass locally | Delaying issue beyond the configured one-minute runtime browser-state lifetime caused the callback to fail closed with `400`. |
+| Callback replay | Pass locally | Reposting the already-consumed callback form returned `400`. This proves callback replay rejection; `ManagedElsaHandoffTests.Replay_is_rejected_atomically` and `Concurrent_redeemers_allow_exactly_one_success` prove one-time Control redemption/JTI replay. No callback values were retained. |
+| Expired browser state and code | Pass locally | Delaying issue beyond the configured one-minute runtime browser-state lifetime caused the callback to fail closed with `400`; `ManagedElsaHandoffTests.Expired_token_is_rejected` proves expired Control code rejection. |
 | Unavailable instance | Pass locally | The real console rendered `Unavailable` and exposed no Open action after the isolated fixture projected unavailable health. |
 | Membership revocation before issue | Pass locally | Disabling membership after Open but before issue returned the stable account-unavailable outcome and did not navigate to the runtime. |
 | Azure runtime | Pass | Container App revision `ca-elsa-managed-proof--0000003` is active and Healthy with one replica and all traffic. It runs the exact Combined image index above with `ManagedElsa:Handoff:StateLifetime=00:01:00`. |
-| Azure Control | Pass | App Service `api-m5uymkuaf222o` is Running, HTTPS-only, healthy on build `89`, and has managed-Elsa handoff enabled with an ephemeral proof signing key. |
+| Azure Control | Pass | App Service `api-m5uymkuaf222o` is Running, HTTPS-only, healthy on build `89`, and has managed-Elsa handoff enabled with a proof-only signing key. |
 | Azure handoff start | Pass | The runtime start endpoint returned `302` to the configured Control continuation with only the expected safe query-key names recorded. Values were not retained. |
 | Azure public-TLS browser journey | Pending interactive input | The isolated headed run reached Microsoft Entra sign-in and timed out after five minutes without the operator completing sign-in/MFA. The harness deleted its unique transient output directory on exit. |
 
 Unavailable-instance and membership-revocation simulations intentionally remain
-local: mutating shared production tenancy is outside this proof. The Azure run proves
-the non-simulated public-TLS happy journey, replay, expiry and logout against the same
-immutable release.
+local: mutating shared production tenancy is outside this proof. The Azure run is
+scoped to prove the non-simulated public-TLS happy journey, replay, expiry and logout
+against the same immutable release.
 
 ## Azure resources retained for reproducibility
 
@@ -65,6 +65,37 @@ immutable release.
 
 - Complete the isolated headed Chromium run with the account owner's normal Entra/MFA
   step, then record only the scenario result and exact immutable/environment facts.
+
+## Reproducible safe preflight
+
+Before an Azure browser run, verify the retained targets without reading app settings:
+
+```bash
+az containerapp show \
+  --resource-group rg-valence-runtime \
+  --name ca-elsa-managed-proof \
+  --query '{revision:properties.latestRevisionName,image:properties.template.containers[0].image,stateLifetime:properties.template.containers[0].env[?name==`ManagedElsa__Handoff__StateLifetime`].value|[0]}'
+
+az containerapp revision list \
+  --resource-group rg-valence-runtime \
+  --name ca-elsa-managed-proof \
+  --query '[?properties.active].{name:name,health:properties.healthState,replicas:properties.replicas,traffic:properties.trafficWeight}'
+
+az webapp show \
+  --resource-group rg-valence-control-prod \
+  --name api-m5uymkuaf222o \
+  --query '{host:defaultHostName,httpsOnly:httpsOnly,state:state}'
+
+curl --fail --silent --show-error \
+  https://api-m5uymkuaf222o.azurewebsites.net/health
+curl --fail --silent --show-error \
+  https://ca-elsa-managed-proof.reddesert-17e28fb5.belgiumcentral.azurecontainerapps.io/health
+```
+
+The expected runtime image is the exact Combined image index in the immutable-inputs
+table, the active revision must be Healthy with one replica and all traffic, the
+configured state lifetime must be `00:01:00`, and both HTTPS health requests must
+succeed. Do not query or print App Service settings.
 
 ## Redaction contract
 
