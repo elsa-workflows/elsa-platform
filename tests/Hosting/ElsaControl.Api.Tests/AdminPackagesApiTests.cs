@@ -6,12 +6,19 @@ using ElsaControl.PackageCatalog.Testing;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class AdminPackagesApiTests
+public sealed class AdminPackagesApiTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public AdminPackagesApiTests(DefaultControlApiTestApplicationFixture fixture)
+    {
+        _app = fixture.Application;
+    }
+
     [Fact]
     public async Task Admin_can_review_visible_and_unapproved_packages()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var source = PublicCatalogSeedData.CreatePackageSource();
@@ -39,7 +46,7 @@ public sealed class AdminPackagesApiTests
     [Fact]
     public async Task Package_status_summaries_use_latest_version_only()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var source = PublicCatalogSeedData.CreatePackageSource();
@@ -68,7 +75,7 @@ public sealed class AdminPackagesApiTests
     [Fact]
     public async Task Package_details_return_summary_source_canonical_casing_and_latest_version_data()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var source = PublicCatalogSeedData.CreatePackageSource();
@@ -96,7 +103,7 @@ public sealed class AdminPackagesApiTests
     [Fact]
     public async Task Package_details_return_empty_versions_for_packages_without_indexed_versions()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var source = PublicCatalogSeedData.CreatePackageSource();
@@ -119,7 +126,7 @@ public sealed class AdminPackagesApiTests
     [Fact]
     public async Task Package_details_return_not_found_for_unknown_packages()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateClient();
         client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, "local-dev-key");
@@ -132,7 +139,7 @@ public sealed class AdminPackagesApiTests
     [Fact]
     public async Task Package_details_include_feature_settings_dependencies_and_manifest_metadata()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var source = PublicCatalogSeedData.CreatePackageSource();
@@ -165,7 +172,7 @@ public sealed class AdminPackagesApiTests
     [Fact]
     public async Task Package_version_manifest_endpoint_returns_raw_manifest_metadata()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var source = PublicCatalogSeedData.CreatePackageSource();

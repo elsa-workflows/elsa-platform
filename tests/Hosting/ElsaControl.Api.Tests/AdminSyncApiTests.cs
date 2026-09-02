@@ -389,6 +389,7 @@ public sealed class AdminSyncApiTests : IClassFixture<DefaultControlApiTestAppli
     private static async Task SeedAsync(WebApplicationFactory<Program> app, Func<CatalogDbContext, Task> seed)
     {
         await using var scope = app.Services.CreateAsyncScope();
+        scope.ServiceProvider.GetService<IPublicCatalogCacheInvalidator>()?.Invalidate();
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
         await db.Database.EnsureDeletedAsync();
         await db.Database.EnsureCreatedAsync();
