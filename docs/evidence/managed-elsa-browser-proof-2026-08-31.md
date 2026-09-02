@@ -75,7 +75,7 @@ The Azure runner executes these safe checks without reading App Service settings
 az containerapp show \
   --resource-group rg-valence-runtime \
   --name ca-elsa-managed-proof \
-  --query '{revision:properties.latestRevisionName,image:properties.template.containers[0].image,stateLifetime:properties.template.containers[0].env[?name==`ManagedElsa__Handoff__StateLifetime`].value|[0]}'
+  --query '{revision:properties.latestRevisionName,image:properties.template.containers[0].image,stateLifetime:properties.template.containers[0].env[?name==`ManagedElsa__Handoff__StateLifetime`].value|[0],minReplicas:properties.template.scale.minReplicas,maxReplicas:properties.template.scale.maxReplicas}'
 
 az containerapp revision list \
   --resource-group rg-valence-runtime \
@@ -95,8 +95,9 @@ curl --fail --silent --show-error \
 
 The runner compares these results to the exact supplied origins, resource names,
 immutable Combined image index and one-minute state lifetime. It exits before opening
-Chromium unless the active revision is exclusively Healthy with at least one replica
-and all traffic, Control is Running and HTTPS-only on build `89` / commit `d4ca768b`,
+Chromium unless the runtime is configured for exactly one replica and that active
+revision is exclusively Healthy with exactly one running replica and all traffic,
+Control is Running and HTTPS-only on build `89` / commit `d4ca768b`,
 and both health requests return HTTP 200 within 20 seconds with the expected safe body.
 Do not query or print App Service settings.
 

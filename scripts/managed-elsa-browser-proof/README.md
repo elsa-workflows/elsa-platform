@@ -62,8 +62,9 @@ MANAGED_ELSA_PROOF_STATE_LIFETIME_SECONDS=60 \
 Before opening Chromium, the wrapper uses Azure CLI and safe health probes to fail
 closed unless the supplied origins match the named resources, the runtime uses the
 expected immutable image and state lifetime, exactly one active revision is healthy
-with all traffic, and Control is running with HTTPS-only enforcement and the expected
-commit/build identity. Both health probes must return HTTP 200 within 20 seconds and
+with exactly one configured and running replica and all traffic, and Control is running
+with HTTPS-only enforcement and the expected commit/build identity. Both health probes
+must return HTTP 200 within 20 seconds and
 the runtime body must be exactly `Healthy`. The proof waits five seconds beyond the
 configured bounded state lifetime rather than assuming a hidden default. The wrapper
 stores Playwright's transient failure context in a unique temporary directory and

@@ -61,7 +61,7 @@ expected_state_lifetime=$(printf '%02d:%02d:%02d' \
 runtime_state=$(az containerapp show \
   --resource-group "$MANAGED_ELSA_PROOF_RUNTIME_RESOURCE_GROUP" \
   --name "$MANAGED_ELSA_PROOF_RUNTIME_APP_NAME" \
-  --query '{fqdn:properties.configuration.ingress.fqdn,revision:properties.latestRevisionName,image:properties.template.containers[0].image,stateLifetime:properties.template.containers[0].env[?name==`ManagedElsa__Handoff__StateLifetime`].value|[0]}' \
+  --query '{fqdn:properties.configuration.ingress.fqdn,revision:properties.latestRevisionName,image:properties.template.containers[0].image,stateLifetime:properties.template.containers[0].env[?name==`ManagedElsa__Handoff__StateLifetime`].value|[0],minReplicas:properties.template.scale.minReplicas,maxReplicas:properties.template.scale.maxReplicas}' \
   --output json \
   --only-show-errors) || fail_preflight "Runtime state could not be read."
 
@@ -69,6 +69,8 @@ runtime_state=$(az containerapp show \
   fail_preflight "Runtime image does not match the expected immutable image."
 [[ "$(jq -r '.stateLifetime // empty' <<<"$runtime_state")" == "$expected_state_lifetime" ]] ||
   fail_preflight "Runtime state lifetime does not match the proof input."
+[[ "$(jq -r '.minReplicas // empty' <<<"$runtime_state")" == "1" && "$(jq -r '.maxReplicas // empty' <<<"$runtime_state")" == "1" ]] ||
+  fail_preflight "Runtime scale does not enforce exactly one replica."
 [[ "$MANAGED_ELSA_PROOF_RUNTIME_ORIGIN" == "https://$(jq -r '.fqdn // empty' <<<"$runtime_state")" ]] ||
   fail_preflight "Runtime origin does not match the Container App ingress."
 
@@ -80,7 +82,7 @@ runtime_revisions=$(az containerapp revision list \
   --only-show-errors) || fail_preflight "Runtime revision state could not be read."
 
 jq -e --arg revision "$(jq -r '.revision // empty' <<<"$runtime_state")" \
-  'length == 1 and .[0].name == $revision and .[0].health == "Healthy" and .[0].replicas >= 1 and .[0].traffic == 100' \
+  'length == 1 and .[0].name == $revision and .[0].health == "Healthy" and .[0].replicas == 1 and .[0].traffic == 100' \
   >/dev/null <<<"$runtime_revisions" || fail_preflight "Runtime revision is not exclusively active and healthy."
 
 control_state=$(az webapp show \
