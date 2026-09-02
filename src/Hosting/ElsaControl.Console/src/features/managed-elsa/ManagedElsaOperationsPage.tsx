@@ -10,8 +10,8 @@ import {
   operationalHealthGuidance,
   type ManagedElsaAuditEvent,
   type ManagedElsaInstance,
+  type ManagedElsaInstanceAudit,
   type ManagedElsaInstanceHealth,
-  type ManagedElsaOperationalHealthStatus
 } from "@/features/managed-elsa/managedElsaModels";
 import { ApiError } from "@/lib/api/httpClient";
 import { formatDateTime } from "@/lib/formatters";
@@ -140,7 +140,7 @@ function OperationsDetail({
 }: {
   instance: ManagedElsaInstance;
   health: ReturnType<typeof useQuery<ManagedElsaInstanceHealth>>;
-  audit: ReturnType<typeof useQuery<{ items: ManagedElsaAuditEvent[] }>>;
+  audit: ReturnType<typeof useQuery<ManagedElsaInstanceAudit>>;
 }) {
   return (
     <div className="space-y-5" aria-live="polite">
@@ -268,7 +268,7 @@ function Alerts({ alerts }: { alerts: ManagedElsaInstanceHealth["alerts"] }) {
   );
 }
 
-function AuditSection({ query }: { query: ReturnType<typeof useQuery<{ items: ManagedElsaAuditEvent[] }>> }) {
+function AuditSection({ query }: { query: ReturnType<typeof useQuery<ManagedElsaInstanceAudit>> }) {
   if (query.isLoading)
     return <RequestStateView state="loading" title="Loading safe audit events" />;
   if (query.isError && !query.data)

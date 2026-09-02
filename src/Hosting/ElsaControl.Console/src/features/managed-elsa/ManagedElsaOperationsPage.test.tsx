@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ManagedElsaOperationsPage } from "@/features/managed-elsa/ManagedElsaOperationsPage";
 import { operationalHealthGuidance } from "@/features/managed-elsa/managedElsaModels";
@@ -47,6 +47,7 @@ describe("ManagedElsaOperationsPage", () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
     mocks.activeWorkspaceId = workspaceId;
   });
 
@@ -219,7 +220,7 @@ function renderPage() {
 }
 
 function TestQueryProvider({ children }: { children: ReactNode }) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }));
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }
 
