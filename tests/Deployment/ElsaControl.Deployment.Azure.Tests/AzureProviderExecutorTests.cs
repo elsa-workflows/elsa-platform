@@ -260,12 +260,14 @@ public sealed class AzureProviderExecutorTests
         Assert.DoesNotContain(AzureProviderRunnerStep.RestoreStableTraffic, runner.Steps);
     }
 
-    [Fact]
-    public async Task Execution_rejects_a_plan_outside_the_governed_registry_authority()
+    [Theory]
+    [InlineData("other.azurecr.io/runtime-combined")]
+    [InlineData("valenceruntimeimages.azurecr.io/other-runtime")]
+    public async Task Execution_rejects_a_plan_outside_the_governed_repository(string repository)
     {
         var store = new FakeOperationStore();
         var executor = new AzureProviderExecutor(store, new RecordingRunner(), new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
-        var request = CreateRequest() with { ImageRepository = "other.azurecr.io/runtime-combined" };
+        var request = CreateRequest() with { ImageRepository = repository };
         var plan = CreatePlan() with { ImageRepository = request.ImageRepository };
 
         await Assert.ThrowsAsync<ArgumentException>(() => executor.ApplyAsync(request, plan));

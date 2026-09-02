@@ -860,9 +860,11 @@ public sealed class AzureProviderExecutor
             throw new ArgumentException("The provider plan must include verified release-manifest digests.", nameof(request));
         if (string.IsNullOrWhiteSpace(plan.ImageDigest) || plan.ImageDigest.Length != 64 || !plan.ImageDigest.All(Uri.IsHexDigit))
             throw new ArgumentException("The provider plan image digest must be exactly 64 hexadecimal characters.", nameof(request));
-        if (string.IsNullOrWhiteSpace(plan.ImageRepository) ||
-            !plan.ImageRepository.StartsWith($"{AzureWorkloadPlanTranslator.SupportedRegistryHost}/", StringComparison.Ordinal))
-            throw new ArgumentException("The provider plan image must use the governed Azure registry authority.", nameof(request));
+        if (!string.Equals(
+                plan.ImageRepository,
+                AzureWorkloadPlanTranslator.SupportedRepository,
+                StringComparison.Ordinal))
+            throw new ArgumentException("The provider plan image must use the governed Azure repository.", nameof(request));
         if (!AzureProviderOperationValidation.IsSafePackageVersion(plan.SqlWorkflowPackageVersion) ||
             !AzureProviderOperationValidation.IsSafePackageVersion(plan.SqlQuartzPackageVersion))
             throw new ArgumentException("The provider plan must include safe release package metadata.", nameof(request));

@@ -311,9 +311,10 @@ public sealed class AzureProviderOperationService(
             throw new ArgumentException("The provider location is invalid.", parameterName);
         if (!IsFingerprint(plan.Fingerprint))
             throw new ArgumentException("The provider plan fingerprint is invalid.", parameterName);
-        if (string.IsNullOrWhiteSpace(plan.ImageRepository) ||
-            !plan.ImageRepository.StartsWith($"{AzureWorkloadPlanTranslator.SupportedRegistryHost}/", StringComparison.Ordinal) ||
-            plan.ImageRepository.Any(char.IsWhiteSpace) || plan.ImageRepository.Any(char.IsControl))
+        if (!string.Equals(
+                plan.ImageRepository,
+                AzureWorkloadPlanTranslator.SupportedRepository,
+                StringComparison.Ordinal))
             throw new ArgumentException("The provider image repository is invalid.", parameterName);
         if (plan.ImageDigest is null || plan.ImageDigest.Length != 64 || !plan.ImageDigest.All(Uri.IsHexDigit))
             throw new ArgumentException("The provider image digest is invalid.", parameterName);

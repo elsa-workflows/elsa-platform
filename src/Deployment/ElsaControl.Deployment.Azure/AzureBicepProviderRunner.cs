@@ -16,7 +16,6 @@ namespace ElsaControl.Deployment.Azure;
 public sealed class AzureBicepProviderRunner : IAzureProviderRunner
 {
     private const string AcrPullRoleDefinitionId = "7f951dda-4ed3-4680-a7ca-43fe172d538d";
-    private const string SupportedImageRepository = "valenceruntimeimages.azurecr.io/runtime-combined";
     private const string KeyVaultSecretsUserRoleDefinitionId = "4633458b-17de-408a-b874-0445c86b69e6";
     private const string KeyVaultSecretsOfficerRoleDefinitionId = "b86a8fe4-44ce-4948-aee5-eccb2c155cd7";
     private const string TemporaryFirewallRuleName = "elsa108-bootstrap";
@@ -1315,7 +1314,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         if (!string.Equals(command.Plan.Topology, AzureWorkloadPlanTranslator.SupportedTopology, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(command.Plan.Isolation, AzureWorkloadPlanTranslator.SupportedIsolation, StringComparison.OrdinalIgnoreCase) ||
             !BelongsToReleaseLine(command.Plan.ReleaseLine, command.Plan.ElsaVersion) ||
-            !string.Equals(command.Plan.ImageRepository, SupportedImageRepository, StringComparison.Ordinal) ||
+            !string.Equals(command.Plan.ImageRepository, AzureWorkloadPlanTranslator.SupportedRepository, StringComparison.Ordinal) ||
             !AzureWorkloadPlanTranslator.IsSupportedLocation(command.Plan.Location) ||
             command.Plan.ImageDigest.Length != 64 || !command.Plan.ImageDigest.All(Uri.IsHexDigit) ||
             !AzureProviderOperationValidation.IsSafePackageVersion(command.Plan.SqlWorkflowPackageVersion) ||
