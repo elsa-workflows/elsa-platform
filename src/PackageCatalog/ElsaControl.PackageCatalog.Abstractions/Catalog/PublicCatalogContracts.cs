@@ -22,6 +22,14 @@ public sealed record PublicPackageProjection(
     string? LatestVersion,
     IReadOnlyList<PublicPackageVersionProjection> Versions);
 
+public enum PackageExtensionClass
+{
+    Unspecified,
+    BuiltIn,
+    ValenceApproved,
+    ArbitraryCustomer
+}
+
 public sealed record PublicPackageVersionProjection(
     string PackageId,
     string Version,
@@ -30,7 +38,9 @@ public sealed record PublicPackageVersionProjection(
     IReadOnlyList<string> RuntimeKinds,
     DateTimeOffset? PublishedAt,
     IReadOnlyList<PublicFeatureProjection> Features,
-    string? ManifestDigest = null);
+    string? ManifestDigest = null,
+    PackageExtensionClass ExtensionClass = PackageExtensionClass.Unspecified,
+    string? PolicyEvidenceDigest = null);
 
 public sealed record PublicPackageSourceProjection(
     Guid Id,

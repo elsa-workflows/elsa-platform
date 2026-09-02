@@ -180,13 +180,23 @@ public sealed record ResolvedElsaEndpoint(
     };
 }
 
+public enum ResolvedExtensionClass
+{
+    Unspecified,
+    BuiltIn,
+    ValenceApproved,
+    ArbitraryCustomer
+}
+
 public sealed record ResolvedElsaPackage(
     Guid SourceId,
     string PackageId,
     string Version,
     string ManifestDigest,
     IReadOnlyList<string> RuntimeKinds,
-    IReadOnlyList<ResolvedElsaFeature> Features)
+    IReadOnlyList<ResolvedElsaFeature> Features,
+    ResolvedExtensionClass ExtensionClass = ResolvedExtensionClass.Unspecified,
+    string? PolicyEvidenceDigest = null)
 {
     internal ResolvedElsaPackage Normalize()
     {
@@ -194,7 +204,8 @@ public sealed record ResolvedElsaPackage(
         return this with
         {
             RuntimeKinds = (RuntimeKinds ?? []).Order(StringComparer.OrdinalIgnoreCase).ToArray(),
-            Features = features.Select(x => x.Normalize()).OrderBy(x => x.Id, StringComparer.OrdinalIgnoreCase).ToArray()
+            Features = features.Select(x => x.Normalize()).OrderBy(x => x.Id, StringComparer.OrdinalIgnoreCase).ToArray(),
+            PolicyEvidenceDigest = PolicyEvidenceDigest?.ToLowerInvariant()
         };
     }
 }

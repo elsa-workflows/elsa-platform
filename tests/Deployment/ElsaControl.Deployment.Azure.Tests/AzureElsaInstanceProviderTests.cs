@@ -261,6 +261,38 @@ public sealed class AzureElsaInstanceProviderTests
     }
 
     [Fact]
+    public async Task Unsafe_extension_plan_is_rejected_before_durable_provider_submission()
+    {
+        var workspaceId = Guid.NewGuid();
+        var operationId = Guid.NewGuid();
+        var translated = Translate("5.0", "5.0.0");
+        var service = new CapturingOperationService(CreateOperation(workspaceId, translated, operationId));
+        var provider = new AzureElsaInstanceProvider(service, new CapturingOperationStore(), EnabledOptions());
+        var request = CreateSubmission(workspaceId, Guid.NewGuid(), operationId, translated);
+        var resolvedPlan = request.Plan;
+        request = request with
+        {
+            Plan = resolvedPlan with
+            {
+                Packages =
+                [
+                    resolvedPlan.Packages[0] with
+                    {
+                        PackageId = "Customer.SecretPackage",
+                        ExtensionClass = ResolvedExtensionClass.ArbitraryCustomer
+                    }
+                ]
+            }
+        };
+
+        var exception = await Assert.ThrowsAsync<ElsaInstanceProviderSubmissionException>(() => provider.SubmitAsync(request));
+
+        Assert.Equal(ElsaInstanceProviderSubmissionFailureKind.Rejected, exception.Kind);
+        Assert.Empty(service.Submissions);
+        Assert.DoesNotContain("Customer.SecretPackage", exception.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Durable_submission_failure_is_classified_as_outcome_unknown()
     {
         var plan = Translate("5.0", "5.0.0");

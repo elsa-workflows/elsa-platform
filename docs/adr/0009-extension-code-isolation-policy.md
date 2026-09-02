@@ -17,6 +17,11 @@ Package metadata, approval and compatibility checks improve governance but do no
 ## Decision
 
 - Define extension policies as built-in, Valence-approved and arbitrary customer packages.
+- Derive the class server-side from producer/catalog ownership and governed approval,
+  validation, listing and immutable-manifest facts. Customer intent and workspace approval
+  cannot upgrade an arbitrary package to Valence-approved.
+- Bind the resolution-time catalog decision into the immutable resolved plan with a safe
+  digest. This digest is an admission decision seal, not a signature or a runtime sandbox.
 - Arbitrary customer packages are prohibited on Shared and Data-isolated compute unless a separately reviewed sandbox proves an adequate boundary.
 - Approved packages require provenance, vulnerability and compatibility policy but do not automatically become safe for every isolation profile.
 - Private/custom-code deployment shall use a reproducible immutable artifact/image workflow unless a future security review accepts another model.
@@ -42,6 +47,11 @@ Rejected as the managed default because reproducibility, rollback and provenance
 - Any future Shared profile has a constrained extension surface.
 - Private/custom-code launch requires a threat model, provenance/build pipeline and isolation tests.
 - Entitlements can grant access only to policies that the selected provider/profile actually enforces.
+- Managed launch admission is Dedicated-only. Provider-neutral plans retain the documented
+  Shared, Data-isolated and Private vocabulary, but those profiles remain unavailable to the
+  managed launcher until their separate evidence gates are implemented. Built-in packages may
+  be represented across known profiles, while Valence-approved packages are limited to Dedicated
+  and Private; arbitrary customer packages remain prohibited by this policy.
 
 ## Evidence and profile gates
 

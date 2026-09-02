@@ -2,4 +2,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Deployment\ElsaControl.Deployment.Abstractions\ElsaControl.Deployment.Abstractions.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NuGet.Versioning" />
+  </ItemGroup>
 </Project>

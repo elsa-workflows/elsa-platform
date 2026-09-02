@@ -234,11 +234,11 @@ rows must be `Pass` in the provider's production-like environment; `Planned`,
 |---|---|---|---|---|
 | D-01 | Runtime ownership is per instance | Provider creates one workload app/revision set per instance and scopes commands by instance ID | Two instances provisioned; inspect resource IDs, command authorization and deletion behavior | Not proven; provider work pending |
 | D-02 | Persistent Elsa state is per instance | Dedicated database and instance-scoped database identity; no shared launch database | Cross-instance query/credential attempts fail; migration, backup and restore-to-new-instance pass | Single-instance SQL durability passed in #147; cross-instance and restore evidence pending |
-| D-03 | Arbitrary package code cannot affect the launch fleet | Admission rejects arbitrary package class; only built-in/approved immutable build is deployable | Negative package-policy test plus canary package is rejected before runtime | Policy decided; enforcement/proof pending |
+| D-03 | Arbitrary package code cannot affect the launch fleet | Admission rejects arbitrary package class; only built-in/approved immutable build is deployable | Negative package-policy test plus canary package is rejected before runtime | Catalog-to-resolver, lifecycle reservation and Azure provider-boundary rejection are automated in #221; live canary/provider evidence remains pending |
 | D-04 | Secrets are not exposed through control-plane records | Secret references only, managed identity/Key Vault resolution, redaction | Seed canary secret; inspect DB/history/logs/telemetry and attempt wrong-instance read | Existing guidance; provider execution pending |
 | D-05 | Organization/workspace/instance data is authorization-scoped | Server-derived identity, centralized authorization and provider/runtime scope checks | Two-organization API, runtime, artifact, backup, telemetry and support negative matrix | Workspace tests exist; managed-instance path pending |
 | D-06 | One instance cannot consume unbounded shared capacity | CPU/memory/replica/storage/timeouts and database quotas plus alerting | Bounded exhaustion test with cost and recovery evidence | Proof limits configured; exhaustion, alerting and recovery evidence pending |
-| D-07 | The deployed release is the approved release | Signed release manifest, immutable image/package digests, provenance/SBOM/scan verification | Tamper/mutable-tag/wrong-signer rejection and successful known-good verification | Signed release and known-good proof passed; Control admission enforcement pending |
+| D-07 | The deployed release is the approved release | Signed release manifest, immutable image/package digests, provenance/SBOM/scan verification | Tamper/mutable-tag/wrong-signer rejection and successful known-good verification | Control admission and safe evidence projection are automated by #158/#202/#221; exact production-provider evidence remains pending |
 | D-08 | Network exposure is deliberate | HTTPS ingress, authenticated control path, deny-by-default private dependencies and controlled egress | Ingress/egress matrix, TLS/auth check, no metadata/lateral access | Public HTTPS/auth passed; private-dependency and egress matrix pending |
 | D-09 | Health failure does not silently cut traffic | Readiness/liveness probes, revision readiness gate, traffic protection and rollback | Deploy known-bad revision; prove old good revision remains serving; restore and verify | Passed in disposable #147 proof; provider integration proof pending |
 | D-10 | Operations are recoverable and auditable | Mandatory backup, restore-to-new-instance, retention, safe diagnostics, scoped support elevation | Backup/restore exercise meets 24-hour RPO and 4-hour RTO targets where claimed; inspect audit trail | Product target; implementation/evidence pending |
@@ -385,12 +385,10 @@ code. The following work must close before the associated promise is made:
   and #108:** SQL Server persistence and the actual Azure identity, database,
   revision, bounded-cost and cleanup behavior passed. Preserve those contracts
   in the provider implementation.
-- **#106:** define the provider-neutral resolved application plan with package
-  class and isolation entitlement as validation inputs.
-- **#114:** persist the resolved release/topology/profile identity in the Elsa
-  Instance lifecycle model without weakening the plan's admission decisions.
-- **#125/#126:** implement and prove the Azure provider lifecycle and first
-  Dedicated endpoint/workflow smoke path.
+- **Completed #106/#114:** the provider-neutral resolved plan and Elsa Instance
+  lifecycle persist exact release/topology/profile identity and fail closed on unsafe plans.
+- **#125/#126:** continue the Azure provider lifecycle and first Dedicated
+  endpoint/workflow smoke evidence; admission tests alone do not satisfy the live gate.
 - **#132:** close Dedicated hardening gates, including resource placement,
   capacity/noisy-neighbor and support/backup evidence.
 - **#133:** implement Private immutable custom-code delivery only after the

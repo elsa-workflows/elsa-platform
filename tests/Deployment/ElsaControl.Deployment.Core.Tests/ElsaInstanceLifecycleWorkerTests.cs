@@ -279,6 +279,65 @@ public sealed class ElsaInstanceLifecycleWorkerTests
     }
 
     [Fact]
+    public async Task Unsafe_resolved_plan_fails_before_run_reservation_or_provider_submission()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var accepted = await service.CreateAsync(CreateRequest("claims-unsafe", "create-unsafe"));
+        store.RegisterResolutionInput(accepted.Operation.Id, ResolutionInput(accepted.Instance));
+        var baseline = SuccessfulResolution(WorkspaceId, accepted.Instance.Id);
+        var unsafePlan = baseline.Plan! with
+        {
+            Packages =
+            [
+                new(
+                    Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+                    "Customer.SecretPackage",
+                    "1.0.0",
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    ["elsa.server"],
+                    [],
+                    ResolvedExtensionClass.ArbitraryCustomer,
+                    "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+            ]
+        };
+        var reference = new ElsaResolvedPlanReference(
+            baseline.Reference!.PlanId,
+            baseline.Reference.SchemaVersion,
+            ResolvedElsaApplicationPlanSerialization.ComputeContentHash(unsafePlan),
+            baseline.Reference.PlanUri);
+        var current = baseline.CurrentResolvedRelease!;
+        var unsafeResolution = baseline with
+        {
+            Plan = unsafePlan,
+            Reference = reference,
+            CurrentResolvedRelease = new(
+                reference,
+                current.DistributionId,
+                current.ReleaseLine,
+                current.Version,
+                current.ManifestDigest,
+                current.ComponentDigests)
+        };
+        var provider = new RecordingSubmissionPort();
+
+        var result = await new ElsaInstanceLifecycleWorker(
+                store,
+                new RecordingResolver(unsafeResolution),
+                new StaticTimeProvider(Now),
+                provider,
+                store)
+            .ProcessAvailableAsync("lifecycle-worker-1");
+
+        Assert.Equal(ElsaInstanceLifecycleWorkerOutcome.Failed, Assert.Single(result.Results).Outcome);
+        Assert.Equal(ElsaInstanceOperationState.Failed, Assert.Single(store.Operations).State);
+        Assert.Empty(store.ResolvedPlans);
+        Assert.Empty(store.DeploymentRuns);
+        Assert.Empty(provider.Submissions);
+        Assert.Equal("resolution.invalid", Assert.Single(store.Failures).Code);
+    }
+
+    [Fact]
     public async Task A_bad_item_does_not_stop_the_worker_from_continuing_the_queue()
     {
         var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));

@@ -310,6 +310,121 @@ public sealed class ResolvedElsaApplicationPlanTests
         Assert.Empty(ResolvedElsaApplicationPlanValidator.Validate(separate));
     }
 
+    [Fact]
+    public void Validator_rejects_arbitrary_customer_packages_for_dedicated_isolation()
+    {
+        var baseline = CreatePlan();
+        var plan = baseline with
+        {
+            Packages =
+            [
+                baseline.Packages[0] with
+                {
+                    ExtensionClass = ResolvedExtensionClass.ArbitraryCustomer
+                }
+            ]
+        };
+
+        var finding = Assert.Single(
+            ResolvedElsaApplicationPlanValidator.Validate(plan),
+            candidate => candidate.Code == "package.extensionClass.forbidden");
+
+        Assert.Equal("packages", finding.Scope);
+        Assert.DoesNotContain(baseline.Packages[0].PackageId, JsonSerializer.Serialize(finding), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("secret-1.*")]
+    [InlineData(" 1.0.0")]
+    [InlineData("1.0")]
+    public void Validator_rejects_inexact_package_versions_with_value_free_finding(string version)
+    {
+        var baseline = CreatePlan();
+        var plan = baseline with
+        {
+            Packages = [baseline.Packages[0] with { Version = version }]
+        };
+
+        var finding = Assert.Single(
+            ResolvedElsaApplicationPlanValidator.Validate(plan),
+            candidate => candidate.Code == "package.version.inexact");
+
+        Assert.Equal("packages", finding.Scope);
+        Assert.DoesNotContain(version, JsonSerializer.Serialize(finding), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("Dedicated", ResolvedExtensionClass.BuiltIn, true)]
+    [InlineData("Dedicated", ResolvedExtensionClass.ValenceApproved, true)]
+    [InlineData("Dedicated", ResolvedExtensionClass.ArbitraryCustomer, false)]
+    [InlineData("Shared", ResolvedExtensionClass.BuiltIn, true)]
+    [InlineData("Shared", ResolvedExtensionClass.ValenceApproved, false)]
+    [InlineData("Data-isolated", ResolvedExtensionClass.ValenceApproved, false)]
+    [InlineData("Private", ResolvedExtensionClass.ValenceApproved, true)]
+    [InlineData("Private", ResolvedExtensionClass.ArbitraryCustomer, false)]
+    [InlineData("future-profile", ResolvedExtensionClass.BuiltIn, false)]
+    public void Extension_policy_fails_closed_for_unavailable_or_unproven_classes(
+        string isolation,
+        ResolvedExtensionClass extensionClass,
+        bool expected)
+    {
+        Assert.Equal(expected, ResolvedExtensionPolicy.IsAllowed(isolation, extensionClass));
+    }
+
+    [Fact]
+    public void Legacy_plan_without_extension_authority_fails_closed()
+    {
+        var json = ResolvedElsaApplicationPlanSerialization.Serialize(CreatePlan());
+        var document = JsonSerializer.Deserialize<System.Text.Json.Nodes.JsonObject>(json)!;
+        var package = document["packages"]!.AsArray()[0]!.AsObject();
+        package.Remove("extensionClass");
+        package.Remove("policyEvidenceDigest");
+
+        var legacy = ResolvedElsaApplicationPlanSerialization.Deserialize(document.ToJsonString());
+        var findings = ResolvedElsaApplicationPlanValidator.Validate(legacy);
+
+        Assert.Contains(findings, candidate => candidate.Code == "package.extensionClass.required");
+        Assert.Contains(findings, candidate => candidate.Code == "package.policyEvidenceDigest.invalid");
+    }
+
+    [Fact]
+    public void Canonical_hash_binds_extension_class_and_policy_evidence()
+    {
+        var baseline = CreatePlan();
+        var builtIn = baseline with
+        {
+            Packages = [baseline.Packages[0] with { ExtensionClass = ResolvedExtensionClass.BuiltIn }]
+        };
+        var differentEvidence = baseline with
+        {
+            Packages = [baseline.Packages[0] with { PolicyEvidenceDigest = Digest('c') }]
+        };
+        var equivalentEvidenceCasing = baseline with
+        {
+            Packages = [baseline.Packages[0] with { PolicyEvidenceDigest = baseline.Packages[0].PolicyEvidenceDigest!.ToUpperInvariant() }]
+        };
+
+        Assert.NotEqual(
+            ResolvedElsaApplicationPlanSerialization.ComputeContentHash(baseline),
+            ResolvedElsaApplicationPlanSerialization.ComputeContentHash(builtIn));
+        Assert.NotEqual(
+            ResolvedElsaApplicationPlanSerialization.ComputeContentHash(baseline),
+            ResolvedElsaApplicationPlanSerialization.ComputeContentHash(differentEvidence));
+        Assert.Equal(
+            ResolvedElsaApplicationPlanSerialization.ComputeContentHash(baseline),
+            ResolvedElsaApplicationPlanSerialization.ComputeContentHash(equivalentEvidenceCasing));
+    }
+
+    [Fact]
+    public void Validator_rejects_unknown_isolation_even_without_packages()
+    {
+        var plan = CreatePlan() with { Isolation = "future-profile", Packages = [] };
+
+        Assert.Contains(
+            ResolvedElsaApplicationPlanValidator.Validate(plan),
+            candidate => candidate.Code == "isolation.profile.unknown");
+    }
+
     private static ResolvedElsaApplicationPlan CreatePlan(
         string releaseLine = "3.8",
         string topologyId = "combined",
@@ -324,7 +439,9 @@ public sealed class ResolvedElsaApplicationPlanTests
             releaseLine == "3.8" ? "3.8.0-preview.5413" : "4.0.0-preview.1",
             digestA,
             ["elsa.server"],
-            [new("runtime", "Elsa.Runtime", ["elsa.server"], ["workflow.runtime"]) ]);
+            [new("runtime", "Elsa.Runtime", ["elsa.server"], ["workflow.runtime"]) ],
+            ResolvedExtensionClass.ValenceApproved,
+            digestB);
 
         ResolvedElsaComponent[] components = topologyId == "combined"
             ? [new ResolvedElsaComponent(

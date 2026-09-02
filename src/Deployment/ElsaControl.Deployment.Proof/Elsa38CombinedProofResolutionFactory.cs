@@ -63,7 +63,9 @@ public static class Elsa38CombinedProofResolutionFactory
             [
                 new(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), "Elsa.Core", admission.Version,
                     admission.ImageDigest, ["elsa.server"],
-                    [new("runtime", "Elsa.Runtime", ["elsa.server"], ["workflow.runtime"])])
+                    [new("runtime", "Elsa.Runtime", ["elsa.server"], ["workflow.runtime"])],
+                    ResolvedExtensionClass.BuiltIn,
+                    ComponentDeclarationsDigest)
             ],
             new([
                 new("Database:ConnectionString", "string", true, true, false, "ELSA_DATABASE_CONNECTION", null, admission.SecretReferences["sql-connection"], null),
