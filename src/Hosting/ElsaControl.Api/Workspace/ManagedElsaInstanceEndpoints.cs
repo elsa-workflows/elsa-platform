@@ -433,7 +433,7 @@ public static class ManagedElsaInstanceEndpoints
                 ? null
                 : new ManagedElsaInstanceOperationalOperationResponse(
                     snapshot.Operation.Id,
-                    snapshot.Operation.State.ToString(),
+                    snapshot.Operation.State,
                     snapshot.Operation.AttemptNumber,
                     snapshot.Operation.AcceptedAt,
                     snapshot.Operation.StartedAt,
@@ -444,7 +444,7 @@ public static class ManagedElsaInstanceEndpoints
                 ? null
                 : new ManagedElsaInstanceOperationalRunResponse(
                     snapshot.Run.Id,
-                    snapshot.Run.Status.ToString(),
+                    snapshot.Run.Status,
                     snapshot.Run.AttemptNumber,
                     snapshot.Run.QueuedAt,
                     snapshot.Run.StartedAt,
@@ -697,7 +697,7 @@ public sealed record ManagedElsaInstanceOperationalHealthResponse(
     IReadOnlyList<ManagedElsaInstanceOperationalAlertResponse> Alerts);
 public sealed record ManagedElsaInstanceOperationalOperationResponse(
     Guid Id,
-    string State,
+    ElsaInstanceOperationState State,
     int AttemptNumber,
     DateTimeOffset AcceptedAt,
     DateTimeOffset? StartedAt,
@@ -706,7 +706,7 @@ public sealed record ManagedElsaInstanceOperationalOperationResponse(
     string? DiagnosticCode);
 public sealed record ManagedElsaInstanceOperationalRunResponse(
     Guid Id,
-    string Status,
+    WorkspaceDeploymentRunStatus Status,
     int AttemptNumber,
     DateTimeOffset QueuedAt,
     DateTimeOffset? StartedAt,
