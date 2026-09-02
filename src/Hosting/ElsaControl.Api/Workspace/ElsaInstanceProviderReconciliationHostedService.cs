@@ -102,6 +102,18 @@ public sealed class ElsaInstanceProviderReconciliationHostedService(
                 // Cancellation must never be converted into a retry warning.
                 throw;
             }
+            catch (ElsaInstanceProviderSubmissionException exception)
+                when (exception.Kind == ElsaInstanceProviderSubmissionFailureKind.Rejected)
+            {
+                // The provider proved that no durable hand-off occurred. Leave the
+                // lifecycle reservation queued so a later scan can replay it after
+                // configuration is corrected, and do not reconcile remote work that
+                // cannot exist.
+                logger.LogWarning(
+                    "Managed Elsa instance provider hand-off was rejected and is awaiting retry for operation {OperationId}.",
+                    operation.OperationId);
+                return;
+            }
             catch (Exception)
             {
                 // The provider may have accepted the idempotent replay before the

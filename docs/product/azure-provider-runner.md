@@ -20,6 +20,8 @@ references. Secret aliases are configured under
 `Deployment:AzureProvider:Secrets:<index>:Name`, `Reference`, and `Value`. The
 name binds the safe reference to a required resolved-plan configuration slot;
 only the reference crosses into lifecycle resolution and durable provider
-records. A missing or ambiguous named alias fails startup closed when managed
-instance lifecycle is enabled. Secret values remain runtime-only and never enter
-provider contracts, diagnostics, or durable records.
+records. Names must already be canonical lower-case keys, and no two names may
+collapse to the same Azure secret name after `:` and `_` are mapped to `-`. A
+missing, unsafe, or ambiguous named alias fails startup closed when managed
+instance lifecycle is enabled. Secret values remain runtime-only and never
+enter provider contracts, diagnostics, or durable records.

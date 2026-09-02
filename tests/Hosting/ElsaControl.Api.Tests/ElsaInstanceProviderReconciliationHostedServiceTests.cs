@@ -43,6 +43,38 @@ public sealed class ElsaInstanceProviderReconciliationHostedServiceTests
     }
 
     [Fact]
+    public async Task Outcome_unknown_submission_still_reconciles_the_same_operation()
+    {
+        var provider = new RecordingSubmissionPort(new ElsaInstanceProviderSubmissionException(
+            ElsaInstanceProviderSubmissionFailureKind.OutcomeUnknown));
+        var reconciler = new RecordingReconciliationService();
+        await using var services = CreateServices(provider, reconciler, [Pending(withSubmission: true)]);
+        var hosted = CreateHostedService(services);
+
+        await hosted.ProcessPendingAsync(CancellationToken.None);
+
+        Assert.Equal(1, provider.Calls);
+        Assert.Equal(1, reconciler.Calls);
+        Assert.Equal((WorkspaceId, OperationId), Assert.Single(reconciler.Requests));
+    }
+
+    [Fact]
+    public async Task Rejected_submission_remains_retryable_without_reconciling_nonexistent_provider_work()
+    {
+        var provider = new RecordingSubmissionPort(new ElsaInstanceProviderSubmissionException(
+            ElsaInstanceProviderSubmissionFailureKind.Rejected));
+        var reconciler = new RecordingReconciliationService();
+        await using var services = CreateServices(provider, reconciler, [Pending(withSubmission: true)]);
+        var hosted = CreateHostedService(services);
+
+        await hosted.ProcessPendingAsync(CancellationToken.None);
+        await hosted.ProcessPendingAsync(CancellationToken.None);
+
+        Assert.Equal(2, provider.Calls);
+        Assert.Equal(0, reconciler.Calls);
+    }
+
+    [Fact]
     public async Task Disabled_lifecycle_options_do_not_process_pending_provider_work()
     {
         var provider = new RecordingSubmissionPort();
