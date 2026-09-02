@@ -20,6 +20,8 @@ trap cleanup EXIT
 : "${MANAGED_ELSA_PROOF_STATE_LIFETIME_SECONDS:?Set MANAGED_ELSA_PROOF_STATE_LIFETIME_SECONDS to the configured runtime browser-state lifetime.}"
 : "${MANAGED_ELSA_PROOF_CONTROL_RESOURCE_GROUP:?Set MANAGED_ELSA_PROOF_CONTROL_RESOURCE_GROUP to the Control resource group.}"
 : "${MANAGED_ELSA_PROOF_CONTROL_APP_NAME:?Set MANAGED_ELSA_PROOF_CONTROL_APP_NAME to the Control App Service name.}"
+: "${MANAGED_ELSA_PROOF_EXPECTED_CONTROL_IMAGE_ID:?Set MANAGED_ELSA_PROOF_EXPECTED_CONTROL_IMAGE_ID to the deployed Control commit.}"
+: "${MANAGED_ELSA_PROOF_EXPECTED_CONTROL_BUILD_NUMBER:?Set MANAGED_ELSA_PROOF_EXPECTED_CONTROL_BUILD_NUMBER to the deployed Control build number.}"
 : "${MANAGED_ELSA_PROOF_RUNTIME_RESOURCE_GROUP:?Set MANAGED_ELSA_PROOF_RUNTIME_RESOURCE_GROUP to the runtime resource group.}"
 : "${MANAGED_ELSA_PROOF_RUNTIME_APP_NAME:?Set MANAGED_ELSA_PROOF_RUNTIME_APP_NAME to the runtime Container App name.}"
 : "${MANAGED_ELSA_PROOF_EXPECTED_IMAGE:?Set MANAGED_ELSA_PROOF_EXPECTED_IMAGE to the immutable admitted runtime image.}"
@@ -32,6 +34,14 @@ fail_preflight() {
 command -v az >/dev/null || fail_preflight "Azure CLI is required."
 command -v jq >/dev/null || fail_preflight "jq is required."
 command -v curl >/dev/null || fail_preflight "curl is required."
+
+immutable_image_pattern='^[a-z0-9.-]+(:[0-9]+)?(/[a-z0-9._-]+)+@sha256:[0-9a-f]{64}$'
+[[ "$MANAGED_ELSA_PROOF_EXPECTED_IMAGE" =~ $immutable_image_pattern ]] ||
+  fail_preflight "Expected runtime image must be an immutable repository digest."
+[[ "$MANAGED_ELSA_PROOF_EXPECTED_CONTROL_IMAGE_ID" =~ ^[0-9a-f]{40}$ ]] ||
+  fail_preflight "Expected Control image ID must be a lowercase commit digest."
+[[ "$MANAGED_ELSA_PROOF_EXPECTED_CONTROL_BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]] ||
+  fail_preflight "Expected Control build number must be a positive integer."
 
 if [[ ! "$MANAGED_ELSA_PROOF_STATE_LIFETIME_SECONDS" =~ ^[0-9]+$ ]]; then
   fail_preflight "State lifetime must be an integer from 5 through 300."
@@ -85,10 +95,26 @@ control_state=$(az webapp show \
 [[ "$ADMIN_UI_BASE_URL" == "https://$(jq -r '.host // empty' <<<"$control_state")" ]] ||
   fail_preflight "Control origin does not match the App Service host."
 
-curl --fail --silent --show-error --output /dev/null "$ADMIN_UI_BASE_URL/health" ||
+control_health_status=$(curl --silent --show-error --max-time 20 \
+  --output "$proof_output/control-health.json" \
+  --write-out '%{http_code}' \
+  "$ADMIN_UI_BASE_URL/health") ||
   fail_preflight "Control health probe failed."
-curl --fail --silent --show-error --output /dev/null "$MANAGED_ELSA_PROOF_RUNTIME_ORIGIN/health" ||
+[[ "$control_health_status" == "200" ]] || fail_preflight "Control health probe did not return HTTP 200."
+jq -e \
+  --arg image_id "$MANAGED_ELSA_PROOF_EXPECTED_CONTROL_IMAGE_ID" \
+  --arg build_number "$MANAGED_ELSA_PROOF_EXPECTED_CONTROL_BUILD_NUMBER" \
+  '.status == "ok" and .imageId == $image_id and .buildNumber == $build_number' \
+  "$proof_output/control-health.json" >/dev/null || fail_preflight "Control health identity does not match the expected build."
+
+runtime_health_status=$(curl --silent --show-error --max-time 20 \
+  --output "$proof_output/runtime-health.txt" \
+  --write-out '%{http_code}' \
+  "$MANAGED_ELSA_PROOF_RUNTIME_ORIGIN/health") ||
   fail_preflight "Runtime health probe failed."
+[[ "$runtime_health_status" == "200" ]] || fail_preflight "Runtime health probe did not return HTTP 200."
+[[ "$(tr -d '\r\n' <"$proof_output/runtime-health.txt")" == "Healthy" ]] ||
+  fail_preflight "Runtime health response was not Healthy."
 
 MANAGED_ELSA_AZURE_BROWSER_PROOF=1 \
   MANAGED_ELSA_PROOF_STATE_LIFETIME_SECONDS="$MANAGED_ELSA_PROOF_STATE_LIFETIME_SECONDS" \

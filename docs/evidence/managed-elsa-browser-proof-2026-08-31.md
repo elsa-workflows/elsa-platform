@@ -96,7 +96,8 @@ curl --fail --silent --show-error \
 The runner compares these results to the exact supplied origins, resource names,
 immutable Combined image index and one-minute state lifetime. It exits before opening
 Chromium unless the active revision is exclusively Healthy with at least one replica
-and all traffic, Control is Running and HTTPS-only, and both health requests succeed.
+and all traffic, Control is Running and HTTPS-only on build `89` / commit `d4ca768b`,
+and both health requests return HTTP 200 within 20 seconds with the expected safe body.
 Do not query or print App Service settings.
 
 ## Redaction contract
