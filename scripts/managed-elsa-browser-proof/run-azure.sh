@@ -25,6 +25,7 @@ trap cleanup EXIT
 : "${MANAGED_ELSA_PROOF_RUNTIME_RESOURCE_GROUP:?Set MANAGED_ELSA_PROOF_RUNTIME_RESOURCE_GROUP to the runtime resource group.}"
 : "${MANAGED_ELSA_PROOF_RUNTIME_APP_NAME:?Set MANAGED_ELSA_PROOF_RUNTIME_APP_NAME to the runtime Container App name.}"
 : "${MANAGED_ELSA_PROOF_EXPECTED_IMAGE:?Set MANAGED_ELSA_PROOF_EXPECTED_IMAGE to the immutable admitted runtime image.}"
+: "${MANAGED_ELSA_PROOF_INSTANCE_ID:?Set MANAGED_ELSA_PROOF_INSTANCE_ID to the exact Control/runtime instance ID.}"
 
 while [[ "$ADMIN_UI_BASE_URL" == */ ]]; do
   ADMIN_UI_BASE_URL=${ADMIN_UI_BASE_URL%/}
@@ -49,6 +50,8 @@ immutable_image_pattern='^[a-z0-9.-]+(:[0-9]+)?(/[a-z0-9._-]+)+@sha256:[0-9a-f]{
   fail_preflight "Expected Control image ID must be a lowercase commit digest."
 [[ "$MANAGED_ELSA_PROOF_EXPECTED_CONTROL_BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]] ||
   fail_preflight "Expected Control build number must be a positive integer."
+[[ "$MANAGED_ELSA_PROOF_INSTANCE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] ||
+  fail_preflight "Expected instance ID must be a lowercase canonical identifier."
 
 if [[ ! "$MANAGED_ELSA_PROOF_STATE_LIFETIME_SECONDS" =~ ^[0-9]+$ ]]; then
   fail_preflight "State lifetime must be an integer from 5 through 300."
@@ -68,7 +71,7 @@ expected_state_lifetime=$(printf '%02d:%02d:%02d' \
 runtime_state=$(az containerapp show \
   --resource-group "$MANAGED_ELSA_PROOF_RUNTIME_RESOURCE_GROUP" \
   --name "$MANAGED_ELSA_PROOF_RUNTIME_APP_NAME" \
-  --query '{fqdn:properties.configuration.ingress.fqdn,revision:properties.latestRevisionName,image:properties.template.containers[0].image,stateLifetime:properties.template.containers[0].env[?name==`ManagedElsa__Handoff__StateLifetime`].value|[0],minReplicas:properties.template.scale.minReplicas,maxReplicas:properties.template.scale.maxReplicas}' \
+  --query '{fqdn:properties.configuration.ingress.fqdn,revision:properties.latestRevisionName,image:properties.template.containers[0].image,stateLifetime:properties.template.containers[0].env[?name==`ManagedElsa__Handoff__StateLifetime`].value|[0],instanceId:properties.template.containers[0].env[?name==`ManagedElsa__Handoff__InstanceId`].value|[0],audience:properties.template.containers[0].env[?name==`ManagedElsa__Handoff__Audience`].value|[0],controlBaseUrl:properties.template.containers[0].env[?name==`ManagedElsa__Handoff__ControlBaseUrl`].value|[0],controlContinuationUrl:properties.template.containers[0].env[?name==`ManagedElsa__Handoff__ControlContinuationUrl`].value|[0],callbackUri:properties.template.containers[0].env[?name==`ManagedElsa__Handoff__CallbackUri`].value|[0],backendUrl:properties.template.containers[0].env[?name==`Backend__Url`].value|[0],forwardedHeadersEnabled:properties.template.containers[0].env[?name==`ASPNETCORE_FORWARDEDHEADERS_ENABLED`].value|[0],minReplicas:properties.template.scale.minReplicas,maxReplicas:properties.template.scale.maxReplicas}' \
   --output json \
   --only-show-errors) || fail_preflight "Runtime state could not be read."
 
@@ -76,6 +79,20 @@ runtime_state=$(az containerapp show \
   fail_preflight "Runtime image does not match the expected immutable image."
 [[ "$(jq -r '.stateLifetime // empty' <<<"$runtime_state")" == "$expected_state_lifetime" ]] ||
   fail_preflight "Runtime state lifetime does not match the proof input."
+[[ "$(jq -r '.instanceId // empty' <<<"$runtime_state")" == "$MANAGED_ELSA_PROOF_INSTANCE_ID" ]] ||
+  fail_preflight "Runtime instance identity does not match the proof input."
+[[ "$(jq -r '.audience // empty' <<<"$runtime_state")" == "urn:elsa:instance:$MANAGED_ELSA_PROOF_INSTANCE_ID" ]] ||
+  fail_preflight "Runtime audience does not match the proof instance identity."
+[[ "$(jq -r '.controlBaseUrl // empty' <<<"$runtime_state")" == "$ADMIN_UI_BASE_URL" ]] ||
+  fail_preflight "Runtime Control base URL does not match the proof origin."
+[[ "$(jq -r '.controlContinuationUrl // empty' <<<"$runtime_state")" == "$ADMIN_UI_BASE_URL/admin/runtimes" ]] ||
+  fail_preflight "Runtime Control continuation does not match the managed-instance page."
+[[ "$(jq -r '.callbackUri // empty' <<<"$runtime_state")" == "$MANAGED_ELSA_PROOF_RUNTIME_ORIGIN/managed-elsa/handoff/callback" ]] ||
+  fail_preflight "Runtime callback URI does not match the proof origin."
+[[ "$(jq -r '.backendUrl // empty' <<<"$runtime_state")" == "http://localhost:8080/elsa/api" ]] ||
+  fail_preflight "Combined runtime backend URL does not use its internal HTTP listener."
+[[ "$(jq -r '.forwardedHeadersEnabled // empty' <<<"$runtime_state")" == "true" ]] ||
+  fail_preflight "Runtime forwarded-header processing is not enabled for TLS termination."
 [[ "$(jq -r '.minReplicas // empty' <<<"$runtime_state")" == "1" && "$(jq -r '.maxReplicas // empty' <<<"$runtime_state")" == "1" ]] ||
   fail_preflight "Runtime scale does not enforce exactly one replica."
 [[ "$MANAGED_ELSA_PROOF_RUNTIME_ORIGIN" == "https://$(jq -r '.fqdn // empty' <<<"$runtime_state")" ]] ||

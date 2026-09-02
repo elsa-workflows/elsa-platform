@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Core.Instances;
+using ElsaControl.Deployment.Core.Workspace;
 using ElsaControl.PackageCatalog.Core.Accounts;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -83,6 +84,11 @@ static async Task SeedAsync(
     Guid instanceId,
     ElsaManagedEndpointOrigin runtimeOrigin)
 {
+    var permissions = new WorkspacePermissionService(
+        new DeploymentWorkspaceStore(database),
+        [new ManagedElsaInstancePermissionContribution()]);
+    await permissions.BootstrapOwnerPermissionsAsync(workspaceId, accountId);
+
     var entitlement = await database.OrganizationEntitlementSnapshots
         .OrderByDescending(x => x.SyncedAt)
         .ThenByDescending(x => x.CreatedAt)

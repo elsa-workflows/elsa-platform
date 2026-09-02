@@ -56,6 +56,7 @@ MANAGED_ELSA_PROOF_RUNTIME_ORIGIN=https://runtime.example.test \
 MANAGED_ELSA_PROOF_RUNTIME_RESOURCE_GROUP=rg-runtime \
 MANAGED_ELSA_PROOF_RUNTIME_APP_NAME=runtime-app \
 MANAGED_ELSA_PROOF_EXPECTED_IMAGE=registry.example/runtime-combined@sha256:<digest> \
+MANAGED_ELSA_PROOF_INSTANCE_ID=<lowercase-canonical-instance-id> \
 MANAGED_ELSA_PROOF_STATE_LIFETIME_SECONDS=60 \
   ./scripts/managed-elsa-browser-proof/run-azure.sh
 ```
@@ -64,7 +65,11 @@ Before opening Chromium, the wrapper uses Azure CLI and safe health probes to fa
 closed unless the supplied origins match the named resources, the runtime uses the
 expected immutable image and state lifetime, exactly one active revision is healthy
 with exactly one configured and running replica and all traffic, and Control is running
-with HTTPS-only enforcement and the expected commit/build identity. Both health probes
+with HTTPS-only enforcement and the expected commit/build identity. The runtime's
+instance ID, audience, Control base URL, Control continuation, and callback URI must
+also match the exact proof inputs, and the Combined runtime's server-side backend URL
+must be `http://localhost:8080/elsa/api`. ASP.NET Core forwarded-header processing must
+be enabled so external redirects retain HTTPS behind Azure TLS termination. Both health probes
 must return HTTP 200 within 20 seconds and
 the runtime body must be exactly `Healthy`. The proof waits five seconds beyond the
 configured bounded state lifetime rather than assuming a hidden default. The wrapper

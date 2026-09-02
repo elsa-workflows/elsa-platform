@@ -22,13 +22,31 @@ test.describe("managed Elsa Azure browser proof", () => {
     await signInInteractively(page);
 
     let callbackForm: URLSearchParams | undefined;
+    const runtimeResponses: string[] = [];
     page.on("request", (request) => {
       if (request.method() === "POST" && request.url() === `${runtimeOrigin}/managed-elsa/handoff/callback`)
         callbackForm = new URLSearchParams(request.postData() ?? "");
     });
+    page.on("response", (response) => {
+      const uri = new URL(response.url());
+      if (uri.origin === runtimeOrigin && runtimeResponses.length < 12)
+        runtimeResponses.push(`${response.request().method()} ${uri.pathname} ${response.status()}`);
+    });
 
+    const callbackResponsePromise = page.waitForResponse((response) =>
+      response.request().method() === "POST" && response.url() === `${runtimeOrigin}/managed-elsa/handoff/callback`);
     await openHealthyInstance(page);
-    await expect(page).toHaveURL(new RegExp(`^${escapeRegExp(runtimeOrigin)}/`), { timeout: 30_000 });
+    const callbackResponse = await callbackResponsePromise;
+    const callbackLocation = safeRedirectPath(callbackResponse.headers().location);
+    try {
+      await expect(page).toHaveURL(new RegExp(`^${escapeRegExp(runtimeOrigin)}/`), { timeout: 30_000 });
+    }
+    catch {
+      const cookieNames = (await page.context().cookies(runtimeOrigin)).map(cookie => cookie.name).sort();
+      throw new Error(
+        `Runtime handoff did not establish a session (callback ${callbackResponse.status()} -> ${callbackLocation}; ` +
+        `cookies: ${cookieNames.join(",") || "none"}; responses: ${runtimeResponses.join(" | ") || "none"}).`);
+    }
     expect(await protectedOperationStatus(page)).toBe(200);
 
     expect(callbackForm).toBeDefined();
@@ -44,7 +62,7 @@ test.describe("managed Elsa Azure browser proof", () => {
     expect(await protectedOperationStatus(page)).toBe(401);
 
     await page.goto(`${controlOrigin}/admin/runtimes`);
-    await expect(page.getByRole("heading", { name: "Managed Elsa" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Managed Elsa", exact: true })).toBeVisible();
     await page.route("**/api/managed-elsa/handoff/issue", async (route) => {
       await new Promise((resolve) => setTimeout(resolve, (stateLifetimeSeconds + 5) * 1_000));
       await route.continue();
@@ -59,7 +77,7 @@ test.describe("managed Elsa Azure browser proof", () => {
 
 async function signInInteractively(page: Page) {
   await page.goto(`${controlOrigin}/admin/runtimes`);
-  const managedElsaHeading = page.getByRole("heading", { name: "Managed Elsa" });
+  const managedElsaHeading = page.getByRole("heading", { name: "Managed Elsa", exact: true });
   if (await managedElsaHeading.isVisible())
     return;
 
@@ -83,7 +101,7 @@ async function waitForControlReturn(page: Page) {
 
 async function openHealthyInstance(page: Page) {
   const instanceRow = managedInstanceRow(page);
-  await expect(instanceRow).toContainText("Healthy");
+  await expect(instanceRow).toContainText("Healthy", { timeout: 30_000 });
   await instanceRow.getByRole("button", { name: "Open" }).click();
 }
 
@@ -111,6 +129,19 @@ function requirePublicHttpsOrigin(value: string, variableName: string) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function safeRedirectPath(value: string | undefined) {
+  if (!value)
+    return "none";
+
+  try {
+    const uri = new URL(value, runtimeOrigin);
+    return uri.origin === runtimeOrigin ? uri.pathname : "external";
+  }
+  catch {
+    return "invalid";
+  }
 }
 
 function requireBoundedStateLifetime(value: number) {

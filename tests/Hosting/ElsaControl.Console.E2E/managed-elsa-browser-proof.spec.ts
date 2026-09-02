@@ -62,7 +62,7 @@ test.describe("managed Elsa browser proof", () => {
     await runFixture("unavailable");
     await signInToControl(page);
 
-    await expect(page.getByRole("heading", { name: "Managed Elsa" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Managed Elsa", exact: true })).toBeVisible();
     const instanceRow = managedInstanceRow(page);
     await expect(instanceRow).toContainText("Unavailable");
     await expect(instanceRow.getByRole("button", { name: "Open" })).toHaveCount(0);
@@ -111,7 +111,7 @@ async function signInToControl(page: Page) {
 }
 
 async function openHealthyInstance(page: Page) {
-  await expect(page.getByRole("heading", { name: "Managed Elsa" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Managed Elsa", exact: true })).toBeVisible();
   const instanceRow = managedInstanceRow(page);
   await expect(instanceRow).toContainText("Healthy");
   await instanceRow.getByRole("button", { name: "Open" }).click();
