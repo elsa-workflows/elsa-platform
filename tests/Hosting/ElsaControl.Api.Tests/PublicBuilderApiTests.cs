@@ -68,11 +68,13 @@ public sealed class PublicBuilderApiTests : IClassFixture<DefaultControlApiTestA
 
         await SeedPackageAsync("Elsa.BeforeReset");
         var before = await app.CreateClient().GetFromJsonAsync<BuilderCatalogResponse>("/api/builder/catalog");
-        Assert.Contains(before!.Packages, x => x.PackageId == "Elsa.BeforeReset");
+        Assert.NotNull(before);
+        Assert.Contains(before.Packages, x => x.PackageId == "Elsa.BeforeReset");
 
         await SeedPackageAsync("Elsa.AfterReset");
         var after = await app.CreateClient().GetFromJsonAsync<BuilderCatalogResponse>("/api/builder/catalog");
-        Assert.Contains(after!.Packages, x => x.PackageId == "Elsa.AfterReset");
+        Assert.NotNull(after);
+        Assert.Contains(after.Packages, x => x.PackageId == "Elsa.AfterReset");
         Assert.DoesNotContain(after.Packages, x => x.PackageId == "Elsa.BeforeReset");
     }
 
