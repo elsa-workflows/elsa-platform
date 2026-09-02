@@ -324,6 +324,9 @@ public sealed class AzureProviderOperationService(
             throw new ArgumentException("Provider evidence references must be safe immutable locators.", parameterName);
         if (!AzureProviderOperationValidation.IsSafeSecretReferences(plan.SecretReferences))
             throw new ArgumentException("Provider secret references must be safe immutable locators.", parameterName);
+        if (!AzureProviderOperationValidation.IsSafePackageVersion(plan.SqlWorkflowPackageVersion) ||
+            !AzureProviderOperationValidation.IsSafePackageVersion(plan.SqlQuartzPackageVersion))
+            throw new ArgumentException("Provider release package metadata is required and must use exact NuGet versions.", parameterName);
     }
 
     private static bool IsFingerprint(string? value) => value is not null && value.Length == 64 && value.All(Uri.IsHexDigit);

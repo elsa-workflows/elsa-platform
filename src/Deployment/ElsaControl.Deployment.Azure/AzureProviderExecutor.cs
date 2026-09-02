@@ -863,17 +863,13 @@ public sealed class AzureProviderExecutor
         if (string.IsNullOrWhiteSpace(plan.ImageRepository) ||
             !plan.ImageRepository.StartsWith($"{AzureWorkloadPlanTranslator.SupportedRegistryHost}/", StringComparison.Ordinal))
             throw new ArgumentException("The provider plan image must use the governed Azure registry authority.", nameof(request));
-        if (!IsRequiredPackageVersion(plan.SqlWorkflowPackageVersion) ||
-            !IsRequiredPackageVersion(plan.SqlQuartzPackageVersion))
+        if (!AzureProviderOperationValidation.IsSafePackageVersion(plan.SqlWorkflowPackageVersion) ||
+            !AzureProviderOperationValidation.IsSafePackageVersion(plan.SqlQuartzPackageVersion))
             throw new ArgumentException("The provider plan must include safe release package metadata.", nameof(request));
 
         if (!AzureProviderOperationValidation.IsSafeSecretReferences(plan.SecretReferences))
             throw new ArgumentException("Secret references must be safe provider locators.", nameof(request));
     }
-
-    private static bool IsRequiredPackageVersion(string? value) =>
-        value is { Length: > 0 and <= 128 } &&
-        !value.Any(character => char.IsControl(character) || char.IsWhiteSpace(character));
 
     private static AzureProviderExecutionOutcome MapOutcome(AzureProviderOperationStatus status) =>
         status switch

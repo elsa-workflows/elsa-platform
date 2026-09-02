@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Collections.ObjectModel;
+using NuGet.Versioning;
 
 namespace ElsaControl.Deployment.Azure;
 
@@ -328,8 +329,12 @@ public static class AzureProviderOperationValidation
         if (request.ReleaseManifestSignatureDigest is not null && !IsDigest(request.ReleaseManifestSignatureDigest)) errors.Add("releaseManifestSignatureDigest.invalid");
         if (request.ReleaseManifestReference is not null && !IsSafeImmutableEvidenceReference(request.ReleaseManifestReference, request.ReleaseManifestDigest)) errors.Add("releaseManifestReference.invalid");
         if (request.ReleaseManifestSignatureReference is not null && !IsSafeImmutableEvidenceReference(request.ReleaseManifestSignatureReference, request.ReleaseManifestSignatureDigest)) errors.Add("releaseManifestSignatureReference.invalid");
-        BoundedSafe(request.SqlWorkflowPackageVersion, 128, "sqlWorkflowPackageVersion", errors);
-        BoundedSafe(request.SqlQuartzPackageVersion, 128, "sqlQuartzPackageVersion", errors);
+        if ((request.SqlWorkflowPackageVersion is null) != (request.SqlQuartzPackageVersion is null))
+            errors.Add("packageVersions.incomplete");
+        if (request.SqlWorkflowPackageVersion is not null && !IsSafePackageVersion(request.SqlWorkflowPackageVersion))
+            errors.Add("sqlWorkflowPackageVersion.invalid");
+        if (request.SqlQuartzPackageVersion is not null && !IsSafePackageVersion(request.SqlQuartzPackageVersion))
+            errors.Add("sqlQuartzPackageVersion.invalid");
         if ((request.ReleaseManifestReference is null) != (request.ReleaseManifestSignatureReference is null)) errors.Add("releaseManifestReferences.incomplete");
         ValidateSecretReferences(request.SecretReferences, errors);
 
@@ -520,6 +525,11 @@ public static class AzureProviderOperationValidation
         }
         return true;
     }
+
+    public static bool IsSafePackageVersion(string? value) =>
+        value is { Length: > 0 and <= 128 } &&
+        !value.Any(character => char.IsControl(character) || char.IsWhiteSpace(character)) &&
+        NuGetVersion.TryParse(value, out _);
 
     internal static string MapSecretName(string key)
     {

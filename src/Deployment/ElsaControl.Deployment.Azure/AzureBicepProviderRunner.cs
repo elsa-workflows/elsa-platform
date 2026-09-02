@@ -1318,14 +1318,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             !string.Equals(command.Plan.ImageRepository, SupportedImageRepository, StringComparison.Ordinal) ||
             !AzureWorkloadPlanTranslator.IsSupportedLocation(command.Plan.Location) ||
             command.Plan.ImageDigest.Length != 64 || !command.Plan.ImageDigest.All(Uri.IsHexDigit) ||
-            string.IsNullOrWhiteSpace(command.Plan.SqlWorkflowPackageVersion) ||
-            string.IsNullOrWhiteSpace(command.Plan.SqlQuartzPackageVersion) ||
-            command.Plan.SqlWorkflowPackageVersion.Length > 128 ||
-            command.Plan.SqlQuartzPackageVersion.Length > 128 ||
-            command.Plan.SqlWorkflowPackageVersion.Any(char.IsControl) ||
-            command.Plan.SqlQuartzPackageVersion.Any(char.IsControl) ||
-            command.Plan.SqlWorkflowPackageVersion.Any(char.IsWhiteSpace) ||
-            command.Plan.SqlQuartzPackageVersion.Any(char.IsWhiteSpace) ||
+            !AzureProviderOperationValidation.IsSafePackageVersion(command.Plan.SqlWorkflowPackageVersion) ||
+            !AzureProviderOperationValidation.IsSafePackageVersion(command.Plan.SqlQuartzPackageVersion) ||
             !AzureProviderOperationValidation.IsSafeImmutableEvidenceReference(command.Plan.ReleaseManifestReference, command.Plan.ReleaseManifestDigest) ||
             !AzureProviderOperationValidation.IsSafeImmutableEvidenceReference(command.Plan.ReleaseManifestSignatureReference, command.Plan.ReleaseManifestSignatureDigest) ||
             !AzureProviderOperationValidation.IsSafeSecretReferences(command.Plan.SecretReferences))

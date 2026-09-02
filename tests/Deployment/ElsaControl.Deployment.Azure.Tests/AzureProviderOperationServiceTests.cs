@@ -59,16 +59,36 @@ public sealed class AzureProviderOperationServiceTests
     [Fact]
     public async Task Restore_fails_closed_when_legacy_operation_lacks_release_package_metadata()
     {
-        var service = new AzureProviderOperationService(new CapturingStore(), new FixedTimeProvider(Now));
-        var operation = await service.SubmitAsync(
+        var store = new CapturingStore();
+        var legacyPlan = CreatePlan() with
+        {
+            SqlWorkflowPackageVersion = null,
+            SqlQuartzPackageVersion = null
+        };
+        var request = AzureProviderOperationService.CreateOperationRequest(
+            WorkspaceId,
+            "request-1",
+            new('b', 64),
+            legacyPlan);
+        var operation = await store.CreateOrGetAsync(AzureProviderOperationValidation.Normalize(request), Now);
+
+        Assert.Null(AzureProviderOperationService.TryRestorePlan(operation));
+    }
+
+    [Fact]
+    public async Task Submit_rejects_missing_release_package_metadata_before_persistence()
+    {
+        var store = new CapturingStore();
+        var service = new AzureProviderOperationService(store, new FixedTimeProvider(Now));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => service.SubmitAsync(
             WorkspaceId,
             new AzureProviderOperationSubmission("request-1", new('b', 64), CreatePlan() with
             {
                 SqlWorkflowPackageVersion = null,
                 SqlQuartzPackageVersion = null
-            }));
-
-        Assert.Null(AzureProviderOperationService.TryRestorePlan(operation));
+            })));
+        Assert.Null(store.Request);
     }
 
     [Theory]
