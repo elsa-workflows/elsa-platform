@@ -42,6 +42,9 @@ complete the real Microsoft Entra sign-in and MFA flow. It does not reuse a pers
 browser profile, automate credentials, or retain browser storage, callback values,
 tokens, screenshots, traces, or video.
 
+Azure mode additionally requires an authenticated Azure CLI with read access to the
+named App Service and Container App, plus `jq` and `curl`.
+
 ```bash
 ADMIN_UI_BASE_URL=https://control.example.test \
 MANAGED_ELSA_PROOF_CONTROL_RESOURCE_GROUP=rg-control \
