@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import sys
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -11,7 +13,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from ci.classify_dotnet_changes import classify_paths  # noqa: E402
+from ci.classify_dotnet_changes import (  # noqa: E402
+    DotnetGateDecision,
+    _write_github_output,
+    main,
+    classify_paths,
+)
 
 
 class CiPathClassificationTests(unittest.TestCase):
@@ -50,6 +57,8 @@ class CiPathClassificationTests(unittest.TestCase):
             "global.json",
             "Directory.Build.props",
             ".github/workflows/ci.yml",
+            "scripts/ci/classify_dotnet_changes.py",
+            "scripts/tests/test_ci_path_classification.py",
         ):
             with self.subTest(changed_path=changed_path):
                 decision = classify_paths("pull_request", [changed_path])
@@ -95,12 +104,67 @@ class CiPathClassificationTests(unittest.TestCase):
 
         self.assertIn("name: Build and Test", workflow)
         self.assertIn("fetch-depth: 0", workflow)
+        self.assertIn('git show "$CI_BASE_SHA:$classifier"', workflow)
+        self.assertIn("base branch does not yet contain the trusted classifier", workflow)
         self.assertIn("scripts/ci/classify_dotnet_changes.py", workflow)
         self.assertIn("name: Validate CI path classification contract", workflow)
         self.assertIn("name: Validate Azure deployment workflow contract", workflow)
         self.assertIn("name: Check Azure workload proof shell scripts", workflow)
         self.assertIn("name: Compile Azure workload proof Bicep templates", workflow)
         self.assertEqual(workflow.count("steps.dotnet-gate.outputs.run_dotnet == 'true'"), 5)
+
+    def test_cli_reads_git_diff_and_writes_skip_decision(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            self._git(repository, "init")
+            self._git(repository, "config", "user.email", "ci-contract@example.invalid")
+            self._git(repository, "config", "user.name", "CI contract")
+            (repository / "README.md").write_text("before\n", encoding="utf-8")
+            self._git(repository, "add", "README.md")
+            self._git(repository, "commit", "-m", "baseline")
+            base_sha = self._git(repository, "rev-parse", "HEAD").strip()
+            (repository / "README.md").write_text("after\n", encoding="utf-8")
+            self._git(repository, "commit", "-am", "docs")
+            head_sha = self._git(repository, "rev-parse", "HEAD").strip()
+            output_path = repository / "github-output.txt"
+
+            exit_code = main([
+                "--event-name", "pull_request",
+                "--base-sha", base_sha,
+                "--head-sha", head_sha,
+                "--repo-root", str(repository),
+                "--github-output", str(output_path),
+            ])
+
+            self.assertEqual(0, exit_code)
+            outputs = output_path.read_text(encoding="utf-8")
+            self.assertIn("run_dotnet=false\n", outputs)
+            self.assertIn("impacting_path_count=0\n", outputs)
+
+    def test_github_output_flattens_diagnostic_newlines(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output_path = Path(directory) / "github-output.txt"
+
+            _write_github_output(
+                output_path,
+                DotnetGateDecision(True, "stable\r\nmessage", ("src/Program.cs",)),
+            )
+
+            outputs = output_path.read_text(encoding="utf-8").splitlines()
+            self.assertEqual("run_dotnet=true", outputs[0])
+            self.assertEqual("reason=stable  message", outputs[1])
+            self.assertEqual("impacting_path_count=1", outputs[2])
+
+    @staticmethod
+    def _git(repository: Path, *arguments: str) -> str:
+        result = subprocess.run(
+            ["git", *arguments],
+            cwd=repository,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout
 
 
 if __name__ == "__main__":

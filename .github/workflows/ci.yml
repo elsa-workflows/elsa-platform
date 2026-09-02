@@ -27,7 +27,22 @@ jobs:
           CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          python3 scripts/ci/classify_dotnet_changes.py \
+          classifier=scripts/ci/classify_dotnet_changes.py
+          if [[ "$CI_EVENT_NAME" == "pull_request" ]]; then
+            trusted_classifier="$RUNNER_TEMP/classify_dotnet_changes.py"
+            if git cat-file -e "$CI_BASE_SHA:$classifier" 2>/dev/null; then
+              git show "$CI_BASE_SHA:$classifier" >"$trusted_classifier"
+              classifier="$trusted_classifier"
+            else
+              {
+                echo "run_dotnet=true"
+                echo "reason=Running full .NET gate while the base branch does not yet contain the trusted classifier."
+                echo "impacting_path_count=0"
+              } >>"$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          python3 "$classifier" \
             --event-name "$CI_EVENT_NAME" \
             --base-sha "$CI_BASE_SHA" \
             --head-sha "$CI_HEAD_SHA" \
