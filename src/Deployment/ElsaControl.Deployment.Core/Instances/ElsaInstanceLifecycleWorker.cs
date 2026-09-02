@@ -1,4 +1,5 @@
 using ElsaControl.RuntimeBuilder.Abstractions.Plans;
+using ElsaControl.Deployment.Core.Telemetry;
 
 namespace ElsaControl.Deployment.Core.Instances;
 
@@ -37,7 +38,65 @@ public sealed class ElsaInstanceLifecycleWorker(
 
             // A malformed item is isolated to its operation. The queue must continue
             // so one corrupt record cannot starve later accepted work.
-            var processed = await ProcessClaimedAsync(item, workerId.Trim(), cancellationToken);
+            using var telemetry = ManagedLifecycleTelemetry.StartOperation(
+                ManagedLifecycleTelemetry.WorkerActivityName,
+                item.Operation.Action,
+                item.Instance.DesiredLifecycle,
+                item.Instance.ObservedLifecycle,
+                item.Instance.Health,
+                item.Operation.State,
+                item.Instance.OrganizationId,
+                item.Instance.WorkspaceId,
+                item.Instance.Id,
+                item.Operation.Id,
+                item.Operation.AttemptNumber);
+            (ElsaInstanceLifecycleWorkerResult Result, int ProviderInvocations) processed;
+            try
+            {
+                processed = await ProcessClaimedAsync(item, workerId.Trim(), cancellationToken, telemetry);
+                var final = processed.Result;
+                if (final.Operation.State != item.Operation.State)
+                    telemetry.RecordTransition(
+                        final.Instance.DesiredLifecycle,
+                        final.Instance.ObservedLifecycle,
+                        final.Instance.Health,
+                        final.Operation.State,
+                        final.FailureCode);
+                if (final.Outcome is ElsaInstanceLifecycleWorkerOutcome.Failed or ElsaInstanceLifecycleWorkerOutcome.Conflict)
+                    telemetry.RecordError(
+                        final.Instance.DesiredLifecycle,
+                        final.Instance.ObservedLifecycle,
+                        final.Instance.Health,
+                        final.Operation.State,
+                        final.FailureCode);
+                telemetry.Complete(
+                    final.Outcome.ToString(),
+                    final.Instance.DesiredLifecycle,
+                    final.Instance.ObservedLifecycle,
+                    final.Instance.Health,
+                    final.Operation.State,
+                    final.FailureCode);
+            }
+            catch (OperationCanceledException)
+            {
+                telemetry.RecordError(
+                    item.Instance.DesiredLifecycle,
+                    item.Instance.ObservedLifecycle,
+                    item.Instance.Health,
+                    item.Operation.State,
+                    "lifecycle.worker.cancelled");
+                throw;
+            }
+            catch
+            {
+                telemetry.RecordError(
+                    item.Instance.DesiredLifecycle,
+                    item.Instance.ObservedLifecycle,
+                    item.Instance.Health,
+                    item.Operation.State,
+                    "lifecycle.worker.failed");
+                throw;
+            }
             results.Add(processed.Result);
             providerInvocations += processed.ProviderInvocations;
         }
@@ -48,7 +107,8 @@ public sealed class ElsaInstanceLifecycleWorker(
     private async Task<(ElsaInstanceLifecycleWorkerResult Result, int ProviderInvocations)> ProcessClaimedAsync(
         ElsaInstanceLifecycleWorkItem item,
         string workerId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ManagedLifecycleTelemetry.ManagedLifecycleTelemetryOperation telemetry)
     {
         try
         {
@@ -125,6 +185,12 @@ public sealed class ElsaInstanceLifecycleWorker(
             {
                 // Deterministic local/provider rejection leaves the durable reservation queued.
                 // It must not be represented as an uncertain remote hand-off.
+                telemetry.RecordError(
+                    item.Instance.DesiredLifecycle,
+                    item.Instance.ObservedLifecycle,
+                    item.Instance.Health,
+                    result.Operation.State,
+                    "provider.submission.rejected");
             }
             catch
             {
@@ -133,6 +199,12 @@ public sealed class ElsaInstanceLifecycleWorker(
                 // is available, it records an uncertain hand-off for explicit
                 // recovery. This failure must never roll back a committed plan or
                 // create a second run.
+                telemetry.RecordError(
+                    item.Instance.DesiredLifecycle,
+                    item.Instance.ObservedLifecycle,
+                    item.Instance.Health,
+                    result.Operation.State,
+                    "provider.submission.uncertain");
                 if (_submissionStore is not null)
                 {
                     try

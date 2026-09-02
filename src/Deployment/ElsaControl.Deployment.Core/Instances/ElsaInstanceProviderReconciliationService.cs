@@ -1,4 +1,5 @@
 using ElsaControl.Deployment.Abstractions.Instances;
+using ElsaControl.Deployment.Core.Telemetry;
 
 namespace ElsaControl.Deployment.Core.Instances;
 
@@ -30,75 +31,151 @@ public sealed class ElsaInstanceProviderReconciliationService(
         if (operationId == Guid.Empty)
             throw new ArgumentException("Operation ID is required.", nameof(operationId));
 
-        var replay = await store.GetResultAsync(workspaceId, operationId, cancellationToken);
-        if (replay is not null)
-            return replay with { Replayed = true };
-
-        var target = await store.GetTargetAsync(workspaceId, operationId, cancellationToken)
-            ?? throw new KeyNotFoundException("Provider reconciliation target does not exist.");
-        target.Validate();
-
-        var instance = target.Instance;
-        var operation = target.Operation;
-        var request = new ElsaInstanceProviderReconciliationRequest(
-            workspaceId, instance.Id, operation.Id, operation.AttemptNumber, instance.DesiredLifecycle,
-            instance.ResolvedPlanReference, instance.CurrentDeploymentReference);
-        ElsaInstanceProviderObservation observation;
-        var providerUnavailable = false;
-        string? uncertainCode = null;
+        using var telemetry = ManagedLifecycleTelemetry.StartOperation(
+            ManagedLifecycleTelemetry.ReconciliationActivityName,
+            ElsaInstanceOperationAction.Reconcile,
+            null,
+            ElsaObservedLifecycle.Unknown,
+            ElsaInstanceHealth.Unknown,
+            null,
+            workspaceId: workspaceId,
+            operationId: operationId);
         try
         {
-            observation = await provider.ObserveAsync(request, cancellationToken)
-                ?? throw new InvalidOperationException("Provider returned no observation.");
+            var replay = await store.GetResultAsync(workspaceId, operationId, cancellationToken);
+            if (replay is not null)
+            {
+                var replayed = replay with { Replayed = true };
+                telemetry.Complete(
+                    replayed.Outcome.ToString(),
+                    null,
+                    replayed.Projection.ObservedLifecycle,
+                    replayed.Projection.Health,
+                    replayed.Projection.OperationState,
+                    replayed.DiagnosticCode);
+                return replayed;
+            }
+
+            var target = await store.GetTargetAsync(workspaceId, operationId, cancellationToken)
+                ?? throw new KeyNotFoundException("Provider reconciliation target does not exist.");
+            target.Validate();
+
+            var instance = target.Instance;
+            var operation = target.Operation;
+            telemetry.SetCorrelation(instance.OrganizationId, workspaceId, instance.Id, operation.Id);
+            if (operation.AttemptNumber > 1)
+                telemetry.RecordRetry(
+                    instance.DesiredLifecycle,
+                    instance.ObservedLifecycle,
+                    instance.Health,
+                    operation.State);
+            var request = new ElsaInstanceProviderReconciliationRequest(
+                workspaceId, instance.Id, operation.Id, operation.AttemptNumber, instance.DesiredLifecycle,
+                instance.ResolvedPlanReference, instance.CurrentDeploymentReference);
+            ElsaInstanceProviderObservation observation;
+            var providerUnavailable = false;
+            string? uncertainCode = null;
+            try
+            {
+                observation = await provider.ObserveAsync(request, cancellationToken)
+                    ?? throw new InvalidOperationException("Provider returned no observation.");
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                providerUnavailable = true;
+                telemetry.RecordError(
+                    instance.DesiredLifecycle,
+                    instance.ObservedLifecycle,
+                    instance.Health,
+                    operation.State,
+                    UnavailableCode);
+                observation = new(
+                    ElsaInstanceProviderObservationKind.Unknown,
+                    ElsaObservedLifecycle.Unknown,
+                    ElsaInstanceProviderHealthGate.Unknown,
+                    operation.Id,
+                    operation.AttemptNumber,
+                    "provider-unavailable");
+            }
+
+            if (observation.OperationId != operation.Id || observation.AttemptNumber != operation.AttemptNumber)
+            {
+                uncertainCode = CorrelationMismatchCode;
+                telemetry.RecordError(
+                    instance.DesiredLifecycle,
+                    instance.ObservedLifecycle,
+                    instance.Health,
+                    operation.State,
+                    CorrelationMismatchCode);
+                observation = new(
+                    ElsaInstanceProviderObservationKind.Ambiguous,
+                    ElsaObservedLifecycle.Unknown,
+                    ElsaInstanceProviderHealthGate.Unknown,
+                    operation.Id,
+                    operation.AttemptNumber,
+                    "correlation-mismatch");
+            }
+
+            var projection = Project(instance, operation, observation, _timeProvider.GetUtcNow(),
+                uncertainCode ?? (providerUnavailable ? UnavailableCode : null));
+            var retryEvidence = projection.Operation.State == ElsaInstanceOperationState.RecoveryRequired
+                ? observation.RetryEvidence
+                : null;
+            var result = await store.CommitAsync(new(
+                workspaceId,
+                instance.Id,
+                operation.Id,
+                instance.Version,
+                operation.AttemptNumber,
+                target.ReconciliationVersion,
+                observation.ComputeFingerprint(),
+                projection.Instance,
+                projection.Operation,
+                projection.Code,
+                retryEvidence is not null,
+                retryEvidence?.Reference,
+                retryEvidence?.Digest,
+                projection.At), cancellationToken);
+            if (result.Projection.OperationState != operation.State)
+                telemetry.RecordTransition(
+                    instance.DesiredLifecycle,
+                    result.Projection.ObservedLifecycle,
+                    result.Projection.Health,
+                    result.Projection.OperationState,
+                    result.DiagnosticCode);
+            telemetry.Complete(
+                result.Outcome.ToString(),
+                instance.DesiredLifecycle,
+                result.Projection.ObservedLifecycle,
+                result.Projection.Health,
+                result.Projection.OperationState,
+                result.DiagnosticCode);
+            return result;
         }
         catch (OperationCanceledException)
         {
+            telemetry.RecordError(
+                null,
+                ElsaObservedLifecycle.Unknown,
+                ElsaInstanceHealth.Unknown,
+                null,
+                "provider.reconciliation.cancelled");
             throw;
         }
         catch
         {
-            providerUnavailable = true;
-            observation = new(
-                ElsaInstanceProviderObservationKind.Unknown,
+            telemetry.RecordError(
+                null,
                 ElsaObservedLifecycle.Unknown,
-                ElsaInstanceProviderHealthGate.Unknown,
-                operation.Id,
-                operation.AttemptNumber,
-                "provider-unavailable");
+                ElsaInstanceHealth.Unknown,
+                null,
+                "provider.reconciliation.failed");
+            throw;
         }
-
-        if (observation.OperationId != operation.Id || observation.AttemptNumber != operation.AttemptNumber)
-        {
-            uncertainCode = CorrelationMismatchCode;
-            observation = new(
-                ElsaInstanceProviderObservationKind.Ambiguous,
-                ElsaObservedLifecycle.Unknown,
-                ElsaInstanceProviderHealthGate.Unknown,
-                operation.Id,
-                operation.AttemptNumber,
-                "correlation-mismatch");
-        }
-
-        var projection = Project(instance, operation, observation, _timeProvider.GetUtcNow(),
-            uncertainCode ?? (providerUnavailable ? UnavailableCode : null));
-        var retryEvidence = projection.Operation.State == ElsaInstanceOperationState.RecoveryRequired
-            ? observation.RetryEvidence
-            : null;
-        return await store.CommitAsync(new(
-            workspaceId,
-            instance.Id,
-            operation.Id,
-            instance.Version,
-            operation.AttemptNumber,
-            target.ReconciliationVersion,
-            observation.ComputeFingerprint(),
-            projection.Instance,
-            projection.Operation,
-            projection.Code,
-            retryEvidence is not null,
-            retryEvidence?.Reference,
-            retryEvidence?.Digest,
-            projection.At), cancellationToken);
     }
 
     private static (ElsaInstance Instance, ElsaInstanceOperation Operation, string Code, DateTimeOffset At) Project(

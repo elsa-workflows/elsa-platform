@@ -271,6 +271,12 @@ if (azureInstanceLifecycleEnabled)
         services.GetRequiredService<ElsaInstanceProviderReconciliationService>());
 }
 builder.Services.AddScoped<IManagedElsaInstanceApiStore, EfCoreManagedElsaInstanceApiStore>();
+builder.Services.AddScoped<IManagedElsaInstanceOperationalStore, EfCoreManagedElsaInstanceOperationalStore>();
+builder.Services.Configure<ManagedLifecycleOperationalHealthOptions>(
+    builder.Configuration.GetSection(ManagedLifecycleOperationalHealthOptions.ConfigurationSection));
+builder.Services.AddSingleton(services => new ManagedLifecycleOperationalHealthEvaluator(
+    services.GetRequiredService<IOptions<ManagedLifecycleOperationalHealthOptions>>().Value,
+    timeProvider: services.GetRequiredService<TimeProvider>()));
 builder.Services.Configure<ElsaInstanceLifecycleWorkerOptions>(builder.Configuration.GetSection(ElsaInstanceLifecycleWorkerOptions.ConfigurationSection));
 builder.Services.AddScoped<ICatalogStore, EfCoreCatalogStore>();
 builder.Services.AddScoped<IGovernedReleaseCatalogStore, GovernedReleaseCatalogStore>();

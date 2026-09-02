@@ -14,6 +14,7 @@ Elsa Cloud is a managed manifestation of Elsa Control, not a parallel orchestrat
 - Roadmap: `docs/product/delivery-roadmap.md`
 - Decision log: `docs/product/decisions.md`
 - Operating model: `docs/product/program-operating-model.md`
+- Managed lifecycle operations runbook: `managed-lifecycle-operations-runbook.md`
 - ADRs: `docs/adr/`
 
 ## Architecture summary
