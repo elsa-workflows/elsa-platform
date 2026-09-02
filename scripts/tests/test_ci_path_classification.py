@@ -23,20 +23,22 @@ from ci.classify_dotnet_changes import (  # noqa: E402
 
 class CiPathClassificationTests(unittest.TestCase):
     def test_documentation_and_browser_harness_changes_skip_dotnet_gate(self) -> None:
-        decision = classify_paths(
-            "pull_request",
-            [
-                "docs/evidence/managed-elsa-browser-proof.md",
-                "README.md",
-                "infra/azure-workload-proof/main.bicep",
-                "scripts/managed-elsa-browser-proof/run-azure.sh",
-                "src/Hosting/ElsaControl.Console/src/main.tsx",
-                "tests/Hosting/ElsaControl.Console.E2E/managed-elsa-browser-proof.spec.ts",
-            ],
-        )
+        for event_name in ("pull_request", "pull_request_target"):
+            with self.subTest(event_name=event_name):
+                decision = classify_paths(
+                    event_name,
+                    [
+                        "docs/evidence/managed-elsa-browser-proof.md",
+                        "README.md",
+                        "infra/azure-workload-proof/main.bicep",
+                        "scripts/managed-elsa-browser-proof/run-azure.sh",
+                        "src/Hosting/ElsaControl.Console/src/main.tsx",
+                        "tests/Hosting/ElsaControl.Console.E2E/managed-elsa-browser-proof.spec.ts",
+                    ],
+                )
 
-        self.assertFalse(decision.run_dotnet)
-        self.assertIn("unrelated-path allowlist", decision.reason)
+                self.assertFalse(decision.run_dotnet)
+                self.assertIn("unrelated-path allowlist", decision.reason)
 
     def test_mixed_safe_and_dotnet_paths_run_full_gate(self) -> None:
         decision = classify_paths(
@@ -103,7 +105,15 @@ class CiPathClassificationTests(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
 
         self.assertIn("name: Build and Test", workflow)
+        self.assertIn("pull_request_target:", workflow)
+        self.assertNotIn("  pull_request:\n", workflow)
+        self.assertEqual(
+            2,
+            workflow.count("ref: ${{ github.event.pull_request.head.sha }}"),
+        )
+        self.assertEqual(2, workflow.count("persist-credentials: false"))
         self.assertIn("fetch-depth: 0", workflow)
+        self.assertIn('"$CI_EVENT_NAME" == "pull_request_target"', workflow)
         self.assertIn('git show "$CI_BASE_SHA:$classifier"', workflow)
         self.assertIn("base branch does not yet contain the trusted classifier", workflow)
         self.assertIn("scripts/ci/classify_dotnet_changes.py", workflow)
@@ -128,18 +138,21 @@ class CiPathClassificationTests(unittest.TestCase):
             head_sha = self._git(repository, "rev-parse", "HEAD").strip()
             output_path = repository / "github-output.txt"
 
-            exit_code = main([
-                "--event-name", "pull_request",
-                "--base-sha", base_sha,
-                "--head-sha", head_sha,
-                "--repo-root", str(repository),
-                "--github-output", str(output_path),
-            ])
+            for event_name in ("pull_request", "pull_request_target"):
+                with self.subTest(event_name=event_name):
+                    output_path.unlink(missing_ok=True)
+                    exit_code = main([
+                        "--event-name", event_name,
+                        "--base-sha", base_sha,
+                        "--head-sha", head_sha,
+                        "--repo-root", str(repository),
+                        "--github-output", str(output_path),
+                    ])
 
-            self.assertEqual(0, exit_code)
-            outputs = output_path.read_text(encoding="utf-8")
-            self.assertIn("run_dotnet=false\n", outputs)
-            self.assertIn("impacting_path_count=0\n", outputs)
+                    self.assertEqual(0, exit_code)
+                    outputs = output_path.read_text(encoding="utf-8")
+                    self.assertIn("run_dotnet=false\n", outputs)
+                    self.assertIn("impacting_path_count=0\n", outputs)
 
     def test_github_output_flattens_diagnostic_newlines(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

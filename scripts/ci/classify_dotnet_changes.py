@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Iterable, Sequence
 
 
-PULL_REQUEST_EVENT = "pull_request"
+PULL_REQUEST_EVENTS = frozenset({"pull_request", "pull_request_target"})
 
 # These areas have their own lightweight/console/browser validation and do not
 # contain .NET sources or test fixtures. Keep this list explicit and small.
@@ -61,8 +61,8 @@ def classify_paths(
 ) -> DotnetGateDecision:
     """Return a fail-closed .NET gate decision for an event and path set.
 
-    Only pull requests may skip the .NET gate. Pushes, manual runs, unknown
-    events, and unavailable path data always run the complete gate.
+    Only pull-request events may skip the .NET gate. Pushes, manual runs,
+    unknown events, and unavailable path data always run the complete gate.
     """
 
     event = event_name.strip().lower()
@@ -72,7 +72,7 @@ def classify_paths(
             f"Running full .NET gate for {event_name} (event override).",
         )
 
-    if event != PULL_REQUEST_EVENT:
+    if event not in PULL_REQUEST_EVENTS:
         return DotnetGateDecision(
             True,
             f"Running full .NET gate for unsupported event '{event_name}' (fail closed).",
@@ -168,7 +168,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     event_name = args.event_name
 
-    if event_name.strip().lower() == PULL_REQUEST_EVENT:
+    if event_name.strip().lower() in PULL_REQUEST_EVENTS:
         try:
             changed_paths = _changed_paths_from_git(
                 args.repo_root,

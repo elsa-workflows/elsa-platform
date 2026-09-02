@@ -1,7 +1,7 @@
 name: CI
 
 on:
-  pull_request:
+  pull_request_target:
   push:
     branches:
       - main
@@ -18,7 +18,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Classify changed paths for .NET gate
         id: dotnet-gate
@@ -28,7 +30,7 @@ jobs:
           CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           classifier=scripts/ci/classify_dotnet_changes.py
-          if [[ "$CI_EVENT_NAME" == "pull_request" ]]; then
+          if [[ "$CI_EVENT_NAME" == "pull_request_target" ]]; then
             trusted_classifier="$RUNNER_TEMP/classify_dotnet_changes.py"
             if git cat-file -e "$CI_BASE_SHA:$classifier" 2>/dev/null; then
               git show "$CI_BASE_SHA:$classifier" >"$trusted_classifier"
@@ -114,6 +116,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
