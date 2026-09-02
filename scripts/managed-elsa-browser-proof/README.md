@@ -45,11 +45,15 @@ tokens, screenshots, traces, or video.
 ```bash
 ADMIN_UI_BASE_URL=https://control.example.test \
 MANAGED_ELSA_PROOF_RUNTIME_ORIGIN=https://runtime.example.test \
+MANAGED_ELSA_PROOF_STATE_LIFETIME_SECONDS=60 \
   ./scripts/managed-elsa-browser-proof/run-azure.sh
 ```
 
-The wrapper stores Playwright's transient failure context in a unique temporary
-directory and deletes it on exit, whether the proof passes or fails.
+The supplied state lifetime must match the runtime's configured
+`ManagedElsa:Handoff:StateLifetime`; the proof waits five seconds beyond that
+bounded value rather than assuming a hidden default. The wrapper stores
+Playwright's transient failure context in a unique temporary directory and
+deletes it on exit, whether the proof passes or fails.
 
 After the interactive sign-in, the test opens the verified healthy instance, performs
 an authorized Elsa API operation, rejects callback replay, logs out and observes a

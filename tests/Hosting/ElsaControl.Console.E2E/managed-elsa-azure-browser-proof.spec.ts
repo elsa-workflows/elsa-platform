@@ -3,6 +3,7 @@ import { expect, type Page, test } from "@playwright/test";
 const proofEnabled = process.env.MANAGED_ELSA_AZURE_BROWSER_PROOF === "1";
 const controlOrigin = (process.env.ADMIN_UI_BASE_URL ?? "").replace(/\/+$/, "");
 const runtimeOrigin = (process.env.MANAGED_ELSA_PROOF_RUNTIME_ORIGIN ?? "").replace(/\/+$/, "");
+const stateLifetimeSeconds = Number(process.env.MANAGED_ELSA_PROOF_STATE_LIFETIME_SECONDS ?? "");
 
 test.use({ ignoreHTTPSErrors: false, trace: "off", screenshot: "off", video: "off" });
 
@@ -14,6 +15,7 @@ test.describe("managed Elsa Azure browser proof", () => {
     test.setTimeout(480_000);
     requirePublicHttpsOrigin(controlOrigin, "ADMIN_UI_BASE_URL");
     requirePublicHttpsOrigin(runtimeOrigin, "MANAGED_ELSA_PROOF_RUNTIME_ORIGIN");
+    requireBoundedStateLifetime(stateLifetimeSeconds);
 
     await signInInteractively(page);
 
@@ -41,7 +43,7 @@ test.describe("managed Elsa Azure browser proof", () => {
     await page.goto(`${controlOrigin}/admin/runtimes`);
     await expect(page.getByRole("heading", { name: "Managed Elsa" })).toBeVisible();
     await page.route("**/api/managed-elsa/handoff/issue", async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, 65_000));
+      await new Promise((resolve) => setTimeout(resolve, (stateLifetimeSeconds + 5) * 1_000));
       await route.continue();
     }, { times: 1 });
 
@@ -99,4 +101,9 @@ function requirePublicHttpsOrigin(value: string, variableName: string) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function requireBoundedStateLifetime(value: number) {
+  if (!Number.isInteger(value) || value < 5 || value > 300)
+    throw new Error("MANAGED_ELSA_PROOF_STATE_LIFETIME_SECONDS must be an integer from 5 through 300.");
 }

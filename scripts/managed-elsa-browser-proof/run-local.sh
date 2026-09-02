@@ -15,7 +15,7 @@ fixture_database="$proof_root/catalog.db"
 control_pid=""
 console_pid=""
 
-immutable_runtime_image=${MANAGED_ELSA_PROOF_RUNTIME_IMAGE:-valenceruntimeimages.azurecr.io/runtime-combined@sha256:19baefc562e5146fb62fc0024d9582dfba8ed7b94ef714da3e26a25bbff28177}
+immutable_runtime_image=${MANAGED_ELSA_PROOF_RUNTIME_IMAGE:-valenceruntimeimages.azurecr.io/runtime-combined@sha256:c167eac48374cdf653e0bc21b54f50dc22b44f9e8b67f90d1b2c22ff152ebf09}
 
 cleanup() {
   set +e
