@@ -11,12 +11,16 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class WorkspaceBuilderBundleApiTests
+public sealed class WorkspaceBuilderBundleApiTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public WorkspaceBuilderBundleApiTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Workspace_member_can_generate_bundle()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = WorkspaceClient(app, "user-123");
         var workspaceId = (await client.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Workspaces.Single().Id;
@@ -31,7 +35,7 @@ public sealed class WorkspaceBuilderBundleApiTests
     [Fact]
     public async Task Workspace_bundle_rejects_anonymous_and_non_members()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var member = WorkspaceClient(app, "user-123");
         var workspaceId = (await member.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Workspaces.Single().Id;
@@ -46,7 +50,7 @@ public sealed class WorkspaceBuilderBundleApiTests
     [Fact]
     public async Task Workspace_bundle_does_not_leak_foreign_private_source_ids()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = WorkspaceClient(app, "owner");
         var ownerWorkspaceId = (await owner.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Workspaces.Single().Id;

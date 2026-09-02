@@ -10,12 +10,16 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class WorkspaceAuthorizationTests
+public sealed class WorkspaceAuthorizationTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public WorkspaceAuthorizationTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Reader_can_list_workspace_sources_but_cannot_create_source()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateControlIdentityClient(subject: "owner");
         var workspaceId = await GetWorkspaceIdAsync(owner);
@@ -32,7 +36,7 @@ public sealed class WorkspaceAuthorizationTests
     [Fact]
     public async Task Reader_can_list_runtime_configurations_but_cannot_mutate_them()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateControlIdentityClient(subject: "owner");
         var workspaceId = await GetWorkspaceIdAsync(owner);
@@ -49,7 +53,7 @@ public sealed class WorkspaceAuthorizationTests
     [Fact]
     public async Task Workspace_role_changes_are_enforced_on_subsequent_requests()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateControlIdentityClient(subject: "owner");
         var workspaceId = await GetWorkspaceIdAsync(owner);

@@ -5,12 +5,16 @@ using ElsaControl.PackageCatalog.Testing;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class PublicPackageVersionApiTests
+public sealed class PublicPackageVersionApiTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public PublicPackageVersionApiTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Get_version_returns_feature_settings()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var sourceId = Guid.Empty;
         await app.SeedAsync(db =>
         {
@@ -31,7 +35,7 @@ public sealed class PublicPackageVersionApiTests
     [Fact]
     public async Task Get_hidden_version_returns_not_found()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var sourceId = Guid.Empty;
         await app.SeedAsync(db =>
         {
@@ -51,7 +55,7 @@ public sealed class PublicPackageVersionApiTests
     [Fact]
     public async Task Get_undeclared_version_projects_empty_runtime_kinds()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var sourceId = Guid.Empty;
         await app.SeedAsync(db =>
         {

@@ -5,12 +5,16 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class OperatorAuthorizationTests
+public sealed class OperatorAuthorizationTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public OperatorAuthorizationTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Customer_identity_cannot_call_operator_endpoints()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var customer = app.CreateControlIdentityClient();
 
@@ -22,7 +26,7 @@ public sealed class OperatorAuthorizationTests
     [Fact]
     public async Task Admin_api_key_can_call_operator_endpoints()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var admin = app.CreateClient();
         admin.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, "local-dev-key");
@@ -35,7 +39,7 @@ public sealed class OperatorAuthorizationTests
     [Fact]
     public async Task Admin_api_key_does_not_create_customer_workspace_context()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var admin = app.CreateClient();
         admin.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, "local-dev-key");
