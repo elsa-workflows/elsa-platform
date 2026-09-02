@@ -15,12 +15,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build and Test
+  azure-proof:
+    name: Azure proof and contract checks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Validate CI workflow contract
+        run: python3 scripts/tests/test_ci_workflow.py
 
       - name: Validate Azure deployment workflow contract
         run: python3 scripts/tests/test_azure_api_deploy_workflow.py
@@ -50,6 +55,15 @@ jobs:
           az bicep build --file infra/azure-workload-proof/recovery-database.bicep --stdout >/dev/null
           az bicep build --file infra/azure-workload-proof/acr-pull-role.bicep --stdout >/dev/null
 
+  dotnet:
+    name: Full .NET restore, build, and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
@@ -74,6 +88,26 @@ jobs:
 
       - name: Test
         run: dotnet test ElsaControl.sln --configuration Release --no-build --verbosity normal
+
+  build:
+    name: Build and Test
+    if: ${{ always() }}
+    needs:
+      - azure-proof
+      - dotnet
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all CI dependencies to pass
+        env:
+          AZURE_PROOF_RESULT: ${{ needs['azure-proof'].result }}
+          DOTNET_RESULT: ${{ needs.dotnet.result }}
+        run: |
+          set -euo pipefail
+          if [ "$AZURE_PROOF_RESULT" != "success" ] \
+              || [ "$DOTNET_RESULT" != "success" ]; then
+            echo "::error::Required CI dependencies did not all succeed (azure-proof=$AZURE_PROOF_RESULT, dotnet=$DOTNET_RESULT)."
+            exit 1
+          fi
 
   console:
     name: Console quality gates
