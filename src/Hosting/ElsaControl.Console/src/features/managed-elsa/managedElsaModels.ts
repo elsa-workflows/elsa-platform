@@ -75,12 +75,17 @@ export type ManagedElsaInstanceIntent = {
   application: {
     topologyId: string;
     featurePresetId: string | null;
-    featureOverrides: Record<string, never>;
+    featureOverrides: Record<string, ManagedElsaFeatureOverride>;
     packagePolicy: string | null;
     configurationShapeRevisionId: string | null;
   };
   placement: Omit<ManagedElsaLaunchProfile, "name" | "description">;
   desiredLifecycle: "Running";
+};
+
+export type ManagedElsaFeatureOverride = {
+  kind: "Boolean" | "Number" | "Catalog";
+  value: string;
 };
 
 export type ManagedElsaOperation = {

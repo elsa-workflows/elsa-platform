@@ -225,9 +225,20 @@ function createError(error: unknown) {
   if (error instanceof ApiError) {
     if (error.status === 403) return "You do not have permission to create a managed instance.";
     if (error.status === 409) return "That instance address is already in use.";
-    if (error.status === 422) return "The selected release is not currently available for managed hosting.";
+    if (error.status === 422) {
+      const code = problemCode(error.details);
+      if (code === "instance.entitlement-required") return "Managed hosting is not enabled for this organization.";
+      if (code === "instance.catalog-selection-unavailable") return "The selected release is not currently available for managed hosting.";
+      if (code === "instance.shape-invalid") return "The instance name, address, or selection is invalid.";
+      return "The instance request was not accepted.";
+    }
   }
   return "The instance could not be created. Try again shortly.";
+}
+
+function problemCode(details: unknown) {
+  if (!details || typeof details !== "object" || !("code" in details) || typeof details.code !== "string") return null;
+  return /^[a-z0-9][a-z0-9.-]{0,127}$/i.test(details.code) ? details.code : null;
 }
 
 function onboardingOptionsError(error: unknown) {

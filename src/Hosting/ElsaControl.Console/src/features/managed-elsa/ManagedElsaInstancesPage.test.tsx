@@ -201,6 +201,24 @@ describe("ManagedElsaInstancesPage", () => {
     });
   });
 
+  it("maps create validation codes to accurate safe messages", async () => {
+    installFetch({
+      instances: [],
+      createResponse: Response.json({
+        title: "Managed hosting is not enabled for this organization.",
+        status: 422,
+        code: "instance.entitlement-required"
+      }, { status: 422 })
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(await screen.findByLabelText("Instance name"), "Unavailable Elsa");
+    await user.click(screen.getByRole("button", { name: "Create instance" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Managed hosting is not enabled for this organization.");
+  });
+
   it("resumes durable provisioning status after a browser refresh", async () => {
     const completedIdempotencyKey = "00000000-0000-0000-0000-000000000301";
     window.sessionStorage.setItem(`managed-elsa-idempotency:${workspaceId}`, completedIdempotencyKey);
@@ -348,7 +366,8 @@ function installFetch({
   onInstancesRequest,
   onboardingResponse,
   releaseOptions,
-  operationResponses = []
+  operationResponses = [],
+  createResponse
 }: {
   instances?: ManagedElsaInstance[];
   instancePages?: ManagedElsaInstance[][];
@@ -359,6 +378,7 @@ function installFetch({
   onboardingResponse?: Response;
   releaseOptions?: ReturnType<typeof releaseFixture>[];
   operationResponses?: Response[];
+  createResponse?: Response;
 }) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = input instanceof Request ? input.url : input.toString();
@@ -396,12 +416,15 @@ function installFetch({
         launchProfile: { name: "West Europe Dedicated", description: "Managed hosting.", targetMode: "managed", regionCode: "westeurope", isolationProfile: "dedicated", capacityProfile: "standard-small", networkOutcome: "public", domainOutcome: "managed" }
       });
     }
-    if (url.endsWith(`/api/workspaces/${workspaceId}/instances`) && init?.method === "POST")
+    if (url.endsWith(`/api/workspaces/${workspaceId}/instances`) && init?.method === "POST") {
+      if (createResponse)
+        return createResponse;
       return Response.json({
         instance: instanceFixture({ canOpen: false, observedLifecycle: "Pending", health: "Unknown", audience: null, redirectUri: null }),
         operation: { id: "00000000-0000-0000-0000-000000000201", instanceId: healthyInstanceId, action: "Create", state: "Accepted", attemptNumber: 1, failureCode: null, links: {} },
         links: {}
       }, { status: 202 });
+    }
     if (url.endsWith(`/api/workspaces/${workspaceId}/instances/${healthyInstanceId}/operations/00000000-0000-0000-0000-000000000201`)) {
       const response = operationResponses.shift();
       if (response)
