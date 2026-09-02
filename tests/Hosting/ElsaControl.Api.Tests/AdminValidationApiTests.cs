@@ -7,12 +7,16 @@ using ElsaControl.PackageCatalog.Testing;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class AdminValidationApiTests
+public sealed class AdminValidationApiTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public AdminValidationApiTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Admin_can_view_validation_results_for_version()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var source = PublicCatalogSeedData.CreatePackageSource();
@@ -43,7 +47,7 @@ public sealed class AdminValidationApiTests
     [Fact]
     public async Task Validation_results_normalize_warning_objects_with_missing_optional_fields()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var source = PublicCatalogSeedData.CreatePackageSource();
@@ -80,7 +84,7 @@ public sealed class AdminValidationApiTests
     [Fact]
     public async Task Validation_results_return_empty_findings_when_no_results_exist_for_indexed_version()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var source = PublicCatalogSeedData.CreatePackageSource();
@@ -102,7 +106,7 @@ public sealed class AdminValidationApiTests
     [Fact]
     public async Task Validation_results_return_not_found_for_unknown_package_or_version()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var source = PublicCatalogSeedData.CreatePackageSource();

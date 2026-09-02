@@ -5,12 +5,16 @@ using ElsaControl.PackageCatalog.Testing;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class PublicFeaturesApiTests
+public sealed class PublicFeaturesApiTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public PublicFeaturesApiTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Get_features_returns_visible_features()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var source = PublicCatalogSeedData.CreatePackageSource();
@@ -28,7 +32,7 @@ public sealed class PublicFeaturesApiTests
     [Fact]
     public async Task Get_feature_returns_not_found_when_package_is_hidden()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var source = PublicCatalogSeedData.CreatePackageSource();
@@ -46,7 +50,7 @@ public sealed class PublicFeaturesApiTests
     [Fact]
     public async Task Get_feature_ignores_malformed_default_value_json()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var source = PublicCatalogSeedData.CreatePackageSource();

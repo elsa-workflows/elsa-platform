@@ -9,12 +9,16 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class AdminApprovalApiTests
+public sealed class AdminApprovalApiTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public AdminApprovalApiTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Admin_can_approve_package_and_version()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var source = PublicCatalogSeedData.CreatePackageSource();
@@ -44,7 +48,7 @@ public sealed class AdminApprovalApiTests
     [Fact]
     public async Task Version_rejection_requires_reason()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var source = PublicCatalogSeedData.CreatePackageSource();
@@ -64,7 +68,7 @@ public sealed class AdminApprovalApiTests
     [Fact]
     public async Task Version_approval_requires_state_token()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var source = PublicCatalogSeedData.CreatePackageSource();
@@ -84,7 +88,7 @@ public sealed class AdminApprovalApiTests
     [Fact]
     public async Task Version_approval_rejects_stale_state_tokens()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var source = PublicCatalogSeedData.CreatePackageSource();
