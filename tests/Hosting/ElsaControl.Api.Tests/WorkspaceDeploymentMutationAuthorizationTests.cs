@@ -9,12 +9,16 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class WorkspaceDeploymentMutationAuthorizationTests
+public sealed class WorkspaceDeploymentMutationAuthorizationTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public WorkspaceDeploymentMutationAuthorizationTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Runtime_control_requires_execute_permission()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -32,7 +36,7 @@ public sealed class WorkspaceDeploymentMutationAuthorizationTests
     [Fact]
     public async Task Runtime_control_rejects_missing_confirmation()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -48,7 +52,7 @@ public sealed class WorkspaceDeploymentMutationAuthorizationTests
     [Fact]
     public async Task Runtime_control_rejects_unsupported_capability_without_consuming_confirmation()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -67,7 +71,7 @@ public sealed class WorkspaceDeploymentMutationAuthorizationTests
     [Fact]
     public async Task Runtime_control_rejects_unreachable_engine_without_consuming_confirmation()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -86,7 +90,7 @@ public sealed class WorkspaceDeploymentMutationAuthorizationTests
     [Fact]
     public async Task Runtime_control_consumes_same_user_confirmation_once()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -109,7 +113,7 @@ public sealed class WorkspaceDeploymentMutationAuthorizationTests
     [Fact]
     public async Task Runtime_control_rejects_confirmation_created_by_another_user()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
