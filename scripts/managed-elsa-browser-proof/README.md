@@ -44,16 +44,23 @@ tokens, screenshots, traces, or video.
 
 ```bash
 ADMIN_UI_BASE_URL=https://control.example.test \
+MANAGED_ELSA_PROOF_CONTROL_RESOURCE_GROUP=rg-control \
+MANAGED_ELSA_PROOF_CONTROL_APP_NAME=control-app \
 MANAGED_ELSA_PROOF_RUNTIME_ORIGIN=https://runtime.example.test \
+MANAGED_ELSA_PROOF_RUNTIME_RESOURCE_GROUP=rg-runtime \
+MANAGED_ELSA_PROOF_RUNTIME_APP_NAME=runtime-app \
+MANAGED_ELSA_PROOF_EXPECTED_IMAGE=registry.example/runtime-combined@sha256:<digest> \
 MANAGED_ELSA_PROOF_STATE_LIFETIME_SECONDS=60 \
   ./scripts/managed-elsa-browser-proof/run-azure.sh
 ```
 
-The supplied state lifetime must match the runtime's configured
-`ManagedElsa:Handoff:StateLifetime`; the proof waits five seconds beyond that
-bounded value rather than assuming a hidden default. The wrapper stores
-Playwright's transient failure context in a unique temporary directory and
-deletes it on exit, whether the proof passes or fails.
+Before opening Chromium, the wrapper uses Azure CLI and safe health probes to fail
+closed unless the supplied origins match the named resources, the runtime uses the
+expected immutable image and state lifetime, exactly one active revision is healthy
+with all traffic, and Control is running with HTTPS-only enforcement. The proof waits
+five seconds beyond the configured bounded state lifetime rather than assuming a
+hidden default. The wrapper stores Playwright's transient failure context in a unique
+temporary directory and deletes it on exit, whether the proof passes or fails.
 
 After the interactive sign-in, the test opens the verified healthy instance, performs
 an authorized Elsa API operation, rejects callback replay, logs out and observes a

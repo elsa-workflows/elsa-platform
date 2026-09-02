@@ -18,6 +18,77 @@ trap cleanup EXIT
 : "${ADMIN_UI_BASE_URL:?Set ADMIN_UI_BASE_URL to the public Elsa Control HTTPS origin.}"
 : "${MANAGED_ELSA_PROOF_RUNTIME_ORIGIN:?Set MANAGED_ELSA_PROOF_RUNTIME_ORIGIN to the public runtime HTTPS origin.}"
 : "${MANAGED_ELSA_PROOF_STATE_LIFETIME_SECONDS:?Set MANAGED_ELSA_PROOF_STATE_LIFETIME_SECONDS to the configured runtime browser-state lifetime.}"
+: "${MANAGED_ELSA_PROOF_CONTROL_RESOURCE_GROUP:?Set MANAGED_ELSA_PROOF_CONTROL_RESOURCE_GROUP to the Control resource group.}"
+: "${MANAGED_ELSA_PROOF_CONTROL_APP_NAME:?Set MANAGED_ELSA_PROOF_CONTROL_APP_NAME to the Control App Service name.}"
+: "${MANAGED_ELSA_PROOF_RUNTIME_RESOURCE_GROUP:?Set MANAGED_ELSA_PROOF_RUNTIME_RESOURCE_GROUP to the runtime resource group.}"
+: "${MANAGED_ELSA_PROOF_RUNTIME_APP_NAME:?Set MANAGED_ELSA_PROOF_RUNTIME_APP_NAME to the runtime Container App name.}"
+: "${MANAGED_ELSA_PROOF_EXPECTED_IMAGE:?Set MANAGED_ELSA_PROOF_EXPECTED_IMAGE to the immutable admitted runtime image.}"
+
+fail_preflight() {
+  printf 'Azure browser proof preflight failed: %s\n' "$1" >&2
+  exit 1
+}
+
+command -v az >/dev/null || fail_preflight "Azure CLI is required."
+command -v jq >/dev/null || fail_preflight "jq is required."
+command -v curl >/dev/null || fail_preflight "curl is required."
+
+if [[ ! "$MANAGED_ELSA_PROOF_STATE_LIFETIME_SECONDS" =~ ^[0-9]+$ ]]; then
+  fail_preflight "State lifetime must be an integer from 5 through 300."
+fi
+state_lifetime_seconds=$((10#$MANAGED_ELSA_PROOF_STATE_LIFETIME_SECONDS))
+if (( state_lifetime_seconds < 5 || state_lifetime_seconds > 300 )); then
+  fail_preflight "State lifetime must be an integer from 5 through 300."
+fi
+
+expected_state_lifetime=$(printf '%02d:%02d:%02d' \
+  $((state_lifetime_seconds / 3600)) \
+  $(((state_lifetime_seconds % 3600) / 60)) \
+  $((state_lifetime_seconds % 60)))
+
+# The backticks are JMESPath string delimiters and must remain literal.
+# shellcheck disable=SC2016
+runtime_state=$(az containerapp show \
+  --resource-group "$MANAGED_ELSA_PROOF_RUNTIME_RESOURCE_GROUP" \
+  --name "$MANAGED_ELSA_PROOF_RUNTIME_APP_NAME" \
+  --query '{fqdn:properties.configuration.ingress.fqdn,revision:properties.latestRevisionName,image:properties.template.containers[0].image,stateLifetime:properties.template.containers[0].env[?name==`ManagedElsa__Handoff__StateLifetime`].value|[0]}' \
+  --output json \
+  --only-show-errors) || fail_preflight "Runtime state could not be read."
+
+[[ "$(jq -r '.image // empty' <<<"$runtime_state")" == "$MANAGED_ELSA_PROOF_EXPECTED_IMAGE" ]] ||
+  fail_preflight "Runtime image does not match the expected immutable image."
+[[ "$(jq -r '.stateLifetime // empty' <<<"$runtime_state")" == "$expected_state_lifetime" ]] ||
+  fail_preflight "Runtime state lifetime does not match the proof input."
+[[ "$MANAGED_ELSA_PROOF_RUNTIME_ORIGIN" == "https://$(jq -r '.fqdn // empty' <<<"$runtime_state")" ]] ||
+  fail_preflight "Runtime origin does not match the Container App ingress."
+
+runtime_revisions=$(az containerapp revision list \
+  --resource-group "$MANAGED_ELSA_PROOF_RUNTIME_RESOURCE_GROUP" \
+  --name "$MANAGED_ELSA_PROOF_RUNTIME_APP_NAME" \
+  --query '[?properties.active].{name:name,health:properties.healthState,replicas:properties.replicas,traffic:properties.trafficWeight}' \
+  --output json \
+  --only-show-errors) || fail_preflight "Runtime revision state could not be read."
+
+jq -e --arg revision "$(jq -r '.revision // empty' <<<"$runtime_state")" \
+  'length == 1 and .[0].name == $revision and .[0].health == "Healthy" and .[0].replicas >= 1 and .[0].traffic == 100' \
+  >/dev/null <<<"$runtime_revisions" || fail_preflight "Runtime revision is not exclusively active and healthy."
+
+control_state=$(az webapp show \
+  --resource-group "$MANAGED_ELSA_PROOF_CONTROL_RESOURCE_GROUP" \
+  --name "$MANAGED_ELSA_PROOF_CONTROL_APP_NAME" \
+  --query '{host:defaultHostName,httpsOnly:httpsOnly,state:state}' \
+  --output json \
+  --only-show-errors) || fail_preflight "Control state could not be read."
+
+[[ "$(jq -r '.httpsOnly' <<<"$control_state")" == "true" && "$(jq -r '.state // empty' <<<"$control_state")" == "Running" ]] ||
+  fail_preflight "Control is not running with HTTPS-only enforcement."
+[[ "$ADMIN_UI_BASE_URL" == "https://$(jq -r '.host // empty' <<<"$control_state")" ]] ||
+  fail_preflight "Control origin does not match the App Service host."
+
+curl --fail --silent --show-error --output /dev/null "$ADMIN_UI_BASE_URL/health" ||
+  fail_preflight "Control health probe failed."
+curl --fail --silent --show-error --output /dev/null "$MANAGED_ELSA_PROOF_RUNTIME_ORIGIN/health" ||
+  fail_preflight "Runtime health probe failed."
 
 MANAGED_ELSA_AZURE_BROWSER_PROOF=1 \
   MANAGED_ELSA_PROOF_STATE_LIFETIME_SECONDS="$MANAGED_ELSA_PROOF_STATE_LIFETIME_SECONDS" \

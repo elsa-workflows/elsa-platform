@@ -34,7 +34,8 @@ without retaining browser artifacts or one-time handoff material.
 | Local proof fixture | Pass | The fixture migrated an isolated catalog copy, seeded the deterministic instance twice, rejected a conflicting runtime origin, and restored availability and membership state between tests. Direct health projection is a fixture boundary, not provider evidence. |
 | Local healthy journey | Pass | Chromium opened the real Combined Studio without a second login, called the protected workflow-definitions API (`200`), logged out (`204`), and then received `401` from the protected API. |
 | Callback replay | Pass locally | Reposting the already-consumed callback form returned `400`. This proves callback replay rejection; `ManagedElsaHandoffTests.Replay_is_rejected_atomically` and `Concurrent_redeemers_allow_exactly_one_success` prove one-time Control redemption/JTI replay. No callback values were retained. |
-| Expired browser state and code | Pass locally | Delaying issue beyond the configured one-minute runtime browser-state lifetime caused the callback to fail closed with `400`; `ManagedElsaHandoffTests.Expired_token_is_rejected` proves expired Control code rejection. |
+| Expired browser state | Pass locally (browser) | Delaying issue beyond the configured one-minute runtime browser-state lifetime caused the callback to fail closed with `400`. |
+| Expired Control code | Pass (API contract) | `ManagedElsaHandoffTests.Expired_token_is_rejected` proves expired Control code rejection independently of the browser-state failure. |
 | Unavailable instance | Pass locally | The real console rendered `Unavailable` and exposed no Open action after the isolated fixture projected unavailable health. |
 | Membership revocation before issue | Pass locally | Disabling membership after Open but before issue returned the stable account-unavailable outcome and did not navigate to the runtime. |
 | Azure runtime | Pass | Container App revision `ca-elsa-managed-proof--0000003` is active and Healthy with one replica and all traffic. It runs the exact Combined image index above with `ManagedElsa:Handoff:StateLifetime=00:01:00`. |
@@ -66,9 +67,9 @@ against the same immutable release.
 - Complete the isolated headed Chromium run with the account owner's normal Entra/MFA
   step, then record only the scenario result and exact immutable/environment facts.
 
-## Reproducible safe preflight
+## Reproducible fail-closed preflight
 
-Before an Azure browser run, verify the retained targets without reading app settings:
+The Azure runner executes these safe checks without reading App Service settings:
 
 ```bash
 az containerapp show \
@@ -92,10 +93,11 @@ curl --fail --silent --show-error \
   https://ca-elsa-managed-proof.reddesert-17e28fb5.belgiumcentral.azurecontainerapps.io/health
 ```
 
-The expected runtime image is the exact Combined image index in the immutable-inputs
-table, the active revision must be Healthy with one replica and all traffic, the
-configured state lifetime must be `00:01:00`, and both HTTPS health requests must
-succeed. Do not query or print App Service settings.
+The runner compares these results to the exact supplied origins, resource names,
+immutable Combined image index and one-minute state lifetime. It exits before opening
+Chromium unless the active revision is exclusively Healthy with at least one replica
+and all traffic, Control is Running and HTTPS-only, and both health requests succeed.
+Do not query or print App Service settings.
 
 ## Redaction contract
 
