@@ -324,6 +324,28 @@ public sealed class ManagedElsaInstanceOperationalStoreTests
         Assert.Null(snapshot);
     }
 
+    [Fact]
+    public async Task Partially_reconciled_operation_fails_closed_instead_of_mixing_projection_sources()
+    {
+        await using var connection = OpenConnection();
+        await using var db = CreateContext(connection);
+        await db.Database.EnsureCreatedAsync();
+        var workspace = await CreateWorkspaceAsync(db, "Partial reconciliation workspace");
+        var instance = NewInstance(workspace, ElsaObservedLifecycle.Unknown, ElsaInstanceHealth.Unknown);
+        var operation = NewOperation(workspace, instance, ElsaInstanceOperationState.Succeeded, BaseTime);
+        operation.ReconciledObservedLifecycle = ElsaObservedLifecycle.Ready;
+        operation.ReconciledAt = BaseTime.AddMinutes(1);
+        instance.LastOperationId = operation.Id.ToString("D");
+        db.ElsaInstances.Add(instance);
+        db.ElsaInstanceOperations.Add(operation);
+        await db.SaveChangesAsync();
+
+        var snapshot = await new EfCoreManagedElsaInstanceOperationalStore(db)
+            .GetSnapshotAsync(workspace.Id, instance.Id);
+
+        Assert.Null(snapshot);
+    }
+
     private static SqliteConnection OpenConnection()
     {
         var connection = new SqliteConnection("Data Source=:memory:");

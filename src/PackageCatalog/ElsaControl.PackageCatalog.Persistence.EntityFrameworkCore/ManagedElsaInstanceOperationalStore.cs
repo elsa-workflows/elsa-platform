@@ -46,6 +46,11 @@ public sealed class EfCoreManagedElsaInstanceOperationalStore(CatalogDbContext d
         if (run is not null && runSnapshot is null)
             return null;
 
+        var hasReconciledObservedLifecycle = selectedOperation?.ReconciledObservedLifecycle is not null;
+        var hasReconciledHealth = selectedOperation?.ReconciledHealth is not null;
+        if (hasReconciledObservedLifecycle != hasReconciledHealth)
+            return null;
+
         var observedLifecycle = selectedOperation?.ReconciledObservedLifecycle ?? instance.ObservedLifecycle;
         var health = selectedOperation?.ReconciledHealth ?? instance.Health;
         var providerDiagnosticCode = TrySafeDiagnosticCode(selectedOperation?.ReconciliationDiagnosticCode);
