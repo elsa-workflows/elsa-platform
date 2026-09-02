@@ -124,8 +124,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: src/Hosting/ElsaControl.Console/package-lock.json
 
       - name: Install locked console dependencies
         run: npm ci
