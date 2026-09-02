@@ -1,7 +1,7 @@
 name: CI
 
 on:
-  pull_request:
+  pull_request_target:
   push:
     branches:
       - main
@@ -17,6 +17,41 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Classify changed paths for .NET gate
+        id: dotnet-gate
+        env:
+          CI_EVENT_NAME: ${{ github.event_name }}
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          classifier=scripts/ci/classify_dotnet_changes.py
+          if [[ "$CI_EVENT_NAME" == "pull_request_target" ]]; then
+            trusted_classifier="$RUNNER_TEMP/classify_dotnet_changes.py"
+            if git cat-file -e "$CI_BASE_SHA:$classifier" 2>/dev/null; then
+              git show "$CI_BASE_SHA:$classifier" >"$trusted_classifier"
+              classifier="$trusted_classifier"
+            else
+              {
+                echo "run_dotnet=true"
+                echo "reason=Running full .NET gate while the base branch does not yet contain the trusted classifier."
+                echo "impacting_path_count=0"
+              } >>"$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          python3 "$classifier" \
+            --event-name "$CI_EVENT_NAME" \
+            --base-sha "$CI_BASE_SHA" \
+            --head-sha "$CI_HEAD_SHA" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Validate CI path classification contract
+        run: python3 scripts/tests/test_ci_path_classification.py
 
       - name: Validate Azure deployment workflow contract
         run: python3 scripts/tests/test_azure_api_deploy_workflow.py
@@ -47,21 +82,30 @@ jobs:
           az bicep build --file infra/azure-workload-proof/acr-pull-role.bicep --stdout >/dev/null
 
       - name: Setup .NET SDK
+        if: ${{ steps.dotnet-gate.outputs.run_dotnet == 'true' }}
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
 
       - name: Show dotnet version
+        if: ${{ steps.dotnet-gate.outputs.run_dotnet == 'true' }}
         run: dotnet --version
 
       - name: Restore
+        if: ${{ steps.dotnet-gate.outputs.run_dotnet == 'true' }}
         run: dotnet restore ElsaControl.sln
 
       - name: Build
+        if: ${{ steps.dotnet-gate.outputs.run_dotnet == 'true' }}
         run: dotnet build ElsaControl.sln --configuration Release --no-restore
 
       - name: Test
+        if: ${{ steps.dotnet-gate.outputs.run_dotnet == 'true' }}
         run: dotnet test ElsaControl.sln --configuration Release --no-build --verbosity normal
+
+      - name: Report skipped .NET gate
+        if: ${{ steps.dotnet-gate.outputs.run_dotnet == 'false' }}
+        run: echo "::notice::The .NET setup, restore, build, and test steps were skipped because this pull request changed only paths on the conservative unrelated-path allowlist."
 
   console:
     name: Console quality gates
@@ -72,13 +116,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: src/Hosting/ElsaControl.Console/package-lock.json
 
       - name: Install locked console dependencies
         run: npm ci
