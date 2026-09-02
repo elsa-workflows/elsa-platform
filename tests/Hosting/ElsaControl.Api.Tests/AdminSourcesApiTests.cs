@@ -10,12 +10,16 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class AdminSourcesApiTests
+public sealed class AdminSourcesApiTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public AdminSourcesApiTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Admin_sources_require_api_key()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
 
         var response = await app.CreateClient().GetAsync("/api/admin/sources");
 
@@ -25,7 +29,7 @@ public sealed class AdminSourcesApiTests
     [Fact]
     public async Task Can_create_and_list_source()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateClient();
         client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, "local-dev-key");
@@ -54,7 +58,7 @@ public sealed class AdminSourcesApiTests
     [Fact]
     public async Task Can_create_source_from_browser_json_contract()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateClient();
         client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, "local-dev-key");
@@ -84,7 +88,7 @@ public sealed class AdminSourcesApiTests
     [Fact]
     public async Task Lists_source_health_last_successful_sync_and_package_count()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var lastSuccessfulSync = DateTimeOffset.UtcNow.AddMinutes(-15);
         await app.SeedAsync(db =>
         {
@@ -119,7 +123,7 @@ public sealed class AdminSourcesApiTests
     [Fact]
     public async Task Lists_source_sync_activity()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var sourceId = Guid.Empty;
         await app.SeedAsync(db =>
         {
@@ -143,7 +147,7 @@ public sealed class AdminSourcesApiTests
     [Fact]
     public async Task Soft_deleted_sources_are_hidden_from_admin_reads()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var deletedSourceId = Guid.Empty;
         await app.SeedAsync(db =>
         {
@@ -166,7 +170,7 @@ public sealed class AdminSourcesApiTests
     [Fact]
     public async Task Invalid_source_returns_bad_request()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateClient();
         client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, "local-dev-key");

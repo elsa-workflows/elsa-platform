@@ -6,12 +6,16 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class WorkspaceProvisioningTests
+public sealed class WorkspaceProvisioningTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public WorkspaceProvisioningTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task First_control_sign_in_creates_account_external_identity_workspace_and_owner_membership()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateControlIdentityClient(subject: "first-user");
 
@@ -34,7 +38,7 @@ public sealed class WorkspaceProvisioningTests
     [Fact]
     public async Task Repeated_control_sign_in_is_idempotent()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateControlIdentityClient(subject: "same-user");
 
@@ -56,7 +60,7 @@ public sealed class WorkspaceProvisioningTests
     [Fact]
     public async Task Organization_context_endpoint_returns_organizations_and_workspaces()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateControlIdentityClient(subject: "organization-context");
 
@@ -69,7 +73,7 @@ public sealed class WorkspaceProvisioningTests
     [Fact]
     public async Task Concurrent_control_first_sign_in_returns_same_workspace()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
 
         var responses = await Task.WhenAll(Enumerable.Range(0, 8)
@@ -91,7 +95,7 @@ public sealed class WorkspaceProvisioningTests
     [Fact]
     public async Task Workspace_context_lists_all_active_non_deleted_memberships()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateControlIdentityClient(subject: "multi-workspace");
         var initial = await client.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
@@ -112,7 +116,7 @@ public sealed class WorkspaceProvisioningTests
     [Fact]
     public async Task Workspace_membership_without_organization_membership_is_not_returned()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateControlIdentityClient(subject: "workspace-only");
         var initial = await client.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
