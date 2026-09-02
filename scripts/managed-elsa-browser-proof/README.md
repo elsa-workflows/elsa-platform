@@ -40,7 +40,8 @@ The Azure mode reuses the production console and runtime without fixture-only da
 mutations. It launches an isolated headed Chromium window and waits for an operator to
 complete the real Microsoft Entra sign-in and MFA flow. It does not reuse a personal
 browser profile, automate credentials, or retain browser storage, callback values,
-tokens, screenshots, traces, or video.
+tokens, screenshots, traces, or video. Origin inputs may include trailing slashes; the
+wrapper canonicalizes them before comparing the named Azure resources.
 
 Azure mode additionally requires an authenticated Azure CLI with read access to the
 named App Service and Container App, plus `jq` and `curl`.

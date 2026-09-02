@@ -26,6 +26,13 @@ trap cleanup EXIT
 : "${MANAGED_ELSA_PROOF_RUNTIME_APP_NAME:?Set MANAGED_ELSA_PROOF_RUNTIME_APP_NAME to the runtime Container App name.}"
 : "${MANAGED_ELSA_PROOF_EXPECTED_IMAGE:?Set MANAGED_ELSA_PROOF_EXPECTED_IMAGE to the immutable admitted runtime image.}"
 
+while [[ "$ADMIN_UI_BASE_URL" == */ ]]; do
+  ADMIN_UI_BASE_URL=${ADMIN_UI_BASE_URL%/}
+done
+while [[ "$MANAGED_ELSA_PROOF_RUNTIME_ORIGIN" == */ ]]; do
+  MANAGED_ELSA_PROOF_RUNTIME_ORIGIN=${MANAGED_ELSA_PROOF_RUNTIME_ORIGIN%/}
+done
+
 fail_preflight() {
   printf 'Azure browser proof preflight failed: %s\n' "$1" >&2
   exit 1
