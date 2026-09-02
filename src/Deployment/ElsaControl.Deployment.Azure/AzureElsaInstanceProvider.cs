@@ -22,30 +22,58 @@ public sealed class AzureElsaInstanceProvider(
         ElsaInstanceProviderSubmission request,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(request);
-        request.Validate();
-        EnsureEnabled();
+        AzureProviderOperationSubmission submission;
+        try
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            request.Validate();
+            EnsureEnabled();
 
-        var location = request.Location?.Trim();
-        if (string.IsNullOrWhiteSpace(location))
-            throw new InvalidOperationException("Managed instance provider placement is unavailable.");
+            var location = request.Location?.Trim();
+            if (string.IsNullOrWhiteSpace(location))
+                throw new InvalidOperationException("Managed instance provider placement is unavailable.");
 
-        var target = new AzureWorkloadTarget(WorkloadName(request.InstanceId), location);
-        var translation = AzureWorkloadPlanTranslator.Translate(request.Plan, target);
-        if (!translation.IsAccepted)
-            throw new InvalidOperationException("The resolved plan is outside the governed Azure provider profile.");
+            var target = new AzureWorkloadTarget(WorkloadName(request.InstanceId), location);
+            var translation = AzureWorkloadPlanTranslator.Translate(request.Plan, target);
+            if (!translation.IsAccepted)
+                throw new InvalidOperationException("The resolved plan is outside the governed Azure provider profile.");
 
-        var submission = new AzureProviderOperationSubmission(
-            IdempotencyKey(request.OperationId),
-            _options.TemplateFingerprint,
-            translation.Plan!,
-            _options.ProviderScopeFingerprint);
-        var result = operationService is IAzureProviderOperationReplayService replayService
-            ? await replayService.SubmitWithReplayAsync(request.WorkspaceId, submission, cancellationToken)
-            : new AzureProviderOperationSubmissionResult(
-                await operationService.SubmitAsync(request.WorkspaceId, submission, cancellationToken),
-                Replayed: false);
-        return new(result.Operation.OperationIdentity, result.Replayed);
+            submission = new(
+                IdempotencyKey(request.OperationId),
+                _options.TemplateFingerprint,
+                translation.Plan!,
+                _options.ProviderScopeFingerprint);
+        }
+        catch (ElsaInstanceProviderSubmissionException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            throw new ElsaInstanceProviderSubmissionException(
+                ElsaInstanceProviderSubmissionFailureKind.Rejected,
+                exception);
+        }
+
+        try
+        {
+            var result = operationService is IAzureProviderOperationReplayService replayService
+                ? await replayService.SubmitWithReplayAsync(request.WorkspaceId, submission, cancellationToken)
+                : new AzureProviderOperationSubmissionResult(
+                    await operationService.SubmitAsync(request.WorkspaceId, submission, cancellationToken),
+                    Replayed: false);
+            return new(result.Operation.OperationIdentity, result.Replayed);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            throw new ElsaInstanceProviderSubmissionException(
+                ElsaInstanceProviderSubmissionFailureKind.OutcomeUnknown,
+                exception);
+        }
     }
 
     public async Task<ElsaInstanceProviderObservation> ObserveAsync(

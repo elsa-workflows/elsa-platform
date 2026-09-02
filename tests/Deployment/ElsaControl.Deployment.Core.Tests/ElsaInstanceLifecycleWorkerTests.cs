@@ -92,6 +92,31 @@ public sealed class ElsaInstanceLifecycleWorkerTests
     }
 
     [Fact]
+    public async Task Deterministic_provider_rejection_does_not_create_an_uncertain_handoff()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var accepted = await service.CreateAsync(CreateRequest("claims-provider-rejected", "create-provider-rejected"));
+        store.RegisterResolutionInput(accepted.Operation.Id, ResolutionInput(accepted.Instance));
+        var provider = new RecordingSubmissionPort(
+            throwOnSubmit: true,
+            failureKind: ElsaInstanceProviderSubmissionFailureKind.Rejected);
+
+        var result = await new ElsaInstanceLifecycleWorker(
+                store,
+                new RecordingResolver(SuccessfulResolution(WorkspaceId, accepted.Instance.Id)),
+                new StaticTimeProvider(Now),
+                provider,
+                store)
+            .ProcessAvailableAsync("lifecycle-worker-1");
+
+        Assert.Equal(1, result.ProviderInvocations);
+        Assert.Equal(ElsaInstanceOperationState.Queued, Assert.Single(store.Operations).State);
+        Assert.Equal(WorkspaceDeploymentRunStatus.Queued, Assert.Single(store.DeploymentRuns).Run.Status);
+        Assert.NotNull((await store.ListPendingProviderOperationsAsync(16)).Single().Submission);
+    }
+
+    [Fact]
     public async Task Unknown_reconciliation_preserves_uncertain_submission_for_a_later_replay()
     {
         var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
@@ -541,7 +566,10 @@ public sealed class ElsaInstanceLifecycleWorkerTests
         }
     }
 
-    private sealed class RecordingSubmissionPort(bool throwOnSubmit = false) : IElsaInstanceProviderSubmissionPort
+    private sealed class RecordingSubmissionPort(
+        bool throwOnSubmit = false,
+        ElsaInstanceProviderSubmissionFailureKind failureKind = ElsaInstanceProviderSubmissionFailureKind.OutcomeUnknown)
+        : IElsaInstanceProviderSubmissionPort
     {
         public List<ElsaInstanceProviderSubmission> Submissions { get; } = [];
 
@@ -553,7 +581,7 @@ public sealed class ElsaInstanceLifecycleWorkerTests
             request.Validate();
             Submissions.Add(request);
             if (throwOnSubmit)
-                throw new InvalidOperationException("provider unavailable");
+                throw new ElsaInstanceProviderSubmissionException(failureKind);
             return Task.FromResult(new ElsaInstanceProviderSubmissionResult(
                 $"provider-operation-{request.OperationId:N}",
                 Replayed: Submissions.Count > 1));

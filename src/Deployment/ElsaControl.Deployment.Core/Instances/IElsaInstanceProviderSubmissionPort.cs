@@ -17,6 +17,26 @@ public interface IElsaInstanceProviderSubmissionPort
         CancellationToken cancellationToken = default);
 }
 
+public enum ElsaInstanceProviderSubmissionFailureKind
+{
+    Rejected,
+    OutcomeUnknown
+}
+
+/// <summary>
+/// Classifies whether a failed provider submission was rejected before any durable provider
+/// hand-off or may have been accepted without a response. Messages remain stable and value-free.
+/// </summary>
+public sealed class ElsaInstanceProviderSubmissionException(
+    ElsaInstanceProviderSubmissionFailureKind kind,
+    Exception? innerException = null)
+    : Exception("Provider submission failed.", innerException)
+{
+    public ElsaInstanceProviderSubmissionFailureKind Kind { get; } = Enum.IsDefined(kind)
+        ? kind
+        : throw new ArgumentOutOfRangeException(nameof(kind));
+}
+
 public sealed record ElsaInstanceProviderSubmission(
     Guid WorkspaceId,
     Guid InstanceId,

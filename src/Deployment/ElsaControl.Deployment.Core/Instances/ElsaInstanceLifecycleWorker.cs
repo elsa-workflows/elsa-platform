@@ -120,6 +120,12 @@ public sealed class ElsaInstanceLifecycleWorker(
             {
                 throw;
             }
+            catch (ElsaInstanceProviderSubmissionException exception)
+                when (exception.Kind == ElsaInstanceProviderSubmissionFailureKind.Rejected)
+            {
+                // Deterministic local/provider rejection leaves the durable reservation queued.
+                // It must not be represented as an uncertain remote hand-off.
+            }
             catch
             {
                 // The durable queued run remains the source of truth. A provider

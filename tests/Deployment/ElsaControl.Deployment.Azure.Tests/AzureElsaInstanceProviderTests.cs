@@ -202,9 +202,25 @@ public sealed class AzureElsaInstanceProviderTests
             new CapturingOperationStore(),
             new AzureElsaInstanceProviderOptions());
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => provider.SubmitAsync(
+        var exception = await Assert.ThrowsAsync<ElsaInstanceProviderSubmissionException>(() => provider.SubmitAsync(
             CreateSubmission(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), plan)));
+        Assert.Equal(ElsaInstanceProviderSubmissionFailureKind.Rejected, exception.Kind);
         Assert.Empty(service.Submissions);
+    }
+
+    [Fact]
+    public async Task Durable_submission_failure_is_classified_as_outcome_unknown()
+    {
+        var plan = Translate("5.0", "5.0.0");
+        var provider = new AzureElsaInstanceProvider(
+            new ThrowingOperationService(),
+            new CapturingOperationStore(),
+            EnabledOptions());
+
+        var exception = await Assert.ThrowsAsync<ElsaInstanceProviderSubmissionException>(() => provider.SubmitAsync(
+            CreateSubmission(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), plan)));
+
+        Assert.Equal(ElsaInstanceProviderSubmissionFailureKind.OutcomeUnknown, exception.Kind);
     }
 
     [Fact]
@@ -326,6 +342,18 @@ public sealed class AzureElsaInstanceProviderTests
             Guid workspaceId,
             Guid operationId,
             CancellationToken cancellationToken = default) =>
+            Task.FromResult<AzureProviderOperationStatusResponse?>(null);
+    }
+
+    private sealed class ThrowingOperationService : IAzureProviderOperationService
+    {
+        public Task<AzureProviderOperation> SubmitAsync(Guid workspaceId, AzureProviderOperationSubmission submission, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("durable provider outcome unavailable");
+
+        public Task<AzureProviderOperation> SubmitDeleteAsync(Guid workspaceId, AzureProviderOperationSubmission submission, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<AzureProviderOperationStatusResponse?> GetStatusAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default) =>
             Task.FromResult<AzureProviderOperationStatusResponse?>(null);
     }
 
