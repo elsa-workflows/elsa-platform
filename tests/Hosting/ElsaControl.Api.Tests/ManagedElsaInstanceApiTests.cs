@@ -6,6 +6,7 @@ using ElsaControl.Deployment.Core.Instances;
 using ElsaControl.Deployment.Core.Workspace;
 using ElsaControl.PackageCatalog.Core.Accounts;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
+using ElsaControl.RuntimeBuilder.Abstractions.ReleaseCatalog;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -14,6 +15,91 @@ namespace ElsaControl.Api.Tests;
 
 public sealed class ManagedElsaInstanceApiTests
 {
+    [Fact]
+    public async Task Onboarding_options_are_server_owned_and_workspace_scoped()
+    {
+        var catalog = new CapturingReleaseCatalogStore([
+            CatalogEntry("future-runtime", "5.0", "5.0.1", "stable", "combined", "supported", "paid"),
+            CatalogEntry("ambiguous-runtime", "4.2", "4.2.0", "stable", "combined", "supported", "paid"),
+            CatalogEntry("ambiguous-runtime", "4.2", "4.2.0", "stable", "combined", "supported", "paid", digestMarker: 'd'),
+            CatalogEntry("preview-runtime", "4.1", "4.1.0-preview.1", "preview", "combined", "preview", "paid"),
+            CatalogEntry("community-runtime", "3.9", "3.9.0", "stable", "combined", "supported", "community")
+        ]);
+        await using var app = CreateApplication([], catalog);
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreateControlIdentityClient(subject: "managed-owner");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, workspaceId);
+
+        var response = await client.GetAsync($"/api/workspaces/{workspaceId}/instances/onboarding-options");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var options = await response.Content.ReadFromJsonAsync<ManagedElsaInstanceOnboardingOptionsResponse>(ControlApiTestApplication.JsonOptions);
+        Assert.NotNull(options);
+        Assert.Equal("managed", options.LaunchProfile.TargetMode);
+        Assert.Equal("westeurope", options.LaunchProfile.RegionCode);
+        Assert.Equal("dedicated", options.LaunchProfile.IsolationProfile);
+        Assert.Equal("standard-small", options.LaunchProfile.CapacityProfile);
+        Assert.Equal("public", options.LaunchProfile.NetworkOutcome);
+        Assert.Equal("managed", options.LaunchProfile.DomainOutcome);
+        Assert.Equal("supported", catalog.Query?.CatalogLifecycle);
+        Assert.Equal("paid", catalog.Query?.RegistryClass);
+        var release = Assert.Single(options.Releases);
+        Assert.Equal("future-runtime", release.DistributionId);
+        Assert.Equal("5.0", release.ReleaseLine);
+        Assert.Equal("5.0.1", release.Version);
+        Assert.Equal("stable", release.Channel);
+        Assert.Equal("combined", release.TopologyId);
+    }
+
+    [Fact]
+    public async Task Create_rejects_a_release_outside_the_eligible_catalog()
+    {
+        await using var app = CreateApplication([]);
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreateTrustedWorkspaceClient("managed-ineligible-release-owner");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, workspaceId);
+        var intent = Intent() with {
+            Release = new ElsaReleaseIntent("unavailable-runtime", "5.0", "5.0.1", "stable")
+        };
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/workspaces/{workspaceId}/instances") {
+            Content = JsonContent.Create(
+                new ManagedElsaInstanceCreateRequest("Future runtime", "future-runtime", intent),
+                options: ControlApiTestApplication.JsonOptions)
+        };
+        request.Headers.Add("Idempotency-Key", "create-ineligible-runtime");
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Contains("instance.catalog-selection-unavailable", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Create_rejects_a_client_overridden_launch_profile()
+    {
+        await using var app = CreateApplication([]);
+        await app.SeedAsync(_ => Task.CompletedTask);
+        var client = app.CreateTrustedWorkspaceClient("managed-placement-owner");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, workspaceId);
+        var intent = Intent() with {
+            Placement = new ElsaPlacementIntent("managed", "eastus", "dedicated", "standard-small", "public", "managed")
+        };
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/workspaces/{workspaceId}/instances") {
+            Content = JsonContent.Create(
+                new ManagedElsaInstanceCreateRequest("Altered placement", "altered-placement", intent),
+                options: ControlApiTestApplication.JsonOptions)
+        };
+        request.Headers.Add("Idempotency-Key", "create-altered-placement");
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Contains("instance.catalog-selection-unavailable", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Slug_unique_reservation_conflict_maps_to_stable_api_code()
     {
@@ -724,15 +810,77 @@ public sealed class ManagedElsaInstanceApiTests
         Assert.Equal(unknown.StatusCode, otherWorkspace.StatusCode);
     }
 
-    private static ControlApiTestApplication CreateApplication(IReadOnlyList<ManagedElsaInstanceSummary> instances)
+    private static ControlApiTestApplication CreateApplication(
+        IReadOnlyList<ManagedElsaInstanceSummary> instances,
+        IGovernedReleaseCatalogStore? releaseCatalog = null)
     {
         return new ControlApiTestApplication(
             configureServices: services =>
             {
                 services.RemoveAll<IManagedElsaInstanceCatalog>();
                 services.AddSingleton<IManagedElsaInstanceCatalog>(new FakeManagedElsaInstanceCatalog(instances));
+                releaseCatalog ??= new CapturingReleaseCatalogStore([
+                    CatalogEntry("valence-runtime", "3.8", "3.8.4", "stable", "combined", "supported", "paid")
+                ]);
+                services.RemoveAll<IGovernedReleaseCatalogStore>();
+                services.AddSingleton(releaseCatalog);
             });
     }
+
+    private sealed class CapturingReleaseCatalogStore : IGovernedReleaseCatalogStore
+    {
+        private readonly IReadOnlyList<GovernedReleaseCatalogEntry> _entries;
+
+        public CapturingReleaseCatalogStore(IReadOnlyList<GovernedReleaseCatalogEntry>? entries = null)
+        {
+            _entries = entries ?? [];
+        }
+
+        public GovernedReleaseCatalogQuery? Query { get; private set; }
+
+        public Task<GovernedReleaseCatalogWriteResult> StoreAsync(
+            IReadOnlyList<GovernedReleaseCatalogEntry> entries,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<GovernedReleaseCatalogEntry>> QueryAsync(
+            GovernedReleaseCatalogQuery query,
+            CancellationToken cancellationToken = default)
+        {
+            Query = query;
+            return Task.FromResult<IReadOnlyList<GovernedReleaseCatalogEntry>>(_entries
+                .Where(entry => query.DistributionId is null || string.Equals(entry.Distribution.Id, query.DistributionId, StringComparison.OrdinalIgnoreCase))
+                .Where(entry => query.ReleaseLine is null || string.Equals(entry.Distribution.ReleaseLine, query.ReleaseLine, StringComparison.OrdinalIgnoreCase))
+                .Where(entry => query.ReleaseVersion is null || string.Equals(entry.Distribution.ReleaseVersion, query.ReleaseVersion, StringComparison.OrdinalIgnoreCase))
+                .Where(entry => query.Channel is null || string.Equals(entry.Distribution.Channel, query.Channel, StringComparison.OrdinalIgnoreCase))
+                .Where(entry => query.CatalogLifecycle is null || string.Equals(entry.CatalogLifecycle, query.CatalogLifecycle, StringComparison.OrdinalIgnoreCase))
+                .Where(entry => query.RegistryClass is null || string.Equals(entry.RegistryClass, query.RegistryClass, StringComparison.OrdinalIgnoreCase))
+                .Where(entry => query.TopologyId is null || string.Equals(entry.Topology.Id, query.TopologyId, StringComparison.OrdinalIgnoreCase))
+                .ToArray());
+        }
+    }
+
+    private static GovernedReleaseCatalogEntry CatalogEntry(
+        string distributionId,
+        string releaseLine,
+        string version,
+        string channel,
+        string topologyId,
+        string catalogLifecycle,
+        string registryClass,
+        char digestMarker = 'a') => new(
+        "1.0",
+        $"oci://registry.example.test/releases/manifest@sha256:{new string(digestMarker, 64)}",
+        $"sha256:{new string(digestMarker, 64)}",
+        "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "https://evidence.example.test/signatures/manifest",
+        "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        registryClass,
+        new GovernedReleaseDistribution(
+            distributionId, "3", releaseLine, version, channel, "supported", null,
+            "https://github.com/valence-works/elsa", "0123456789abcdef", "run-1"),
+        new GovernedReleaseTopology(topologyId, "1.0", ["server"], [], [], [], []),
+        catalogLifecycle,
+        DateTimeOffset.Parse("2026-09-01T00:00:00Z"));
 
     private static ManagedElsaInstanceSummary Instance(
         Guid instanceId,

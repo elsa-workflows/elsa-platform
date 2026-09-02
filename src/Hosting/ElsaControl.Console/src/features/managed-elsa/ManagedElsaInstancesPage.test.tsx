@@ -85,7 +85,7 @@ describe("ManagedElsaInstancesPage", () => {
       codeChallenge
     });
 
-    const form = document.querySelector("form");
+    const form = document.querySelector(`form[action="${callbackUri}"]`);
     expect(form).toHaveAttribute("method", "post");
     expect(form).toHaveAttribute("action", callbackUri);
     expect(form).not.toHaveAttribute("action", expect.stringContaining(issue.token));
@@ -173,6 +173,156 @@ describe("ManagedElsaInstancesPage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("This managed instance is no longer available to your account.");
     expect(screen.queryByText(/signed-handoff-token|code_verifier|state-value/)).not.toBeInTheDocument();
   });
+
+  it("creates from arbitrary governed release data with an idempotency key", async () => {
+    const fetchMock = installFetch({ instances: [] });
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(await screen.findByLabelText("Instance name"), "Future Elsa");
+    await user.selectOptions(screen.getByLabelText("Elsa release and topology"), "1");
+    await user.click(screen.getByRole("button", { name: "Create instance" }));
+
+    expect(await screen.findByText("Provisioning status: Succeeded")).toBeInTheDocument();
+    const createCall = fetchMock.mock.calls.find(([input, init]) =>
+      String(input).endsWith(`/api/workspaces/${workspaceId}/instances`) && init?.method === "POST");
+    const idempotencyKey = new Headers(createCall?.[1]?.headers).get("Idempotency-Key");
+    expect(idempotencyKey).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(window.sessionStorage.getItem(`managed-elsa-idempotency:${workspaceId}`)).not.toBe(idempotencyKey);
+    const body = JSON.parse(String(createCall?.[1]?.body));
+    expect(body).toMatchObject({
+      name: "Future Elsa",
+      slug: "future-elsa",
+      intent: {
+        release: { distributionId: "future-runtime", releaseLine: "5.0", requestedVersion: "5.0.1" },
+        application: { topologyId: "combined" },
+        placement: { regionCode: "westeurope", isolationProfile: "dedicated" }
+      }
+    });
+  });
+
+  it("resumes durable provisioning status after a browser refresh", async () => {
+    const completedIdempotencyKey = "00000000-0000-0000-0000-000000000301";
+    window.sessionStorage.setItem(`managed-elsa-idempotency:${workspaceId}`, completedIdempotencyKey);
+    window.sessionStorage.setItem(`managed-elsa-operation:${workspaceId}`, JSON.stringify({
+      instanceId: healthyInstanceId,
+      operationId: "00000000-0000-0000-0000-000000000201"
+    }));
+    installFetch({ instances: [] });
+
+    renderPage();
+
+    expect(await screen.findByText("Provisioning status: Succeeded")).toBeInTheDocument();
+    expect(window.sessionStorage.getItem(`managed-elsa-operation:${workspaceId}`)).toBeNull();
+    expect(window.sessionStorage.getItem(`managed-elsa-idempotency:${workspaceId}`)).not.toBe(completedIdempotencyKey);
+  });
+
+  it("loads every canonical instance page", async () => {
+    const secondInstance = instanceFixture({
+      instanceId: unavailableInstanceId,
+      name: "Second page runtime",
+      slug: "second-page-runtime"
+    });
+    const fetchMock = installFetch({
+      instancePages: [[instanceFixture()], [secondInstance]]
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("Claims runtime")).toBeInTheDocument();
+    expect(screen.getByText("Second page runtime")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("instances?page=2&pageSize=100"))).toBe(true);
+  });
+
+  it("fails safely when canonical pagination cannot terminate", async () => {
+    installFetch({
+      instancePageResponses: [Response.json({
+        items: [instanceFixture()], page: 1, pageSize: 100, totalCount: 100, hasMore: true
+      })]
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("Managed instances could not load")).toBeInTheDocument();
+  });
+
+  it("keeps durable progress state and retries a failed status refresh", async () => {
+    window.sessionStorage.setItem(`managed-elsa-operation:${workspaceId}`, JSON.stringify({
+      instanceId: healthyInstanceId,
+      operationId: "00000000-0000-0000-0000-000000000201"
+    }));
+    installFetch({
+      instances: [],
+      operationResponses: [Response.json({ title: "Unavailable" }, { status: 503 })]
+    });
+    const user = userEvent.setup();
+
+    renderPage();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Provisioning status could not be refreshed.");
+    expect(window.sessionStorage.getItem(`managed-elsa-operation:${workspaceId}`)).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Retry status" }));
+    expect(await screen.findByText("Provisioning status: Succeeded")).toBeInTheDocument();
+  });
+
+  it("does not complete a durable operation from a mismatched response", async () => {
+    window.sessionStorage.setItem(`managed-elsa-operation:${workspaceId}`, JSON.stringify({
+      instanceId: healthyInstanceId,
+      operationId: "00000000-0000-0000-0000-000000000201"
+    }));
+    installFetch({
+      instances: [],
+      operationResponses: [Response.json({
+        id: "00000000-0000-0000-0000-000000000999",
+        instanceId: healthyInstanceId,
+        action: "Create",
+        state: "Succeeded",
+        attemptNumber: 1,
+        failureCode: null,
+        links: {}
+      })]
+    });
+
+    renderPage();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Provisioning status could not be refreshed.");
+    expect(window.sessionStorage.getItem(`managed-elsa-operation:${workspaceId}`)).not.toBeNull();
+    expect(screen.queryByText("Provisioning status: Succeeded")).not.toBeInTheDocument();
+  });
+
+  it("distinguishes managed-hosting entitlement denial", async () => {
+    installFetch({
+      instances: [],
+      onboardingResponse: Response.json({ title: "Not enabled" }, { status: 422 })
+    });
+
+    renderPage();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Managed hosting is not enabled for this organization.");
+  });
+
+  it("renders an empty governed release catalog explicitly", async () => {
+    installFetch({ instances: [], releaseOptions: [] });
+
+    renderPage();
+
+    expect(await screen.findByRole("status")).toHaveTextContent("No managed Elsa releases are currently available.");
+  });
+
+  it("keeps distinct governed release lines and channels selectable", async () => {
+    installFetch({
+      instances: [],
+      releaseOptions: [
+        releaseFixture("valence-runtime", "4.0", "4.0.0", "stable"),
+        releaseFixture("valence-runtime", "4.1", "4.0.0", "preview")
+      ]
+    });
+
+    renderPage();
+
+    expect(await screen.findByRole("option", { name: "Elsa 4.0.0 · 4.0 · stable · combined" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Elsa 4.0.0 · 4.1 · preview · combined" })).toBeInTheDocument();
+  });
 });
 
 function renderPage(search = "") {
@@ -190,15 +340,25 @@ function renderPage(search = "") {
 }
 
 function installFetch({
-  instances,
+  instances = [],
+  instancePages,
+  instancePageResponses = [],
   issue,
   issueResponses = [],
-  onInstancesRequest
+  onInstancesRequest,
+  onboardingResponse,
+  releaseOptions,
+  operationResponses = []
 }: {
-  instances: ManagedElsaInstance[];
+  instances?: ManagedElsaInstance[];
+  instancePages?: ManagedElsaInstance[][];
+  instancePageResponses?: Response[];
   issue?: Record<string, string>;
   issueResponses?: Response[];
   onInstancesRequest?: () => void;
+  onboardingResponse?: Response;
+  releaseOptions?: ReturnType<typeof releaseFixture>[];
+  operationResponses?: Response[];
 }) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = input instanceof Request ? input.url : input.toString();
@@ -210,9 +370,43 @@ function installFetch({
         organizations: [{ id: organizationId, name: "Acme Corp", role: "Owner" }],
         workspaces: [{ id: workspaceId, name: "Acme Insurance", kind: "Shared", role: "Owner", organizationId, organizationName: "Acme Corp", organizationRole: "Owner" }]
       });
-    if (url.endsWith(`/api/workspaces/${workspaceId}/managed-elsa/instances`)) {
+    if (url.includes(`/api/workspaces/${workspaceId}/instances?`)) {
       onInstancesRequest?.();
-      return Response.json(instances);
+      const response = instancePageResponses.shift();
+      if (response)
+        return response;
+      const page = Number(new URL(url, "https://console.test").searchParams.get("page") ?? "1");
+      const pages = instancePages ?? [instances];
+      const items = pages[page - 1] ?? [];
+      return Response.json({
+        items,
+        page,
+        pageSize: 100,
+        totalCount: pages.length > 1
+          ? ((pages.length - 1) * 100) + (pages.at(-1)?.length ?? 0)
+          : items.length,
+        hasMore: page < pages.length
+      });
+    }
+    if (url.endsWith(`/api/workspaces/${workspaceId}/instances/onboarding-options`)) {
+      if (onboardingResponse)
+        return onboardingResponse;
+      return Response.json({
+        releases: releaseOptions ?? [releaseFixture("valence-runtime", "3.8", "3.8.4"), releaseFixture("future-runtime", "5.0", "5.0.1")],
+        launchProfile: { name: "West Europe Dedicated", description: "Managed hosting.", targetMode: "managed", regionCode: "westeurope", isolationProfile: "dedicated", capacityProfile: "standard-small", networkOutcome: "public", domainOutcome: "managed" }
+      });
+    }
+    if (url.endsWith(`/api/workspaces/${workspaceId}/instances`) && init?.method === "POST")
+      return Response.json({
+        instance: instanceFixture({ canOpen: false, observedLifecycle: "Pending", health: "Unknown", audience: null, redirectUri: null }),
+        operation: { id: "00000000-0000-0000-0000-000000000201", instanceId: healthyInstanceId, action: "Create", state: "Accepted", attemptNumber: 1, failureCode: null, links: {} },
+        links: {}
+      }, { status: 202 });
+    if (url.endsWith(`/api/workspaces/${workspaceId}/instances/${healthyInstanceId}/operations/00000000-0000-0000-0000-000000000201`)) {
+      const response = operationResponses.shift();
+      if (response)
+        return response;
+      return Response.json({ id: "00000000-0000-0000-0000-000000000201", instanceId: healthyInstanceId, action: "Create", state: "Succeeded", attemptNumber: 1, failureCode: null, links: {} });
     }
     if (url.endsWith("/api/managed-elsa/handoff/issue")) {
       const response = issueResponses.shift();
@@ -231,6 +425,12 @@ function installFetch({
   });
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
+}
+
+function releaseFixture(distributionId: string, releaseLine: string, releaseVersion: string, channel = "stable") {
+  return {
+    distributionId, releaseLine, version: releaseVersion, channel, topologyId: "combined"
+  };
 }
 
 function instanceFixture(overrides: Partial<ManagedElsaInstance> = {}): ManagedElsaInstance {
