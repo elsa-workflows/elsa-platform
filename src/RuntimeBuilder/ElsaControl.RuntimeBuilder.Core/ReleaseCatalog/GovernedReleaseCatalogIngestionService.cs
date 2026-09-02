@@ -156,7 +156,16 @@ public sealed class GovernedReleaseCatalogIngestionService(
                         .ThenBy(x => x.Digest, StringComparer.OrdinalIgnoreCase)
                         .ToArray()),
                 catalogLifecycle,
-                admittedAt);
+                admittedAt,
+                manifest.ComponentDeclarations is null
+                    ? null
+                    : new(
+                        manifest.ComponentDeclarations.Format,
+                        manifest.ComponentDeclarations.Digest,
+                        manifest.ComponentDeclarations.Packages
+                            .Select(package => new GovernedReleasePackageDeclaration(package.Id, package.Version))
+                            .OrderBy(package => package.Id, StringComparer.OrdinalIgnoreCase)
+                            .ToArray()));
         }).OrderBy(x => x.Topology.Id, StringComparer.OrdinalIgnoreCase).ToArray();
     }
 

@@ -49,6 +49,12 @@ public sealed class ReleaseCatalogApiTests
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
         Assert.Equal(GovernedReleaseCatalogWriteStatus.Stored, firstResult!.Status);
         Assert.NotEmpty(firstResult.Entries);
+        Assert.NotNull(firstResult.Entries[0].ComponentDeclarations);
+        var declarations = firstResult.Entries[0].ComponentDeclarations!;
+        Assert.Contains(declarations.Packages, package =>
+            package.Id == "Elsa.Persistence.EFCore.SqlServer" && package.Version == "3.8.0-preview.5413");
+        Assert.Contains(declarations.Packages, package =>
+            package.Id == "Elsa.Scheduling.Quartz.EFCore.SqlServer" && package.Version == "3.8.0-preview.5413");
         Assert.DoesNotContain(request.Payload!, firstBody, StringComparison.Ordinal);
         Assert.DoesNotContain(ProducerSigner, firstBody, StringComparison.Ordinal);
 
@@ -88,6 +94,12 @@ public sealed class ReleaseCatalogApiTests
         var entries = await catalog.Content.ReadControlJsonAsync<ReleaseCatalogEntryResponse[]>();
         Assert.Equal(HttpStatusCode.OK, catalog.StatusCode);
         Assert.NotEmpty(entries!);
+        Assert.All(entries!, entry =>
+        {
+            Assert.NotNull(entry.ComponentDeclarations);
+            Assert.Contains(entry.ComponentDeclarations!.Packages, package => package.Id == "Elsa.Persistence.EFCore.SqlServer");
+            Assert.Contains(entry.ComponentDeclarations.Packages, package => package.Id == "Elsa.Scheduling.Quartz.EFCore.SqlServer");
+        });
 
         var filtered = await owner.GetControlJsonAsync<ReleaseCatalogEntryResponse[]>(
             $"/api/workspaces/{workspaceId}/release-catalog?releaseLine=3.8&lifecycle=preview&topologyId=server");

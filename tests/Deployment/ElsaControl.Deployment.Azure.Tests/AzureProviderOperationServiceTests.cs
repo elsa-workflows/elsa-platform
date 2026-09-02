@@ -41,6 +41,73 @@ public sealed class AzureProviderOperationServiceTests
         Assert.Equal(new string('c', 64), store.Request!.ProviderScopeFingerprint);
     }
 
+    [Fact]
+    public async Task Submit_with_replay_reports_the_atomic_store_decision()
+    {
+        var store = new CapturingStore();
+        var service = new AzureProviderOperationService(store, new FixedTimeProvider(Now));
+        var submission = new AzureProviderOperationSubmission("request-1", new('b', 64), CreatePlan());
+
+        var first = await service.SubmitWithReplayAsync(WorkspaceId, submission);
+        var replay = await service.SubmitWithReplayAsync(WorkspaceId, submission);
+
+        Assert.False(first.Replayed);
+        Assert.True(replay.Replayed);
+        Assert.Equal(first.Operation.Id, replay.Operation.Id);
+    }
+
+    [Fact]
+    public async Task Restore_fails_closed_when_legacy_operation_lacks_release_package_metadata()
+    {
+        var store = new CapturingStore();
+        var legacyPlan = CreatePlan() with
+        {
+            SqlWorkflowPackageVersion = null,
+            SqlQuartzPackageVersion = null
+        };
+        var request = AzureProviderOperationService.CreateOperationRequest(
+            WorkspaceId,
+            "request-1",
+            new('b', 64),
+            legacyPlan);
+        var operation = await store.CreateOrGetAsync(AzureProviderOperationValidation.Normalize(request), Now);
+
+        Assert.Null(AzureProviderOperationService.TryRestorePlan(operation));
+    }
+
+    [Fact]
+    public async Task Submit_rejects_missing_release_package_metadata_before_persistence()
+    {
+        var store = new CapturingStore();
+        var service = new AzureProviderOperationService(store, new FixedTimeProvider(Now));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => service.SubmitAsync(
+            WorkspaceId,
+            new AzureProviderOperationSubmission("request-1", new('b', 64), CreatePlan() with
+            {
+                SqlWorkflowPackageVersion = null,
+                SqlQuartzPackageVersion = null
+            })));
+        Assert.Null(store.Request);
+    }
+
+    [Theory]
+    [InlineData("other.azurecr.io/runtime-combined")]
+    [InlineData("valenceruntimeimages.azurecr.io/other-runtime")]
+    public async Task Submit_rejects_a_plan_outside_the_governed_repository_before_persistence(string repository)
+    {
+        var store = new CapturingStore();
+        var service = new AzureProviderOperationService(store, new FixedTimeProvider(Now));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => service.SubmitAsync(
+            WorkspaceId,
+            new AzureProviderOperationSubmission("request-1", new('b', 64), CreatePlan() with
+            {
+                ImageRepository = repository
+            })));
+        Assert.Null(store.Request);
+    }
+
     [Theory]
     [InlineData("secret://vault/../database")]
     [InlineData("secret://vault/database%2Fconnection")]
@@ -230,7 +297,9 @@ public sealed class AzureProviderOperationServiceTests
         {
             ["database:connectionstring"] = "secret://vault/database"
         },
-        new('a', 64));
+        new('a', 64),
+        "3.8.0-preview.5413",
+        "3.8.0-preview.5413");
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
@@ -243,6 +312,17 @@ public sealed class AzureProviderOperationServiceTests
         public List<AzureProviderOperationRequest> Requests { get; } = [];
         private AzureProviderOperation? _operation;
         private readonly Dictionary<string, AzureProviderOperation> _operations = new(StringComparer.Ordinal);
+
+        public async Task<AzureProviderOperationCreateResult> CreateOrGetWithResultAsync(
+            AzureProviderOperationRequest request,
+            DateTimeOffset now,
+            CancellationToken cancellationToken = default)
+        {
+            var normalized = AzureProviderOperationValidation.Normalize(request);
+            var replayed = _operations.ContainsKey(normalized.IdempotencyKey);
+            var operation = await CreateOrGetAsync(normalized, now, cancellationToken);
+            return new(operation, replayed);
+        }
 
         public Task<AzureProviderOperation> CreateOrGetAsync(AzureProviderOperationRequest request, DateTimeOffset now, CancellationToken cancellationToken = default)
         {

@@ -25,7 +25,22 @@ public static class ReleaseManifestSchema
 public sealed record CommercialReleaseManifest(
     string SchemaVersion,
     ReleaseManifestDistribution Distribution,
-    IReadOnlyList<ReleaseManifestTopology> Topologies);
+    IReadOnlyList<ReleaseManifestTopology> Topologies,
+    /// <summary>
+    /// Safe, typed projection of the producer's signed image-build package declarations.
+    /// These declarations describe packages baked into the release image; they are not
+    /// customer-selected package-catalog inputs.
+    /// </summary>
+    ReleaseManifestComponentDeclarations? ComponentDeclarations = null);
+
+public sealed record ReleaseManifestComponentDeclarations(
+    string Format,
+    string Digest,
+    IReadOnlyList<ReleaseManifestPackageDeclaration> Packages);
+
+public sealed record ReleaseManifestPackageDeclaration(
+    string Id,
+    string Version);
 
 public sealed record ReleaseManifestDistribution(
     string Id,

@@ -1,10 +1,10 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using System.Collections.ObjectModel;
 using ElsaControl.RuntimeBuilder.Abstractions.Plans;
 using ElsaControl.RuntimeBuilder.Abstractions.ReleaseManifests;
+using NuGet.Versioning;
 
 namespace ElsaControl.Deployment.Azure;
 
@@ -27,9 +27,19 @@ public static class AzureWorkloadPlanTranslator
         !string.IsNullOrWhiteSpace(location) && SupportedLocations.Contains(location.Trim());
     public const string SupportedTopology = "combined";
     public const string SupportedIsolation = "Dedicated";
-    public const string SupportedReleaseLine = "3.8";
+    /// <summary>
+    /// Release lines are governed catalog data, not a finite provider enum. The
+    /// provider profile validates the immutable image/evidence shape while the
+    /// catalog admission boundary determines which Elsa versions are available.
+    /// </summary>
+    public const string SupportedReleaseLine = "*";
     public const string SupportedRegistryClass = "paid";
     public const string SupportedRegistryHost = "valenceruntimeimages.azurecr.io";
+    public const string SupportedRepository = SupportedRegistryHost + "/runtime-combined";
+    public const string SqlWorkflowPackageId = "Elsa.Persistence.EFCore.SqlServer";
+    public const string SqlQuartzPackageId = "Elsa.Scheduling.Quartz.EFCore.SqlServer";
+    public static IReadOnlyList<string> RequiredSecretKeys { get; } = Array.AsReadOnly(
+        ["database:connectionstring", "identity:signingkey", "admin:password"]);
     public static AzureWorkloadPlanTranslation Translate(
         ResolvedElsaApplicationPlan? resolvedPlan,
         AzureWorkloadTarget? target)
@@ -54,6 +64,11 @@ public static class AzureWorkloadPlanTranslator
             findings.Add(new("azure.plan.normalization.invalid", "The resolved plan could not be normalized safely.", "plan"));
             return Rejected(findings);
         }
+        var releasePackages = normalized.Release.ComponentDeclarations?.Packages;
+        var sqlWorkflowPackageVersion = RequiredPackageVersion(releasePackages, SqlWorkflowPackageId, findings);
+        var sqlQuartzPackageVersion = RequiredPackageVersion(releasePackages, SqlQuartzPackageId, findings);
+        if (findings.Count > 0)
+            return Rejected(findings);
         var component = normalized.Topology.Components.Single();
         var evidence = normalized.Evidence.Single(x =>
             string.Equals(x.Kind, ReleaseManifestEvidenceKinds.Manifest, StringComparison.OrdinalIgnoreCase));
@@ -62,6 +77,13 @@ public static class AzureWorkloadPlanTranslator
         var secretReferences = new ReadOnlyDictionary<string, string>(normalized.Configuration.Entries
             .Where(x => x.Secret && x.SecretReference is not null)
             .ToDictionary(x => x.Key.ToLowerInvariant(), x => x.SecretReference!, StringComparer.OrdinalIgnoreCase));
+        foreach (var requiredSecretKey in RequiredSecretKeys)
+        {
+            if (!secretReferences.ContainsKey(requiredSecretKey))
+                findings.Add(new("azure.secret.required", "The admitted plan is missing a secret reference required by the Azure workload profile.", $"configuration:{requiredSecretKey}"));
+        }
+        if (findings.Count > 0)
+            return Rejected(findings);
         var canonicalTarget = new
         {
             workloadName = target.WorkloadName.Trim().ToLowerInvariant(),
@@ -86,6 +108,8 @@ public static class AzureWorkloadPlanTranslator
             // second Azure deployment-intent identity that would be lost on resume.
             releaseManifestSignatureReference = signatureEvidence.Reference,
             releaseManifestSignatureDigest = signatureEvidence.Digest!.ToLowerInvariant(),
+            sqlWorkflowPackageVersion,
+            sqlQuartzPackageVersion,
             secretReferences = secretReferences
                 .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
                 .Select(x => new { key = x.Key.ToLowerInvariant(), reference = x.Value })
@@ -109,8 +133,35 @@ public static class AzureWorkloadPlanTranslator
                 signatureEvidence.Reference,
                 signatureEvidence.Digest!.ToLowerInvariant(),
                 secretReferences,
-                fingerprint),
+                fingerprint,
+                sqlWorkflowPackageVersion,
+                sqlQuartzPackageVersion),
             []);
+    }
+
+    private static string? RequiredPackageVersion(
+        IReadOnlyList<ResolvedReleasePackageDeclaration>? packages,
+        string packageId,
+        ICollection<ResolvedPlanValidationFinding> findings)
+    {
+        var matches = (packages ?? [])
+            .Where(package => package is not null &&
+                              string.Equals(package.Id, packageId, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (matches.Length == 0)
+        {
+            findings.Add(new("azure.packageMetadata.required", "The admitted plan must contain the provider package metadata required by the Azure profile.", $"packages:{packageId}"));
+            return null;
+        }
+        if (matches.Length != 1 || string.IsNullOrWhiteSpace(matches[0].Version) ||
+            matches[0].Version.Length > 128 || matches[0].Version.Any(char.IsControl) ||
+            matches[0].Version.Any(char.IsWhiteSpace) ||
+            !NuGetVersion.TryParse(matches[0].Version, out _))
+        {
+            findings.Add(new("azure.packageMetadata.invalid", "The admitted plan contains ambiguous or invalid provider package metadata.", $"packages:{packageId}"));
+            return null;
+        }
+        return matches[0].Version.Trim();
     }
 
     private static void ValidateTarget(
@@ -149,9 +200,6 @@ public static class AzureWorkloadPlanTranslator
 
         if (!string.Equals(plan.Isolation, SupportedIsolation, StringComparison.OrdinalIgnoreCase))
             findings.Add(new("azure.isolation.unsupported", "The requested isolation profile is not supported by the initial Azure provider profile.", "isolation"));
-
-        if (plan.Release is not null && !string.Equals(plan.Release.ReleaseLine, SupportedReleaseLine, StringComparison.OrdinalIgnoreCase))
-            findings.Add(new("azure.releaseLine.unsupported", "The requested Elsa release line is not supported by the initial Azure provider profile.", "release.releaseLine"));
 
         if (plan.Network is not null &&
             (!string.Equals(plan.Network.Ingress, "public", StringComparison.OrdinalIgnoreCase) ||
@@ -226,14 +274,7 @@ public static class AzureWorkloadPlanTranslator
 
     private static bool IsSafeImageRepository(string repository)
     {
-        var prefix = $"{SupportedRegistryHost}/";
-        if (string.IsNullOrWhiteSpace(repository) || repository.Length > 255 || !repository.StartsWith(prefix, StringComparison.Ordinal))
-            return false;
-
-        return Regex.IsMatch(
-            repository[prefix.Length..],
-            "^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*$",
-            RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
+        return string.Equals(repository, SupportedRepository, StringComparison.Ordinal);
     }
 
     private static bool ImageReferenceMatchesRepository(ResolvedImageIdentity image)

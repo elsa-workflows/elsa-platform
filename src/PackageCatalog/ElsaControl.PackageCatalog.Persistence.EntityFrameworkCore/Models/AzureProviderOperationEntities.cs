@@ -16,6 +16,8 @@ internal sealed class AzureProviderOperationEntity
     public string PlanFingerprint { get; set; } = "";
     public string TemplateFingerprint { get; set; } = "";
     public string? ProviderScopeFingerprint { get; set; }
+    public string? SqlWorkflowPackageVersion { get; set; }
+    public string? SqlQuartzPackageVersion { get; set; }
     public string ElsaVersion { get; set; } = "";
     public string ReleaseLine { get; set; } = "";
     public string Topology { get; set; } = "";

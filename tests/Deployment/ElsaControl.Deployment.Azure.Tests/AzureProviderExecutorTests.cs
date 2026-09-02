@@ -260,12 +260,14 @@ public sealed class AzureProviderExecutorTests
         Assert.DoesNotContain(AzureProviderRunnerStep.RestoreStableTraffic, runner.Steps);
     }
 
-    [Fact]
-    public async Task Execution_rejects_a_plan_outside_the_governed_registry_authority()
+    [Theory]
+    [InlineData("other.azurecr.io/runtime-combined")]
+    [InlineData("valenceruntimeimages.azurecr.io/other-runtime")]
+    public async Task Execution_rejects_a_plan_outside_the_governed_repository(string repository)
     {
         var store = new FakeOperationStore();
         var executor = new AzureProviderExecutor(store, new RecordingRunner(), new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
-        var request = CreateRequest() with { ImageRepository = "other.azurecr.io/runtime-combined" };
+        var request = CreateRequest() with { ImageRepository = repository };
         var plan = CreatePlan() with { ImageRepository = request.ImageRepository };
 
         await Assert.ThrowsAsync<ArgumentException>(() => executor.ApplyAsync(request, plan));
@@ -678,7 +680,10 @@ public sealed class AzureProviderExecutorTests
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["database:connectionstring"] = "secret://database"
-        });
+        },
+        null,
+        "3.8.0-preview.5413",
+        "3.8.0-preview.5413");
 
     private static AzureWorkloadPlan CreatePlan() => new(
         "workload-a",
@@ -697,7 +702,9 @@ public sealed class AzureProviderExecutorTests
         {
             ["database:connectionstring"] = "secret://database"
         },
-        new('a', 64));
+        new('a', 64),
+        "3.8.0-preview.5413",
+        "3.8.0-preview.5413");
 
     private sealed class StaticTimeProvider(DateTimeOffset now) : TimeProvider
     {
@@ -870,6 +877,12 @@ public sealed class AzureProviderExecutorTests
         public AzureProviderOperationStatus? RejectCreateWithStatus { get; init; }
         public bool LoseLeaseOnHeartbeat { get; init; }
         public AzureProviderResourceReferences? LatestReconcileResources { get; init; }
+
+        public async Task<AzureProviderOperationCreateResult> CreateOrGetWithResultAsync(
+            AzureProviderOperationRequest request,
+            DateTimeOffset now,
+            CancellationToken cancellationToken = default) =>
+            new(await CreateOrGetAsync(request, now, cancellationToken), Replayed: false);
 
         public Task<AzureProviderOperation> CreateOrGetAsync(AzureProviderOperationRequest request, DateTimeOffset now, CancellationToken cancellationToken = default)
         {

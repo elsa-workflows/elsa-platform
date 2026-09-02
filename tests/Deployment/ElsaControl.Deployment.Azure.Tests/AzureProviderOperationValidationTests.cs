@@ -131,6 +131,25 @@ public sealed class AzureProviderOperationValidationTests
         Assert.Contains("imageDigest.invalid", errors);
     }
 
+    [Theory]
+    [InlineData(null, "3.8.0", "packageVersions.incomplete")]
+    [InlineData("3.8.0", null, "packageVersions.incomplete")]
+    [InlineData("3.8 stable", "3.8.0", "sqlWorkflowPackageVersion.invalid")]
+    [InlineData("3.8.0", "not-a-version!", "sqlQuartzPackageVersion.invalid")]
+    public void Rejects_incomplete_or_non_NuGet_package_metadata(
+        string? workflowVersion,
+        string? quartzVersion,
+        string expectedError)
+    {
+        var errors = AzureProviderOperationValidation.Validate(ValidRequest() with
+        {
+            SqlWorkflowPackageVersion = workflowVersion,
+            SqlQuartzPackageVersion = quartzVersion
+        });
+
+        Assert.Contains(expectedError, errors);
+    }
+
     [Fact]
     public void Rejects_raw_or_unsafe_repository_values()
     {
@@ -213,6 +232,21 @@ public sealed class AzureProviderOperationValidationTests
         var references = Enumerable.Range(0, 65)
             .ToDictionary(index => $"secret-{index}", _ => "secret://vault/value");
         Assert.False(AzureProviderOperationValidation.IsSafeSecretReferences(references));
+    }
+
+    [Fact]
+    public void Secret_reference_collection_rejects_names_that_collide_after_Azure_mapping()
+    {
+        var references = new Dictionary<string, string>
+        {
+            ["database:password"] = "secret://vault/database-password",
+            ["database_password"] = "secret://vault/other-database-password"
+        };
+
+        Assert.False(AzureProviderOperationValidation.IsSafeSecretReferences(references));
+        Assert.Contains(
+            "secretReferences.nameCollision",
+            AzureProviderOperationValidation.Validate(ValidRequest() with { SecretReferences = references }));
     }
 
     [Fact]

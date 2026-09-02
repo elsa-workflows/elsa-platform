@@ -41,6 +41,12 @@ public sealed class ReleaseManifestAdmissionTests
         Assert.Equal("preview", admission.Manifest.Distribution.Lifecycle);
         Assert.Equal("commercial", admission.Manifest.Distribution.Edition);
         Assert.Equal("producer-2.0.0", admission.Manifest.Distribution.Generation);
+        Assert.Equal("central-package-declarations-v1", admission.Manifest.ComponentDeclarations!.Format);
+        Assert.Equal("sha256:1b12815e61c57e538729dc99f7fde637e9576e889d67e58a5928a0380ce7b482", admission.Manifest.ComponentDeclarations.Digest);
+        Assert.Contains(admission.Manifest.ComponentDeclarations.Packages,
+            package => package.Id == AzureWorkloadPlanTranslator.SqlWorkflowPackageId && package.Version == "3.8.0-preview.5413");
+        Assert.Contains(admission.Manifest.ComponentDeclarations.Packages,
+            package => package.Id == AzureWorkloadPlanTranslator.SqlQuartzPackageId && package.Version == "3.8.0-preview.5413");
 
         var serialized = JsonSerializer.Serialize(admission);
         Assert.DoesNotContain("certificateIdentity", serialized, StringComparison.Ordinal);
@@ -63,6 +69,38 @@ public sealed class ReleaseManifestAdmissionTests
         Assert.All(
             persisted.Evidence.Where(x => x.Kind is ReleaseManifestEvidenceKinds.Sbom or ReleaseManifestEvidenceKinds.Provenance or ReleaseManifestEvidenceKinds.VulnerabilityScan),
             evidence => Assert.StartsWith("oci://", evidence.Reference, StringComparison.Ordinal));
+        Assert.Equal(admission.Manifest.ComponentDeclarations.Format, persisted.Release.ComponentDeclarations!.Format);
+        Assert.Equal(admission.Manifest.ComponentDeclarations.Digest, persisted.Release.ComponentDeclarations.Digest);
+        Assert.Equal(
+            admission.Manifest.ComponentDeclarations.Packages
+                .OrderBy(package => package.Id, StringComparer.OrdinalIgnoreCase)
+                .Select(package => (package.Id, package.Version)),
+            persisted.Release.ComponentDeclarations.Packages.Select(package => (package.Id, package.Version)));
+    }
+
+    [Fact]
+    public async Task Producer_component_declarations_are_required_and_duplicate_packages_fail_closed()
+    {
+        var missing = JsonNode.Parse(ProducerFixture())!.AsObject();
+        missing.Remove("componentDeclarations");
+        RefreshProducerCanonicalDigest(missing);
+        var missingArtifact = ProducerArtifact(missing.ToJsonString());
+        var missingAdmission = await new ReleaseManifestAdmissionService(
+                new StubSignatureVerifier(ProducerVerification(missingArtifact)))
+            .AdmitAsync(missingArtifact, new(ProducerSigner, "paid", "combined"));
+        Assert.False(missingAdmission.Accepted);
+        Assert.Contains(missingAdmission.Findings, finding => finding.Code == "componentDeclarations.required");
+
+        var duplicate = JsonNode.Parse(ProducerFixture())!.AsObject();
+        var packages = duplicate["componentDeclarations"]!["packages"]!.AsArray();
+        packages.Insert(1, packages[0]!.DeepClone());
+        RefreshProducerCanonicalDigest(duplicate);
+        var duplicateArtifact = ProducerArtifact(duplicate.ToJsonString());
+        var duplicateAdmission = await new ReleaseManifestAdmissionService(
+                new StubSignatureVerifier(ProducerVerification(duplicateArtifact)))
+            .AdmitAsync(duplicateArtifact, new(ProducerSigner, "paid", "combined"));
+        Assert.False(duplicateAdmission.Accepted);
+        Assert.Contains(duplicateAdmission.Findings, finding => finding.Code == "componentDeclarations.packages.duplicate");
     }
 
     [Fact]
@@ -254,7 +292,13 @@ public sealed class ReleaseManifestAdmissionTests
             new(new("runtime-combined", null, null, null), [], [], [], null),
             admission,
             "plan_01JPRODUCER202",
-            "https://control.example.test/api/workspaces/00000000-0000-0000-0000-000000000001/instances/00000000-0000-0000-0000-000000000002/resolved-plans/plan_01JPRODUCER202");
+            "https://control.example.test/api/workspaces/00000000-0000-0000-0000-000000000001/instances/00000000-0000-0000-0000-000000000002/resolved-plans/plan_01JPRODUCER202",
+            GovernedSecretReferences: new Dictionary<string, string>
+            {
+                ["database:connectionstring"] = "secret://vault/database-connection",
+                ["identity:signingkey"] = "secret://vault/identity-signing-key",
+                ["admin:password"] = "secret://vault/admin-password"
+            });
 
         var resolved = await new ElsaInstancePlanResolver(
             new EmptyCatalog(),
@@ -272,6 +316,8 @@ public sealed class ReleaseManifestAdmissionTests
         Assert.Equal("e782d9426f03fa1e42da85977b7cf609119ab11dc5bfb86b0a385fc280ce2a33", translated.Plan.ImageDigest);
         Assert.Equal(admission.Digest, translated.Plan.ReleaseManifestDigest);
         Assert.Equal(admission.Reference, translated.Plan.ReleaseManifestReference);
+        Assert.Equal("3.8.0-preview.5413", translated.Plan.SqlWorkflowPackageVersion);
+        Assert.Equal("3.8.0-preview.5413", translated.Plan.SqlQuartzPackageVersion);
     }
 
     [Theory]

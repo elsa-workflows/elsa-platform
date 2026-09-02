@@ -61,7 +61,9 @@ public sealed record AzureProviderOperationRequest(
     string? ReleaseManifestReference = null,
     string? ReleaseManifestSignatureReference = null,
     IReadOnlyDictionary<string, string>? SecretReferences = null,
-    string? ProviderScopeFingerprint = null);
+    string? ProviderScopeFingerprint = null,
+    string? SqlWorkflowPackageVersion = null,
+    string? SqlQuartzPackageVersion = null);
 
 public sealed record AzureProviderResourceReferences(
     string? ResourceGroupName = null,
@@ -122,7 +124,9 @@ public sealed record AzureProviderOperation(
     string? ReleaseManifestSignatureReference = null,
     [property: JsonIgnore] IReadOnlyDictionary<string, string>? SecretReferences = null,
     [property: JsonIgnore] bool PersistedMetadataInvalid = false,
-    string? ProviderScopeFingerprint = null)
+    string? ProviderScopeFingerprint = null,
+    string? SqlWorkflowPackageVersion = null,
+    string? SqlQuartzPackageVersion = null)
 {
     [JsonIgnore]
     public IReadOnlyDictionary<string, string> SafeSecretReferences => SecretReferences ?? EmptySecretReferences;

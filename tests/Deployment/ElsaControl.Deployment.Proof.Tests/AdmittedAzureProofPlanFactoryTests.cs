@@ -92,10 +92,28 @@ public sealed class AdmittedAzureProofPlanFactoryTests
 
         return new(
             ResolvedElsaApplicationPlanSchema.CurrentVersion,
-            new("valence-runtime", "3.8", "3.8.0-preview.5413", "https://github.com/valence-works/elsa-production-image", "1aeee8df455b21cf3bf3d2b26dfbd512d76da27b", "oci://release-manifest.example/manifest", ManifestDigest),
+            new(
+                "valence-runtime",
+                "3.8",
+                "3.8.0-preview.5413",
+                "https://github.com/valence-works/elsa-production-image",
+                "1aeee8df455b21cf3bf3d2b26dfbd512d76da27b",
+                "oci://release-manifest.example/manifest",
+                ManifestDigest,
+                new(
+                    "central-package-declarations-v1",
+                    ImageDigest,
+                    [
+                        new(AzureWorkloadPlanTranslator.SqlWorkflowPackageId, "3.8.0-preview.5413"),
+                        new(AzureWorkloadPlanTranslator.SqlQuartzPackageId, "3.8.0-preview.342")
+                    ])),
             new("combined", [component]),
             [new(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), "Elsa.Core", "3.8.0-preview.5413", ImageDigest, ["elsa.server"], [new("runtime", "Elsa.Runtime", ["elsa.server"], ["workflow.runtime"])])],
-            new([new("Database:ConnectionString", "string", true, true, false, "ELSA_DATABASE_CONNECTION", null, "secret://vault/database-connection", null)]),
+            new([
+                new("Database:ConnectionString", "string", true, true, false, "ELSA_DATABASE_CONNECTION", null, "secret://vault/database-connection", null),
+                new("Identity:SigningKey", "string", true, true, false, "ELSA_IDENTITY_SIGNING_KEY", null, "secret://vault/identity-signing-key", null),
+                new("Admin:Password", "string", true, true, false, "ELSA_ADMIN_PASSWORD", null, "secret://vault/admin-password", null)
+            ]),
             new([new("runtime", 1, 1, 500, 1024)], [new("elsa-data", "relational", "persistent", "exclusive", 10)]),
             new("public", "unrestricted", false, [], [new("runtime", "api", "https", 443, "public", true, "/elsa/api")]),
             "Dedicated",

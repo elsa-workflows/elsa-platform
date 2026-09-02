@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Collections.ObjectModel;
+using NuGet.Versioning;
 
 namespace ElsaControl.Deployment.Azure;
 
@@ -294,6 +295,8 @@ public static class AzureProviderOperationValidation
             IdempotencyKey = request.IdempotencyKey.Trim(),
             ReleaseManifestReference = NormalizeOptionalReference(request.ReleaseManifestReference),
             ReleaseManifestSignatureReference = NormalizeOptionalReference(request.ReleaseManifestSignatureReference),
+            SqlWorkflowPackageVersion = NormalizeOptionalSafe(request.SqlWorkflowPackageVersion),
+            SqlQuartzPackageVersion = NormalizeOptionalSafe(request.SqlQuartzPackageVersion),
             SecretReferences = NormalizeSecretReferences(request.SecretReferences),
             ProviderScopeFingerprint = request.ProviderScopeFingerprint is null
                 ? null
@@ -326,6 +329,12 @@ public static class AzureProviderOperationValidation
         if (request.ReleaseManifestSignatureDigest is not null && !IsDigest(request.ReleaseManifestSignatureDigest)) errors.Add("releaseManifestSignatureDigest.invalid");
         if (request.ReleaseManifestReference is not null && !IsSafeImmutableEvidenceReference(request.ReleaseManifestReference, request.ReleaseManifestDigest)) errors.Add("releaseManifestReference.invalid");
         if (request.ReleaseManifestSignatureReference is not null && !IsSafeImmutableEvidenceReference(request.ReleaseManifestSignatureReference, request.ReleaseManifestSignatureDigest)) errors.Add("releaseManifestSignatureReference.invalid");
+        if ((request.SqlWorkflowPackageVersion is null) != (request.SqlQuartzPackageVersion is null))
+            errors.Add("packageVersions.incomplete");
+        if (request.SqlWorkflowPackageVersion is not null && !IsSafePackageVersion(request.SqlWorkflowPackageVersion))
+            errors.Add("sqlWorkflowPackageVersion.invalid");
+        if (request.SqlQuartzPackageVersion is not null && !IsSafePackageVersion(request.SqlQuartzPackageVersion))
+            errors.Add("sqlQuartzPackageVersion.invalid");
         if ((request.ReleaseManifestReference is null) != (request.ReleaseManifestSignatureReference is null)) errors.Add("releaseManifestReferences.incomplete");
         ValidateSecretReferences(request.SecretReferences, errors);
 
@@ -352,7 +361,9 @@ public static class AzureProviderOperationValidation
     {
         var normalized = Normalize(request);
         var canonical = normalized.ProviderScopeFingerprint is null
-            ? SerializeLegacyRequest(normalized)
+            ? normalized.SqlWorkflowPackageVersion is null && normalized.SqlQuartzPackageVersion is null
+                ? SerializeLegacyRequest(normalized)
+                : SerializeRequestWithPackageMetadata(normalized, includeProviderScope: false)
             : JsonSerializer.Serialize(new
             {
                 normalized.WorkspaceId,
@@ -371,6 +382,8 @@ public static class AzureProviderOperationValidation
                 normalized.ReleaseManifestSignatureDigest,
                 normalized.ReleaseManifestReference,
                 normalized.ReleaseManifestSignatureReference,
+                normalized.SqlWorkflowPackageVersion,
+                normalized.SqlQuartzPackageVersion,
                 normalized.ProviderScopeFingerprint,
                 secretReferences = normalized.SecretReferences
             });
@@ -386,8 +399,37 @@ public static class AzureProviderOperationValidation
         var value = normalized.ProviderScopeFingerprint is null
             ? legacyValue
             : $"{legacyValue}|{normalized.ProviderScopeFingerprint}";
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+        var withPackageMetadata = normalized.SqlWorkflowPackageVersion is null && normalized.SqlQuartzPackageVersion is null
+            ? value
+            : $"{value}|{normalized.SqlWorkflowPackageVersion}|{normalized.SqlQuartzPackageVersion}";
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(withPackageMetadata))).ToLowerInvariant();
     }
+
+    private static string SerializeRequestWithPackageMetadata(
+        AzureProviderOperationRequest normalized,
+        bool includeProviderScope) => JsonSerializer.Serialize(new
+        {
+            normalized.WorkspaceId,
+            normalized.TargetKey,
+            Action = normalized.Action.ToString(),
+            normalized.PlanFingerprint,
+            normalized.TemplateFingerprint,
+            normalized.ElsaVersion,
+            normalized.ReleaseLine,
+            normalized.Topology,
+            normalized.Isolation,
+            normalized.Location,
+            normalized.ImageRepository,
+            normalized.ImageDigest,
+            normalized.ReleaseManifestDigest,
+            normalized.ReleaseManifestSignatureDigest,
+            normalized.ReleaseManifestReference,
+            normalized.ReleaseManifestSignatureReference,
+            normalized.SqlWorkflowPackageVersion,
+            normalized.SqlQuartzPackageVersion,
+            ProviderScopeFingerprint = includeProviderScope ? normalized.ProviderScopeFingerprint : null,
+            secretReferences = normalized.SecretReferences
+        });
 
     private static string SerializeLegacyRequest(AzureProviderOperationRequest normalized) => JsonSerializer.Serialize(new
     {
@@ -422,6 +464,7 @@ public static class AzureProviderOperationValidation
     private static string NormalizeDigest(string value) => $"sha256:{value.Trim()[7..].ToLowerInvariant()}";
     private static string? NormalizeOptionalDigest(string? value) => value is null ? null : NormalizeDigest(value);
     private static string? NormalizeOptionalReference(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private static string? NormalizeOptionalSafe(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static IReadOnlyDictionary<string, string> NormalizeSecretReferences(IReadOnlyDictionary<string, string>? values) =>
         new ReadOnlyDictionary<string, string>((values ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase))
@@ -435,10 +478,23 @@ public static class AzureProviderOperationValidation
         if (values.Count > 64)
             errors.Add("secretReferences.tooMany");
         var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var mappedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var pair in values)
         {
             if (string.IsNullOrWhiteSpace(pair.Key) || pair.Key.Length > 256 || pair.Key.Any(char.IsControl) || !keys.Add(pair.Key.Trim()))
                 errors.Add("secretReferences.key.invalid");
+            else
+            {
+                try
+                {
+                    if (!mappedNames.Add(MapSecretName(pair.Key)))
+                        errors.Add("secretReferences.nameCollision");
+                }
+                catch (ArgumentException)
+                {
+                    errors.Add("secretReferences.key.invalid");
+                }
+            }
             if (!IsSafeSecretReference(pair.Value))
                 errors.Add("secretReferences.value.invalid");
         }
@@ -450,11 +506,44 @@ public static class AzureProviderOperationValidation
             return false;
 
         var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        return values.All(pair =>
-            !string.IsNullOrWhiteSpace(pair.Key) && pair.Key.Length <= 256 &&
-            !pair.Key.Any(char.IsControl) &&
-            string.Equals(pair.Key, pair.Key.Trim().ToLowerInvariant(), StringComparison.Ordinal) &&
-            keys.Add(pair.Key) && IsSafeSecretReference(pair.Value));
+        var mappedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in values)
+        {
+            if (string.IsNullOrWhiteSpace(pair.Key) || pair.Key.Length > 256 || pair.Key.Any(char.IsControl) ||
+                !string.Equals(pair.Key, pair.Key.Trim().ToLowerInvariant(), StringComparison.Ordinal) ||
+                !keys.Add(pair.Key) || !IsSafeSecretReference(pair.Value))
+                return false;
+            try
+            {
+                if (!mappedNames.Add(MapSecretName(pair.Key)))
+                    return false;
+            }
+            catch (ArgumentException)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static bool IsSafePackageVersion(string? value) =>
+        value is { Length: > 0 and <= 128 } &&
+        !value.Any(character => char.IsControl(character) || char.IsWhiteSpace(character)) &&
+        NuGetVersion.TryParse(value, out _);
+
+    internal static string MapSecretName(string key)
+    {
+        var normalized = key.Trim().ToLowerInvariant();
+        var mapped = normalized switch
+        {
+            "database:connectionstring" or "database:connection-string" or "sql-connection" => "sql-connection",
+            "identity:signingkey" or "identity:signing-key" or "identity-signing-key" => "identity-signing-key",
+            "admin:password" or "admin-password" => "admin-password",
+            _ => normalized.Replace(':', '-').Replace('_', '-')
+        };
+        if (mapped.Length is 0 or > 127 || mapped.Any(character => !char.IsAsciiLetterOrDigit(character) && character != '-'))
+            throw new ArgumentException("The secret reference key cannot be mapped to a governed Azure secret name.", nameof(key));
+        return mapped;
     }
 
     /// <summary>

@@ -42,6 +42,186 @@ public sealed class ElsaInstanceLifecycleWorkerTests
     }
 
     [Fact]
+    public async Task Provider_submission_happens_after_reservation_and_leaves_one_reconciliation_target()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var accepted = await service.CreateAsync(CreateRequest("claims-provider", "create-provider"));
+        store.RegisterResolutionInput(accepted.Operation.Id, ResolutionInput(accepted.Instance));
+        var provider = new RecordingSubmissionPort();
+
+        var result = await new ElsaInstanceLifecycleWorker(
+                store,
+                new RecordingResolver(SuccessfulResolution(WorkspaceId, accepted.Instance.Id)),
+                new StaticTimeProvider(Now),
+                provider,
+                store)
+            .ProcessAvailableAsync("lifecycle-worker-1");
+
+        Assert.Equal(1, result.ProviderInvocations);
+        Assert.Equal(accepted.Operation.Id, Assert.Single(provider.Submissions).OperationId);
+        Assert.Equal(ElsaInstanceOperationState.RecoveryRequired, Assert.Single(store.Operations).State);
+        Assert.Equal(WorkspaceDeploymentRunStatus.RecoveryRequired, Assert.Single(store.DeploymentRuns).Run.Status);
+        var pending = await store.ListPendingProviderOperationsAsync(16);
+        Assert.Equal(accepted.Operation.Id, Assert.Single(pending).OperationId);
+        Assert.Null(pending.Single().Submission);
+    }
+
+    [Fact]
+    public async Task Uncertain_provider_submission_is_recoverable_without_inserting_another_run()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var accepted = await service.CreateAsync(CreateRequest("claims-provider-uncertain", "create-provider-uncertain"));
+        store.RegisterResolutionInput(accepted.Operation.Id, ResolutionInput(accepted.Instance));
+        var provider = new RecordingSubmissionPort(throwOnSubmit: true);
+
+        var result = await new ElsaInstanceLifecycleWorker(
+                store,
+                new RecordingResolver(SuccessfulResolution(WorkspaceId, accepted.Instance.Id)),
+                new StaticTimeProvider(Now),
+                provider,
+                store)
+            .ProcessAvailableAsync("lifecycle-worker-1");
+
+        Assert.Equal(1, result.ProviderInvocations);
+        Assert.Equal(ElsaInstanceOperationState.RecoveryRequired, Assert.Single(store.Operations).State);
+        Assert.Equal("provider.submission.uncertain", Assert.Single(store.DeploymentRuns).Run.RecoveryReason);
+        Assert.Single(store.DeploymentRuns);
+        Assert.NotNull((await store.ListPendingProviderOperationsAsync(16)).Single().Submission);
+    }
+
+    [Fact]
+    public async Task Deterministic_provider_rejection_does_not_create_an_uncertain_handoff()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var accepted = await service.CreateAsync(CreateRequest("claims-provider-rejected", "create-provider-rejected"));
+        store.RegisterResolutionInput(accepted.Operation.Id, ResolutionInput(accepted.Instance));
+        var provider = new RecordingSubmissionPort(
+            throwOnSubmit: true,
+            failureKind: ElsaInstanceProviderSubmissionFailureKind.Rejected);
+
+        var result = await new ElsaInstanceLifecycleWorker(
+                store,
+                new RecordingResolver(SuccessfulResolution(WorkspaceId, accepted.Instance.Id)),
+                new StaticTimeProvider(Now),
+                provider,
+                store)
+            .ProcessAvailableAsync("lifecycle-worker-1");
+
+        Assert.Equal(1, result.ProviderInvocations);
+        Assert.Equal(ElsaInstanceOperationState.Queued, Assert.Single(store.Operations).State);
+        Assert.Equal(WorkspaceDeploymentRunStatus.Queued, Assert.Single(store.DeploymentRuns).Run.Status);
+        Assert.NotNull((await store.ListPendingProviderOperationsAsync(16)).Single().Submission);
+    }
+
+    [Fact]
+    public async Task Unknown_reconciliation_preserves_uncertain_submission_for_a_later_replay()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var accepted = await service.CreateAsync(CreateRequest("claims-provider-uncertain-reconcile", "create-provider-uncertain-reconcile"));
+        store.RegisterResolutionInput(accepted.Operation.Id, ResolutionInput(accepted.Instance));
+
+        await new ElsaInstanceLifecycleWorker(
+                store,
+                new RecordingResolver(SuccessfulResolution(WorkspaceId, accepted.Instance.Id)),
+                new StaticTimeProvider(Now),
+                new RecordingSubmissionPort(throwOnSubmit: true),
+                store)
+            .ProcessAvailableAsync("lifecycle-worker-1");
+
+        var before = Assert.Single(await store.ListPendingProviderOperationsAsync(16));
+        Assert.NotNull(before.Submission);
+
+        var result = await new ElsaInstanceProviderReconciliationService(
+                store,
+                new UnknownReconciliationPort(),
+                new StaticTimeProvider(Now.AddMinutes(1)))
+            .ReconcileAsync(WorkspaceId, accepted.Operation.Id);
+
+        Assert.Equal(ElsaInstanceProviderReconciliationOutcome.RecoveryRequired, result.Outcome);
+        Assert.False(result.RetrySafe);
+        var after = Assert.Single(await store.ListPendingProviderOperationsAsync(16));
+        Assert.NotNull(after.Submission);
+        Assert.Equal("provider.submission.uncertain", Assert.Single(store.DeploymentRuns).Run.RecoveryReason);
+    }
+
+    [Fact]
+    public async Task Successful_replay_upgrades_uncertain_handoff_and_stops_future_submission_replays()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var accepted = await service.CreateAsync(CreateRequest("claims-provider-replay", "create-provider-replay"));
+        store.RegisterResolutionInput(accepted.Operation.Id, ResolutionInput(accepted.Instance));
+
+        var provider = new RecordingSubmissionPort(throwOnSubmit: true);
+        await new ElsaInstanceLifecycleWorker(
+                store,
+                new RecordingResolver(SuccessfulResolution(WorkspaceId, accepted.Instance.Id)),
+                new StaticTimeProvider(Now),
+                provider,
+                store)
+            .ProcessAvailableAsync("lifecycle-worker-1");
+
+        var pendingBeforeReplay = Assert.Single(await store.ListPendingProviderOperationsAsync(16));
+        Assert.NotNull(pendingBeforeReplay.Submission);
+
+        await store.CommitProviderSubmissionAsync(new(
+            WorkspaceId,
+            accepted.Instance.Id,
+            accepted.Operation.Id,
+            accepted.Operation.AttemptNumber,
+            "provider-operation-replayed",
+            Now.AddSeconds(1)));
+
+        var pendingAfterReplay = Assert.Single(await store.ListPendingProviderOperationsAsync(16));
+        Assert.Null(pendingAfterReplay.Submission);
+        Assert.Equal("provider.submission.accepted", Assert.Single(store.DeploymentRuns).Run.RecoveryReason);
+    }
+
+    [Fact]
+    public async Task Invalid_deleting_provider_submission_is_not_reconstructed_for_replay()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
+        var instance = ElsaInstance.Hydrate(
+            Guid.Parse("40000000-0000-0000-0000-000000000001"),
+            OrganizationId,
+            WorkspaceId,
+            "claims-provider-deleting",
+            "claims-provider-deleting",
+            Intent() with { DesiredLifecycle = ElsaDesiredLifecycle.Deleting },
+            ElsaObservedLifecycle.Unknown,
+            ElsaInstanceHealth.Unknown,
+            1);
+        var operation = ElsaInstanceOperation.Create(
+            instance.Id,
+            ElsaInstanceOperationAction.Create,
+            ElsaInstanceLifecycleService.CreateIdempotencyScope,
+            "create-provider-deleting",
+            instance.ComputeCanonicalIntentHash(),
+            instance.Version,
+            acceptedAt: Now);
+        var outbox = new ElsaInstanceLifecycleOutboxMessage(
+            Guid.NewGuid(), WorkspaceId, instance.Id, operation.Id,
+            ElsaInstanceOperationAction.Create, operation.RequestHash, Now);
+        var accepted = await store.CommitAcceptedAsync(null, instance, operation, outbox);
+        store.RegisterResolutionInput(accepted.Operation.Id, ResolutionInput(accepted.Instance));
+
+        await new ElsaInstanceLifecycleWorker(
+                store,
+                new RecordingResolver(SuccessfulResolution(WorkspaceId, accepted.Instance.Id)),
+                new StaticTimeProvider(Now),
+                new RecordingSubmissionPort(),
+                store)
+            .ProcessAvailableAsync("lifecycle-worker-1");
+
+        var pending = Assert.Single(await store.ListPendingProviderOperationsAsync(16));
+        Assert.Null(pending.Submission);
+    }
+
+    [Fact]
     public async Task In_memory_finalization_uses_store_clock_for_lease_expiry()
     {
         var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now.AddMinutes(6)));
@@ -384,6 +564,42 @@ public sealed class ElsaInstanceLifecycleWorkerTests
             Calls++;
             return Task.FromResult(result);
         }
+    }
+
+    private sealed class RecordingSubmissionPort(
+        bool throwOnSubmit = false,
+        ElsaInstanceProviderSubmissionFailureKind failureKind = ElsaInstanceProviderSubmissionFailureKind.OutcomeUnknown)
+        : IElsaInstanceProviderSubmissionPort
+    {
+        public List<ElsaInstanceProviderSubmission> Submissions { get; } = [];
+
+        public Task<ElsaInstanceProviderSubmissionResult> SubmitAsync(
+            ElsaInstanceProviderSubmission request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            request.Validate();
+            Submissions.Add(request);
+            if (throwOnSubmit)
+                throw new ElsaInstanceProviderSubmissionException(failureKind);
+            return Task.FromResult(new ElsaInstanceProviderSubmissionResult(
+                $"provider-operation-{request.OperationId:N}",
+                Replayed: Submissions.Count > 1));
+        }
+    }
+
+    private sealed class UnknownReconciliationPort : IElsaInstanceProviderReconciliationPort
+    {
+        public Task<ElsaInstanceProviderObservation> ObserveAsync(
+            ElsaInstanceProviderReconciliationRequest request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ElsaInstanceProviderObservation(
+                ElsaInstanceProviderObservationKind.Unknown,
+                ElsaObservedLifecycle.Unknown,
+                ElsaInstanceProviderHealthGate.Unknown,
+                request.OperationId,
+                request.AttemptNumber,
+                "provider-observation-unknown"));
     }
 
     private sealed class QueueResolver(params ElsaInstancePlanResolutionResult[] results) : IElsaInstancePlanResolver

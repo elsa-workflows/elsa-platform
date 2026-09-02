@@ -99,6 +99,31 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Passes_admitted_non_38_package_versions_to_the_Bicep_authority()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args is ["group", "exists", ..], "false");
+        process.Success(args => args is ["group", "create", ..]);
+        process.Success(args => args.Contains("deployment") && args.Contains("group") && args.Contains("create"), FoundationOutputs());
+        var command = _fixture.Command(AzureProviderRunnerStep.Foundation) with
+        {
+            Plan = _fixture.Plan with
+            {
+                ElsaVersion = "5.0.0",
+                ReleaseLine = "5.0",
+                SqlWorkflowPackageVersion = "5.0.1",
+                SqlQuartzPackageVersion = "5.0.2"
+            }
+        };
+
+        await _fixture.Runner(process).RunAsync(command);
+
+        var args = process.Calls.Single(call => call.Contains("deployment") && call.Contains("create"));
+        Assert.Contains("sqlWorkflowPackageVersion=5.0.1", args);
+        Assert.Contains("sqlQuartzPackageVersion=5.0.2", args);
+    }
+
+    [Fact]
     public async Task Stops_before_a_following_mutation_when_template_authority_drifts()
     {
         var process = new FakeCommandProcess();
@@ -176,6 +201,33 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.Equal(AzureProviderRunnerOutcome.Failed, result.Outcome);
         Assert.Empty(resolver.Requests);
         Assert.DoesNotContain(process.Calls, call => call.Contains("set"));
+    }
+
+    [Fact]
+    public async Task Colliding_secret_names_fail_before_resolution_or_seeding()
+    {
+        var process = new FakeCommandProcess();
+        var resolver = new RecordingSecretResolver("database-password");
+        var command = _fixture.Command(AzureProviderRunnerStep.SeedSecrets, _fixture.FoundationResources with
+        {
+            RegistryResourceId = _fixture.RegistryId,
+            AcrPullDeploymentId = _fixture.RegistryDeploymentId,
+            AcrPullRoleAssignmentId = _fixture.RegistryRoleAssignmentId
+        }) with
+        {
+            Plan = _fixture.Plan with { SecretReferences = new Dictionary<string, string>
+            {
+                ["database:password"] = "secret://vault/database-password",
+                ["database_password"] = "secret://vault/other-database-password"
+            }}
+        };
+
+        var result = await _fixture.Runner(process, resolver).RunAsync(command);
+
+        Assert.Equal(AzureProviderRunnerOutcome.Failed, result.Outcome);
+        Assert.Equal("azure.runner.input-invalid", result.Code);
+        Assert.Empty(resolver.Requests);
+        Assert.Empty(process.Calls);
     }
 
     [Fact]
@@ -897,7 +949,8 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
             "valenceruntimeimages.azurecr.io/runtime-combined", new string('b', 64),
             "oci://release/manifest@sha256:" + new string('c', 64), "sha256:" + new string('c', 64),
             "oci://release/signature@sha256:" + new string('d', 64), "sha256:" + new string('d', 64),
-            new Dictionary<string, string>(), new string('a', 64));
+            new Dictionary<string, string>(), new string('a', 64),
+            "3.8.0-preview.5413", "3.8.0-preview.342");
         public AzureProviderResourceReferences FoundationResources { get; } = new(
             ResourceGroupName: "proof-rg",
             FoundationDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.Resources/deployments/foundation",

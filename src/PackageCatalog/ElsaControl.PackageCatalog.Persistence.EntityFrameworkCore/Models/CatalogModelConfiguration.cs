@@ -735,6 +735,8 @@ internal sealed class AzureProviderOperationConfiguration : IEntityTypeConfigura
         builder.Property(x => x.PlanFingerprint).HasMaxLength(64).IsRequired();
         builder.Property(x => x.TemplateFingerprint).HasMaxLength(64).IsRequired();
         builder.Property(x => x.ProviderScopeFingerprint).HasMaxLength(64);
+        builder.Property(x => x.SqlWorkflowPackageVersion).HasMaxLength(128);
+        builder.Property(x => x.SqlQuartzPackageVersion).HasMaxLength(128);
         builder.Property(x => x.ElsaVersion).HasMaxLength(128).IsRequired();
         builder.Property(x => x.ReleaseLine).HasMaxLength(64).IsRequired();
         builder.Property(x => x.Topology).HasMaxLength(64).IsRequired();

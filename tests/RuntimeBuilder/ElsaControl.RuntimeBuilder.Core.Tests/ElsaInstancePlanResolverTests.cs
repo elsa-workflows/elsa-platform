@@ -14,6 +14,27 @@ namespace ElsaControl.RuntimeBuilder.Core.Tests;
 public sealed class ElsaInstancePlanResolverTests
 {
     [Fact]
+    public async Task Governed_secret_references_reject_unsafe_locators_and_case_ambiguous_names()
+    {
+        var request = CreateRequest() with
+        {
+            GovernedSecretReferences = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["database:connectionstring"] = "secret://vault/database?token=unsafe",
+                ["Identity:SigningKey"] = "secret://vault/signing-key",
+                ["identity:signingkey"] = "secret://vault/other-signing-key"
+            }
+        };
+
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([]), new FakeCompatibility())
+            .ResolveAsync(request);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Findings, finding => finding.Code == "configuration.governedSecret.invalid");
+        Assert.DoesNotContain(result.Findings, finding => finding.Message.Contains("token", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task Resolves_arbitrary_release_line_to_immutable_plan_and_current_release()
     {
         var sourceId = Guid.NewGuid();

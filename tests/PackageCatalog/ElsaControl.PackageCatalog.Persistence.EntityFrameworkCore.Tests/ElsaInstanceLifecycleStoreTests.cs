@@ -1268,6 +1268,239 @@ public sealed class ElsaInstanceLifecycleStoreTests
     }
 
     [Fact]
+    public async Task Queued_managed_run_reconstructs_a_safe_provider_submission_after_restart()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var (workspace, accepted) = await QueueManagedLifecycleRunAsync(db, "Provider restart replay");
+
+        db.ChangeTracker.Clear();
+        var pending = await new EfCoreElsaInstanceLifecycleStore(
+            db,
+            EmptyResolutionInputSource.Instance,
+            new FixedTimeProvider(Now)).ListPendingProviderOperationsAsync(16);
+
+        var item = Assert.Single(pending);
+        Assert.Equal(workspace.Id, item.WorkspaceId);
+        Assert.Equal(accepted.Operation.Id, item.OperationId);
+        Assert.NotNull(item.Submission);
+        Assert.Equal("5.0", item.Submission!.Plan.Release.ReleaseLine);
+        Assert.Equal(accepted.Instance.Id, item.Submission.InstanceId);
+        Assert.Equal(accepted.Operation.Id, item.Submission.OperationId);
+        Assert.Equal("westeurope", item.Submission.Location);
+    }
+
+    [Fact]
+    public async Task Accepted_provider_handoff_does_not_replay_submission_on_every_poll()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var (workspace, accepted) = await QueueManagedLifecycleRunAsync(db, "Provider accepted handoff");
+        var store = new EfCoreElsaInstanceLifecycleStore(
+            db, EmptyResolutionInputSource.Instance, new FixedTimeProvider(Now));
+
+        await store.CommitProviderSubmissionAsync(new(
+            workspace.Id,
+            accepted.Instance.Id,
+            accepted.Operation.Id,
+            accepted.Operation.AttemptNumber,
+            "provider-operation-accepted",
+            Now));
+
+        db.ChangeTracker.Clear();
+        var item = Assert.Single(await store.ListPendingProviderOperationsAsync(16));
+        Assert.Equal(accepted.Operation.Id, item.OperationId);
+        Assert.Null(item.Submission);
+    }
+
+    [Fact]
+    public async Task Successful_replay_upgrades_uncertain_handoff_and_stops_future_submission_replays()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var (workspace, accepted) = await QueueManagedLifecycleRunAsync(db, "Provider uncertain replay");
+        var store = new EfCoreElsaInstanceLifecycleStore(
+            db, EmptyResolutionInputSource.Instance, new FixedTimeProvider(Now));
+
+        await store.CommitProviderSubmissionAsync(new(
+            workspace.Id,
+            accepted.Instance.Id,
+            accepted.Operation.Id,
+            accepted.Operation.AttemptNumber,
+            "provider-submission-uncertain",
+            Now));
+
+        db.ChangeTracker.Clear();
+        var pendingBeforeReplay = Assert.Single(await store.ListPendingProviderOperationsAsync(16));
+        Assert.NotNull(pendingBeforeReplay.Submission);
+
+        await store.CommitProviderSubmissionAsync(new(
+            workspace.Id,
+            accepted.Instance.Id,
+            accepted.Operation.Id,
+            accepted.Operation.AttemptNumber,
+            "provider-operation-replayed",
+            Now.AddSeconds(1)));
+
+        db.ChangeTracker.Clear();
+        var pendingAfterReplay = Assert.Single(await store.ListPendingProviderOperationsAsync(16));
+        Assert.Null(pendingAfterReplay.Submission);
+        var operation = await db.ElsaInstanceOperations.SingleAsync(x => x.Id == accepted.Operation.Id);
+        var run = await db.DeploymentRuns.SingleAsync(x => x.ElsaInstanceId == accepted.Instance.Id);
+        Assert.Null(operation.FailureCode);
+        Assert.Equal("provider.submission.accepted", run.RecoveryReason);
+    }
+
+    [Fact]
+    public async Task Unknown_reconciliation_preserves_uncertain_submission_for_restart_reconstruction()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var (workspace, accepted) = await QueueManagedLifecycleRunAsync(db, "Provider uncertain reconciliation");
+        var store = new EfCoreElsaInstanceLifecycleStore(
+            db, EmptyResolutionInputSource.Instance, new FixedTimeProvider(Now));
+
+        // This is the durable marker written when the provider may have accepted
+        // the request but the worker lost the response before recording success.
+        await store.CommitProviderSubmissionAsync(new(
+            workspace.Id,
+            accepted.Instance.Id,
+            accepted.Operation.Id,
+            accepted.Operation.AttemptNumber,
+            "provider-submission-uncertain",
+            Now));
+
+        var reconciled = await new ElsaInstanceProviderReconciliationService(
+                store,
+                new QueueProviderPort(new ElsaInstanceProviderObservation(
+                    ElsaInstanceProviderObservationKind.Unknown,
+                    ElsaObservedLifecycle.Unknown,
+                    ElsaInstanceProviderHealthGate.Unknown,
+                    "provider-observation-unknown")),
+                new FixedTimeProvider(Now.AddMinutes(1)))
+            .ReconcileAsync(workspace.Id, accepted.Operation.Id);
+
+        Assert.Equal(ElsaInstanceProviderReconciliationOutcome.RecoveryRequired, reconciled.Outcome);
+        Assert.False(reconciled.RetrySafe);
+
+        db.ChangeTracker.Clear();
+        var pending = Assert.Single(await new EfCoreElsaInstanceLifecycleStore(
+            db, EmptyResolutionInputSource.Instance, new FixedTimeProvider(Now.AddMinutes(1)))
+            .ListPendingProviderOperationsAsync(16));
+        Assert.NotNull(pending.Submission);
+        Assert.Equal(accepted.Operation.Id, pending.Submission!.OperationId);
+        Assert.Equal("provider.submission.uncertain",
+            (await db.ElsaInstanceOperations.SingleAsync(x => x.Id == accepted.Operation.Id)).FailureCode);
+        Assert.Equal("provider.submission.uncertain",
+            (await db.DeploymentRuns.SingleAsync(x => x.ElsaInstanceId == accepted.Instance.Id)).RecoveryReason);
+    }
+
+    [Fact]
+    public async Task Invalid_deleting_provider_submission_is_not_reconstructed_for_replay()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var (workspace, accepted) = await QueueManagedLifecycleRunAsync(db, "Provider deleting replay");
+        var operationStore = new EfCoreElsaInstanceLifecycleStore(
+            db, EmptyResolutionInputSource.Instance, new FixedTimeProvider(Now));
+
+        await operationStore.CommitProviderSubmissionAsync(new(
+            workspace.Id,
+            accepted.Instance.Id,
+            accepted.Operation.Id,
+            accepted.Operation.AttemptNumber,
+            "provider-submission-uncertain",
+            Now));
+
+        var instance = await db.ElsaInstances.SingleAsync(x => x.Id == accepted.Instance.Id);
+        instance.DesiredLifecycle = ElsaDesiredLifecycle.Deleting;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var pending = Assert.Single(await operationStore.ListPendingProviderOperationsAsync(16));
+        Assert.Null(pending.Submission);
+    }
+
+    [Fact]
+    public async Task Non_managed_actor_create_does_not_create_a_managed_deployment_shell()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = await CreateWorkspaceAsync(db, "Non-managed shell workspace");
+        var intent = CreateIntent() with
+        {
+            Placement = new ElsaPlacementIntent(
+                "self-hosted", "westeurope", "dedicated", "standard-small", "public", "self-hosted")
+        };
+
+        var accepted = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now))
+            .CreateAsync(new ElsaInstanceCreateRequest(
+                workspace.OrganizationId,
+                workspace.Id,
+                "Customer-hosted Elsa",
+                "customer-hosted-elsa",
+                intent,
+                "create-customer-hosted",
+                ActorAccountId: Guid.NewGuid()));
+
+        Assert.NotNull(accepted.Instance);
+        Assert.Empty(await db.DeploymentApplications.Where(x => x.WorkspaceId == workspace.Id).ToListAsync());
+        Assert.Empty(await db.DeploymentEnvironments.Where(x => x.WorkspaceId == workspace.Id).ToListAsync());
+    }
+
+    [Fact]
+    public async Task Recreating_a_deleted_slug_creates_a_distinct_managed_application_shell()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = await CreateWorkspaceAsync(db, "Managed recreate workspace");
+        var actor = Guid.NewGuid();
+        var service = new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now));
+        var first = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            workspace.OrganizationId,
+            workspace.Id,
+            "Managed runtime",
+            "reusable-runtime",
+            WorkerIntent(),
+            "create-reusable-first",
+            ActorAccountId: actor));
+
+        var firstEntity = await db.ElsaInstances.SingleAsync(x => x.Id == first.Instance.Id);
+        firstEntity.DeletedAt = Now.AddMinutes(1);
+        firstEntity.DesiredLifecycle = ElsaDesiredLifecycle.Deleting;
+        firstEntity.ObservedLifecycle = ElsaObservedLifecycle.Deleted;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var second = await service.CreateAsync(new ElsaInstanceCreateRequest(
+            workspace.OrganizationId,
+            workspace.Id,
+            "Managed runtime replacement",
+            "reusable-runtime",
+            WorkerIntent(),
+            "create-reusable-second",
+            ActorAccountId: actor));
+
+        Assert.NotEqual(first.Instance.Id, second.Instance.Id);
+        Assert.Equal(2, await db.DeploymentApplications.CountAsync(x => x.WorkspaceId == workspace.Id));
+        Assert.Equal(2, await db.DeploymentEnvironments.CountAsync(x => x.WorkspaceId == workspace.Id && x.ElsaInstanceId != null));
+    }
+
+    [Fact]
     public async Task Recovery_resume_requeues_the_managed_deployment_run()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

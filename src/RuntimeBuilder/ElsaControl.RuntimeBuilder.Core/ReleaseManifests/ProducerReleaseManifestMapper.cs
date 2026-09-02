@@ -50,7 +50,7 @@ internal static class ProducerReleaseManifestMapper
 
         ValidateSigning(root, options, source?.Workflow, findings);
         ValidateIntegrity(root, findings);
-        ValidateComponentDeclarations(root, source?.Commit, findings);
+        var componentDeclarations = ParseComponentDeclarations(root, source?.Commit, findings);
 
         var rootEvidence = ParseEvidence(root, "evidence", findings);
         if (rootEvidence.Count == 0
@@ -75,7 +75,8 @@ internal static class ProducerReleaseManifestMapper
                     lifecycle,
                     new(source.Repository, source.Commit, source.Workflow, source.RunId),
                     edition),
-            topologies);
+            topologies,
+            componentDeclarations);
     }
 
     private static IReadOnlyList<ReleaseManifestTopology> ParseDistributions(
@@ -778,10 +779,16 @@ internal static class ProducerReleaseManifestMapper
         }
     }
 
-    private static void ValidateComponentDeclarations(JsonElement root, string? commit, List<ReleaseManifestAdmissionFinding> findings)
+    private static ReleaseManifestComponentDeclarations? ParseComponentDeclarations(
+        JsonElement root,
+        string? commit,
+        List<ReleaseManifestAdmissionFinding> findings)
     {
         if (!root.TryGetProperty("componentDeclarations", out var declarations) || declarations.ValueKind != JsonValueKind.Object)
-            return;
+        {
+            Add(findings, "componentDeclarations.required", "Producer component declarations are required.", "componentDeclarations");
+            return null;
+        }
         var format = StringAny(declarations, ["format"], "componentDeclarations.format", findings);
         if (!string.Equals(format, "central-package-declarations-v1", StringComparison.Ordinal))
             Add(findings, "componentDeclarations.format.invalid", "The producer component declaration format is not supported.", "componentDeclarations");
@@ -792,28 +799,43 @@ internal static class ProducerReleaseManifestMapper
         var sourceCommit = sourceMarker > 0 ? source![(sourceMarker + 1)..] : null;
         if (commit is not null && !string.Equals(sourceCommit, commit, StringComparison.Ordinal))
             Add(findings, "componentDeclarations.source.mismatch", "Component declarations must be sourced from the release commit.", "componentDeclarations.source");
-        if (declarations.TryGetProperty("packages", out var packages) && packages.ValueKind == JsonValueKind.Array)
+        if (!declarations.TryGetProperty("packages", out var packages) || packages.ValueKind != JsonValueKind.Array)
         {
-            var ids = new List<string>();
-            foreach (var package in packages.EnumerateArray())
-            {
-                if (package.ValueKind != JsonValueKind.Object)
-                {
-                    Add(findings, "componentDeclarations.package.invalid", "Component declarations must contain package objects.", "componentDeclarations.packages");
-                    continue;
-                }
+            Add(findings, "componentDeclarations.packages.required", "Component declarations must contain a package array.", "componentDeclarations.packages");
+            return null;
+        }
 
-                var id = StringAny(package, ["id", "packageId"], "componentDeclarations.package.id", findings);
-                var version = StringAny(package, ["version"], "componentDeclarations.package.version", findings);
-                ValidateIdentity(id, "componentDeclarations.package.id", findings);
-                ValidateIdentity(version, "componentDeclarations.package.version", findings);
-                if (id is not null)
-                    ids.Add(id);
+        var parsed = new List<ReleaseManifestPackageDeclaration>();
+        var ids = new List<string>();
+        foreach (var package in packages.EnumerateArray())
+        {
+            if (package.ValueKind != JsonValueKind.Object)
+            {
+                Add(findings, "componentDeclarations.package.invalid", "Component declarations must contain package objects.", "componentDeclarations.packages");
+                continue;
             }
 
-            if (!ids.SequenceEqual(ids.Order(StringComparer.Ordinal), StringComparer.Ordinal))
-                Add(findings, "componentDeclarations.packages.unsorted", "Component declarations must be sorted by package identity.", "componentDeclarations.packages");
+            var id = StringAny(package, ["id", "packageId"], "componentDeclarations.package.id", findings);
+            var version = StringAny(package, ["version"], "componentDeclarations.package.version", findings);
+            ValidateIdentity(id, "componentDeclarations.package.id", findings);
+            ValidateIdentity(version, "componentDeclarations.package.version", findings);
+            if (id is null || version is null)
+                continue;
+
+            ids.Add(id);
+            parsed.Add(new(id, version));
         }
+
+        if (parsed.Count == 0)
+            Add(findings, "componentDeclarations.packages.required", "Component declarations must contain at least one package.", "componentDeclarations.packages");
+        if (!ids.SequenceEqual(ids.Order(StringComparer.Ordinal), StringComparer.Ordinal))
+            Add(findings, "componentDeclarations.packages.unsorted", "Component declarations must be sorted by package identity.", "componentDeclarations.packages");
+        if (ids.Distinct(StringComparer.OrdinalIgnoreCase).Count() != ids.Count)
+            Add(findings, "componentDeclarations.packages.duplicate", "Component declarations must not contain duplicate package identities.", "componentDeclarations.packages");
+
+        return format is null || digest is null || parsed.Count == 0
+            ? null
+            : new(format, digest, parsed);
     }
 
     private static string CanonicalDigest(JsonElement root, bool removeSelfDigest)

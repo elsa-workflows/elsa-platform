@@ -22,6 +22,12 @@ public sealed class Elsa38CombinedProofResolutionFactoryTests
         Assert.Equal("3.8.0-preview.5413", translated.Plan!.ElsaVersion);
         Assert.Equal(ImageDigest["sha256:".Length..], translated.Plan.ImageDigest);
         Assert.Equal(3, translated.Plan.SecretReferences.Count);
+        Assert.DoesNotContain(result.Plan!.Packages, package =>
+            package.PackageId is AzureWorkloadPlanTranslator.SqlWorkflowPackageId or AzureWorkloadPlanTranslator.SqlQuartzPackageId);
+        Assert.Collection(
+            result.Plan.Release.ComponentDeclarations!.Packages,
+            package => Assert.Equal(AzureWorkloadPlanTranslator.SqlWorkflowPackageId, package.Id),
+            package => Assert.Equal(AzureWorkloadPlanTranslator.SqlQuartzPackageId, package.Id));
     }
 
     [Fact]

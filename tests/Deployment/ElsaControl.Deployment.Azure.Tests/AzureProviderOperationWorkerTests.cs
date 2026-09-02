@@ -187,7 +187,9 @@ public sealed class AzureProviderOperationWorkerTests
             null,
             null,
             null,
-            new Dictionary<string, string>());
+            new Dictionary<string, string>(),
+            SqlWorkflowPackageVersion: "3.8.0-preview.5413",
+            SqlQuartzPackageVersion: "3.8.0-preview.5413");
         return WithComputedMetadata(operation);
     }
 
@@ -211,7 +213,10 @@ public sealed class AzureProviderOperationWorkerTests
             operation.ReleaseManifestSignatureDigest,
             operation.ReleaseManifestReference,
             operation.ReleaseManifestSignatureReference,
-            operation.SafeSecretReferences);
+            operation.SafeSecretReferences,
+            operation.ProviderScopeFingerprint,
+            operation.SqlWorkflowPackageVersion,
+            operation.SqlQuartzPackageVersion);
         return operation with
         {
             RequestHash = AzureProviderOperationValidation.ComputeRequestHash(request),
@@ -286,6 +291,12 @@ public sealed class AzureProviderOperationWorkerTests
         public List<AzureProviderOperationTransition> Transitions { get; } = [];
         public int MarkUnrestorableCount { get; private set; }
 
+        public async Task<AzureProviderOperationCreateResult> CreateOrGetWithResultAsync(
+            AzureProviderOperationRequest request,
+            DateTimeOffset now,
+            CancellationToken cancellationToken = default) =>
+            new(await CreateOrGetAsync(request, now, cancellationToken), Replayed: false);
+
         public Task<AzureProviderOperation> CreateOrGetAsync(AzureProviderOperationRequest request, DateTimeOffset now, CancellationToken cancellationToken = default) =>
             Task.FromResult(Operation);
 
@@ -340,6 +351,12 @@ public sealed class AzureProviderOperationWorkerTests
     {
         public List<AzureProviderOperation> Operations { get; } = operations.ToList();
         public int MarkUnrestorableCount { get; private set; }
+
+        public async Task<AzureProviderOperationCreateResult> CreateOrGetWithResultAsync(
+            AzureProviderOperationRequest request,
+            DateTimeOffset now,
+            CancellationToken cancellationToken = default) =>
+            new(await CreateOrGetAsync(request, now, cancellationToken), Replayed: false);
 
         public Task<AzureProviderOperation> CreateOrGetAsync(AzureProviderOperationRequest request, DateTimeOffset now, CancellationToken cancellationToken = default) =>
             Task.FromResult(Operations.Single(operation => operation.TargetKey == request.TargetKey));

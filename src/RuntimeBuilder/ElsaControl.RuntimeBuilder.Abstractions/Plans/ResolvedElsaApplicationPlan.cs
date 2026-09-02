@@ -36,6 +36,7 @@ public sealed record ResolvedElsaApplicationPlan(
         return this with
         {
             Packages = packages.Select(x => x.Normalize()).OrderBy(x => x.SourceId).ThenBy(x => x.PackageId, StringComparer.OrdinalIgnoreCase).ThenBy(x => x.Version, StringComparer.OrdinalIgnoreCase).ToArray(),
+            Release = Release?.Normalize() ?? throw ResolvedPlanNormalization.Missing("release"),
             Topology = Topology?.Normalize() ?? throw ResolvedPlanNormalization.Missing("topology"),
             Configuration = Configuration?.Normalize() ?? throw ResolvedPlanNormalization.Missing("configuration"),
             Capacity = Capacity?.Normalize() ?? throw ResolvedPlanNormalization.Missing("capacity"),
@@ -61,7 +62,40 @@ public sealed record ResolvedElsaRelease(
     string SourceRepository,
     string SourceCommit,
     string ReleaseManifestReference,
-    string ReleaseManifestDigest);
+    string ReleaseManifestDigest,
+    /// <summary>
+    /// Exact signed declarations for packages baked into the selected release image.
+    /// This is deliberately separate from customer-selected <see cref="ResolvedElsaPackage"/> values.
+    /// </summary>
+    ResolvedReleaseComponentDeclarations? ComponentDeclarations = null)
+{
+    internal ResolvedElsaRelease Normalize() => this with
+    {
+        ComponentDeclarations = ComponentDeclarations?.Normalize()
+    };
+}
+
+public sealed record ResolvedReleaseComponentDeclarations(
+    string Format,
+    string Digest,
+    IReadOnlyList<ResolvedReleasePackageDeclaration> Packages)
+{
+    internal ResolvedReleaseComponentDeclarations Normalize()
+    {
+        var packages = ResolvedPlanNormalization.RequireItems(Packages, "release.componentDeclarations.packages");
+        return this with
+        {
+            Packages = packages
+                .OrderBy(x => x.Id, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(x => x.Version, StringComparer.OrdinalIgnoreCase)
+                .ToArray()
+        };
+    }
+}
+
+public sealed record ResolvedReleasePackageDeclaration(
+    string Id,
+    string Version);
 
 /// <summary>
 /// A topology is a composition of independently addressable runtime components.

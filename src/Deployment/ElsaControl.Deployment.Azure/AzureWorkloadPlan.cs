@@ -25,7 +25,9 @@ public sealed record AzureWorkloadPlan(
     string ReleaseManifestSignatureReference,
     string ReleaseManifestSignatureDigest,
     IReadOnlyDictionary<string, string> SecretReferences,
-    string Fingerprint);
+    string Fingerprint,
+    string? SqlWorkflowPackageVersion = null,
+    string? SqlQuartzPackageVersion = null);
 
 public sealed record AzureWorkloadPlanTranslation(
     AzureWorkloadPlan? Plan,

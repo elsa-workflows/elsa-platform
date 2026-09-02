@@ -19,6 +19,14 @@ public sealed record AzureProviderOperationStatusResponse(
     AzureProviderOperation Operation,
     IReadOnlyList<AzureProviderOperationTransition> Transitions);
 
+/// <summary>
+/// The provider-facing result of a durable operation reservation. Replay status comes from the
+/// store's atomic create-or-get decision rather than from executor attempt counters.
+/// </summary>
+public sealed record AzureProviderOperationSubmissionResult(
+    AzureProviderOperation Operation,
+    bool Replayed);
+
 public interface IAzureProviderOperationService
 {
     Task<AzureProviderOperation> SubmitAsync(
@@ -38,23 +46,42 @@ public interface IAzureProviderOperationService
 }
 
 /// <summary>
+/// Optional richer submission contract used by lifecycle adapters that need to distinguish a
+/// newly reserved provider operation from a replay. The legacy operation service remains stable
+/// for callers that only need the durable operation.
+/// </summary>
+public interface IAzureProviderOperationReplayService
+{
+    Task<AzureProviderOperationSubmissionResult> SubmitWithReplayAsync(
+        Guid workspaceId,
+        AzureProviderOperationSubmission submission,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
 /// Creates durable Azure operations from an admitted provider plan. The operation store retains
 /// the safe provider-plan fields needed for a worker to recover after a process restart; raw
 /// resolved-plan JSON, credentials and secret values are never accepted.
 /// </summary>
 public sealed class AzureProviderOperationService(
     IAzureProviderOperationStore store,
-    TimeProvider? timeProvider = null) : IAzureProviderOperationService
+    TimeProvider? timeProvider = null) : IAzureProviderOperationService, IAzureProviderOperationReplayService
 {
     private const int MaximumIdempotencyKeyLength = 512;
     private const string DeleteIdempotencySuffix = ":delete";
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
-    public Task<AzureProviderOperation> SubmitAsync(
+    public async Task<AzureProviderOperation> SubmitAsync(
         Guid workspaceId,
         AzureProviderOperationSubmission submission,
         CancellationToken cancellationToken = default) =>
-        SubmitCoreAsync(workspaceId, submission, AzureProviderOperationAction.Reconcile, cancellationToken);
+        (await SubmitWithReplayAsync(workspaceId, submission, cancellationToken)).Operation;
+
+    public Task<AzureProviderOperationSubmissionResult> SubmitWithReplayAsync(
+        Guid workspaceId,
+        AzureProviderOperationSubmission submission,
+        CancellationToken cancellationToken = default) =>
+        SubmitCoreWithReplayAsync(workspaceId, submission, AzureProviderOperationAction.Reconcile, cancellationToken);
 
     public async Task<AzureProviderOperation> SubmitDeleteAsync(
         Guid workspaceId,
@@ -132,6 +159,13 @@ public sealed class AzureProviderOperationService(
         Guid workspaceId,
         AzureProviderOperationSubmission submission,
         AzureProviderOperationAction action,
+        CancellationToken cancellationToken) =>
+        (await SubmitCoreWithReplayAsync(workspaceId, submission, action, cancellationToken)).Operation;
+
+    private async Task<AzureProviderOperationSubmissionResult> SubmitCoreWithReplayAsync(
+        Guid workspaceId,
+        AzureProviderOperationSubmission submission,
+        AzureProviderOperationAction action,
         CancellationToken cancellationToken)
     {
         if (workspaceId == Guid.Empty)
@@ -151,7 +185,8 @@ public sealed class AzureProviderOperationService(
             plan,
             action,
             submission.ProviderScopeFingerprint);
-        return await store.CreateOrGetAsync(operationRequest, _timeProvider.GetUtcNow(), cancellationToken);
+        var result = await store.CreateOrGetWithResultAsync(operationRequest, _timeProvider.GetUtcNow(), cancellationToken);
+        return new(result.Operation, result.Replayed);
     }
 
     public static AzureProviderOperationRequest CreateOperationRequest(
@@ -183,7 +218,9 @@ public sealed class AzureProviderOperationService(
                 pair => pair.Key,
                 pair => pair.Value,
                 StringComparer.OrdinalIgnoreCase)),
-            providerScopeFingerprint);
+            providerScopeFingerprint,
+            plan.SqlWorkflowPackageVersion,
+            plan.SqlQuartzPackageVersion);
 
     internal static AzureProviderOperationRequest CreateOperationRequest(AzureProviderOperation operation) =>
         new(
@@ -205,7 +242,9 @@ public sealed class AzureProviderOperationService(
             operation.ReleaseManifestReference,
             operation.ReleaseManifestSignatureReference,
             operation.SafeSecretReferences,
-            operation.ProviderScopeFingerprint);
+            operation.ProviderScopeFingerprint,
+            operation.SqlWorkflowPackageVersion,
+            operation.SqlQuartzPackageVersion);
 
     internal static AzureWorkloadPlan? TryRestorePlan(AzureProviderOperation operation)
     {
@@ -239,7 +278,9 @@ public sealed class AzureProviderOperationService(
                 operationRequest.ReleaseManifestSignatureReference!,
                 operationRequest.ReleaseManifestSignatureDigest!,
                 operationRequest.SecretReferences!,
-                operationRequest.PlanFingerprint);
+                operationRequest.PlanFingerprint,
+                operationRequest.SqlWorkflowPackageVersion,
+                operationRequest.SqlQuartzPackageVersion);
 
             AzureProviderExecutor.ValidateExecutionRequest(
                 new AzureProviderExecutionRequest(operationRequest, plan));
@@ -270,9 +311,10 @@ public sealed class AzureProviderOperationService(
             throw new ArgumentException("The provider location is invalid.", parameterName);
         if (!IsFingerprint(plan.Fingerprint))
             throw new ArgumentException("The provider plan fingerprint is invalid.", parameterName);
-        if (string.IsNullOrWhiteSpace(plan.ImageRepository) ||
-            !plan.ImageRepository.StartsWith($"{AzureWorkloadPlanTranslator.SupportedRegistryHost}/", StringComparison.Ordinal) ||
-            plan.ImageRepository.Any(char.IsWhiteSpace) || plan.ImageRepository.Any(char.IsControl))
+        if (!string.Equals(
+                plan.ImageRepository,
+                AzureWorkloadPlanTranslator.SupportedRepository,
+                StringComparison.Ordinal))
             throw new ArgumentException("The provider image repository is invalid.", parameterName);
         if (plan.ImageDigest is null || plan.ImageDigest.Length != 64 || !plan.ImageDigest.All(Uri.IsHexDigit))
             throw new ArgumentException("The provider image digest is invalid.", parameterName);
@@ -283,6 +325,9 @@ public sealed class AzureProviderOperationService(
             throw new ArgumentException("Provider evidence references must be safe immutable locators.", parameterName);
         if (!AzureProviderOperationValidation.IsSafeSecretReferences(plan.SecretReferences))
             throw new ArgumentException("Provider secret references must be safe immutable locators.", parameterName);
+        if (!AzureProviderOperationValidation.IsSafePackageVersion(plan.SqlWorkflowPackageVersion) ||
+            !AzureProviderOperationValidation.IsSafePackageVersion(plan.SqlQuartzPackageVersion))
+            throw new ArgumentException("Provider release package metadata is required and must use exact NuGet versions.", parameterName);
     }
 
     private static bool IsFingerprint(string? value) => value is not null && value.Length == 64 && value.All(Uri.IsHexDigit);

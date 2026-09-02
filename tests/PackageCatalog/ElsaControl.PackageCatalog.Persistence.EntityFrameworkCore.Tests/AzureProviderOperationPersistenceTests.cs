@@ -39,11 +39,13 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         var request = Request();
         using var db = CreateContext();
         var store = new AzureProviderOperationStore(db);
-        var first = await store.CreateOrGetAsync(request, DateTimeOffset.UtcNow);
-        var second = await store.CreateOrGetAsync(request, DateTimeOffset.UtcNow.AddMinutes(1));
+        var first = await store.CreateOrGetWithResultAsync(request, DateTimeOffset.UtcNow);
+        var second = await store.CreateOrGetWithResultAsync(request, DateTimeOffset.UtcNow.AddMinutes(1));
 
-        Assert.Equal(first.Id, second.Id);
-        var accepted = Assert.Single(await store.ListTransitionsAsync(_workspaceId, first.Id));
+        Assert.False(first.Replayed);
+        Assert.True(second.Replayed);
+        Assert.Equal(first.Operation.Id, second.Operation.Id);
+        var accepted = Assert.Single(await store.ListTransitionsAsync(_workspaceId, first.Operation.Id));
         Assert.Equal("Azure provider operation accepted.", accepted.Message);
     }
 
@@ -172,6 +174,23 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         Assert.NotNull(active);
         Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, active.Status);
         Assert.Equal(new AzureProviderResourceReferences(), active.Resources);
+    }
+
+    [Fact]
+    public async Task Latest_reconcile_includes_precheckpoint_operation_without_resource_references()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var operation = await store.CreateOrGetAsync(Request(), now);
+
+        var latest = await store.GetLatestReconcileAsync(
+            _workspaceId, Request().TargetKey.ToUpperInvariant(), providerScopeFingerprint: null);
+
+        Assert.NotNull(latest);
+        Assert.Equal(operation.Id, latest.Id);
+        Assert.Equal(AzureProviderOperationAction.Reconcile, latest.Action);
+        Assert.Equal(new AzureProviderResourceReferences(), latest.Resources);
     }
 
     [Fact]

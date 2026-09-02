@@ -20,6 +20,7 @@ public sealed class GovernedReleaseCatalogPersistenceTests
         Assert.Equal(GovernedReleaseCatalogWriteStatus.Stored, result.Status);
         Assert.Single(await db.GovernedReleaseCatalog.ToListAsync());
         var release = await db.GovernedReleaseCatalog
+            .Include(x => x.PackageDeclarations)
             .Include(x => x.Topologies)
             .ThenInclude(x => x.RuntimeKinds)
             .Include(x => x.Topologies)
@@ -33,8 +34,24 @@ public sealed class GovernedReleaseCatalogPersistenceTests
         Assert.Equal(2, release.Topologies.SelectMany(x => x.Components).Count());
         Assert.Equal(2, release.Topologies.SelectMany(x => x.RuntimeKinds).Count());
         Assert.Equal("preview", release.CatalogLifecycle);
+        Assert.Equal("central-package-declarations-v1", release.ComponentDeclarationsFormat);
+        Assert.Equal(Digest('4'), release.ComponentDeclarationsDigest);
+        Assert.Equal(
+            ["Elsa.Persistence.EFCore.SqlServer@3.8.0-preview.5413", "Elsa.Scheduling.Quartz.EFCore.SqlServer@3.8.0-preview.5413"],
+            release.PackageDeclarations
+                .OrderBy(x => x.PackageId, StringComparer.OrdinalIgnoreCase)
+                .Select(x => $"{x.PackageId}@{x.Version}")
+                .ToArray());
         Assert.All(release.Topologies.SelectMany(x => x.Components), component =>
             Assert.StartsWith("sha256:", component.ImageDigest, StringComparison.OrdinalIgnoreCase));
+        var queried = await database.Store.QueryAsync(new GovernedReleaseCatalogQuery(TopologyId: "server"));
+        var declarations = Assert.Single(queried).ComponentDeclarations;
+        Assert.NotNull(declarations);
+        Assert.Equal("central-package-declarations-v1", declarations!.Format);
+        Assert.Equal(Digest('4'), declarations.Digest);
+        Assert.Equal(
+            ["Elsa.Persistence.EFCore.SqlServer@3.8.0-preview.5413", "Elsa.Scheduling.Quartz.EFCore.SqlServer@3.8.0-preview.5413"],
+            declarations.Packages.Select(package => $"{package.Id}@{package.Version}").ToArray());
     }
 
     [Fact]
@@ -88,6 +105,33 @@ public sealed class GovernedReleaseCatalogPersistenceTests
         Assert.Equal(GovernedReleaseCatalogWriteStatus.Conflict, result.Status);
         Assert.Equal(2, await db.GovernedReleaseCatalogComponents.CountAsync());
         Assert.DoesNotContain(await db.GovernedReleaseCatalogComponents.Select(x => x.ImageDigest).ToListAsync(), x => x == Digest('f'));
+    }
+
+    [Fact]
+    public async Task Changed_release_package_declarations_conflict_without_mutating_the_aggregate()
+    {
+        await using var database = await CreateMigratedDatabaseAsync();
+        var original = CreateEntries();
+        await database.Store.StoreAsync(original);
+
+        var conflicting = original.Select(entry => entry with
+        {
+            ComponentDeclarations = entry.ComponentDeclarations! with
+            {
+                Packages = entry.ComponentDeclarations.Packages
+                    .Select(package => package.Id == "Elsa.Persistence.EFCore.SqlServer"
+                        ? package with { Version = "5.0.0" }
+                        : package)
+                    .ToArray()
+            }
+        }).ToArray();
+
+        var result = await database.Store.StoreAsync(conflicting);
+
+        Assert.Equal(GovernedReleaseCatalogWriteStatus.Conflict, result.Status);
+        Assert.DoesNotContain(
+            await database.Context.GovernedReleaseCatalogPackageDeclarations.Select(x => x.Version).ToArrayAsync(),
+            version => version == "5.0.0");
     }
 
     [Fact]
@@ -364,7 +408,12 @@ public sealed class GovernedReleaseCatalogPersistenceTests
              new("provenance", $"https://evidence.example/provenance@{Digest('2')}", Digest('2')),
              new("vulnerability-scan", $"https://evidence.example/scan@{Digest('3')}", Digest('3'))]),
         "preview",
-        admittedAt);
+        admittedAt,
+        new(
+            "central-package-declarations-v1",
+            Digest('4'),
+            [new("Elsa.Persistence.EFCore.SqlServer", distribution.ReleaseVersion),
+             new("Elsa.Scheduling.Quartz.EFCore.SqlServer", distribution.ReleaseVersion)]));
 
     private static string Digest(char value) => $"sha256:{new string(value, 64)}";
 }

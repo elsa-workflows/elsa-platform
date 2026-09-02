@@ -27,6 +27,9 @@ public static class Elsa38CombinedProofResolutionFactory
     private const string DistributionId = "valence-runtime";
     private const string ReleaseLine = "3.8";
     private const string ImageRepository = "valenceruntimeimages.azurecr.io/runtime-combined";
+    private const string ComponentDeclarationsFormat = "central-package-declarations-v1";
+    private const string ComponentDeclarationsDigest = "sha256:de8c2ed6d667cfaa24038d097dba01a19e24fa4a3a6805c40c51f853a838b1c9";
+    private const string SqlPackageVersion = "3.8.0-preview.5413";
 
     public static ElsaInstancePlanResolutionResult Create(Elsa38CombinedProofAdmission admission)
     {
@@ -48,11 +51,20 @@ public static class Elsa38CombinedProofResolutionFactory
             ResolvedElsaApplicationPlanSchema.CurrentVersion,
             new(DistributionId, ReleaseLine, admission.Version,
                 "https://github.com/valence-works/elsa-production-image", admission.SourceCommit,
-                admission.ManifestReference, admission.ManifestDigest),
+                admission.ManifestReference, admission.ManifestDigest,
+                new(
+                    ComponentDeclarationsFormat,
+                    ComponentDeclarationsDigest,
+                    [
+                        new(AzureWorkloadPlanTranslator.SqlWorkflowPackageId, SqlPackageVersion),
+                        new(AzureWorkloadPlanTranslator.SqlQuartzPackageId, SqlPackageVersion)
+                    ])),
             new("combined", [component]),
-            [new(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), "Elsa.Core", admission.Version,
-                admission.ImageDigest, ["elsa.server"],
-                [new("runtime", "Elsa.Runtime", ["elsa.server"], ["workflow.runtime"])])],
+            [
+                new(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), "Elsa.Core", admission.Version,
+                    admission.ImageDigest, ["elsa.server"],
+                    [new("runtime", "Elsa.Runtime", ["elsa.server"], ["workflow.runtime"])])
+            ],
             new([
                 new("Database:ConnectionString", "string", true, true, false, "ELSA_DATABASE_CONNECTION", null, admission.SecretReferences["sql-connection"], null),
                 new("Identity:SigningKey", "string", true, true, false, "ELSA_IDENTITY_SIGNING_KEY", null, admission.SecretReferences["identity-signing-key"], null),

@@ -83,7 +83,12 @@ public sealed class ElsaInstancePlanResolver(
             return ElsaInstancePlanResolutionResult.Failed(findings);
 
         var selectedFeatures = packageResolution.Packages.SelectMany(x => x.Features).ToArray();
-        var configuration = ResolveConfiguration(request.BuilderIntent, request.InstanceIntent.Application, packageResolution.FeatureMetadata, findings);
+        var configuration = ResolveConfiguration(
+            request.BuilderIntent,
+            request.InstanceIntent.Application,
+            request.GovernedSecretReferences,
+            packageResolution.FeatureMetadata,
+            findings);
         var basePlan = CreateBasePlan(request, packageResolution.Packages, configuration, selectedFeatures, findings);
         if (findings.Count > 0)
             return ElsaInstancePlanResolutionResult.Failed(findings);
@@ -251,10 +256,37 @@ public sealed class ElsaInstancePlanResolver(
     private ResolvedConfigurationShape ResolveConfiguration(
         RuntimeBuilderIntent builderIntent,
         ElsaApplicationIntent application,
+        IReadOnlyDictionary<string, string>? governedSecretReferences,
         IReadOnlyList<FeatureConfigurationCandidate> features,
         List<ElsaInstancePlanResolutionFinding> findings)
     {
         var entries = new List<ResolvedConfigurationEntry>();
+        var governedSecrets = governedSecretReferences ?? new Dictionary<string, string>();
+        if (governedSecrets.Count > 64)
+            findings.Add(Error("configuration.governedSecrets.tooMany", "Governed secret references exceed the supported limit.", "configuration"));
+        var governedSecretKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in governedSecrets)
+        {
+            var key = pair.Key?.Trim();
+            if (string.IsNullOrWhiteSpace(key) || !governedSecretKeys.Add(key) ||
+                !ConfigurationKeyPolicy.IsSafe(key) ||
+                !IsSafeSecretReference(pair.Value))
+            {
+                findings.Add(Error("configuration.governedSecret.invalid", "A governed secret reference is invalid or ambiguous.", "configuration"));
+                continue;
+            }
+
+            entries.Add(new(
+                key,
+                "string",
+                true,
+                true,
+                true,
+                null,
+                null,
+                pair.Value.Trim(),
+                null));
+        }
         var ambiguousSettingNames = features
             .SelectMany(candidate => (candidate.Feature.Settings ?? [])
                 .Where(setting => !string.IsNullOrWhiteSpace(setting.Name))

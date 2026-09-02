@@ -16,7 +16,6 @@ namespace ElsaControl.Deployment.Azure;
 public sealed class AzureBicepProviderRunner : IAzureProviderRunner
 {
     private const string AcrPullRoleDefinitionId = "7f951dda-4ed3-4680-a7ca-43fe172d538d";
-    private const string SupportedImageRepository = "valenceruntimeimages.azurecr.io/runtime-combined";
     private const string KeyVaultSecretsUserRoleDefinitionId = "4633458b-17de-408a-b874-0445c86b69e6";
     private const string KeyVaultSecretsOfficerRoleDefinitionId = "b86a8fe4-44ce-4948-aee5-eccb2c155cd7";
     private const string TemporaryFirewallRuleName = "elsa108-bootstrap";
@@ -278,7 +277,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         {
             secretReferences = (command.Plan.SecretReferences ?? EmptyReferences)
                 .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
-                .Select(x => (x.Key, Reference: x.Value, Name: MapSecretName(x.Key)))
+                .Select(x => (x.Key, Reference: x.Value, Name: AzureProviderOperationValidation.MapSecretName(x.Key)))
                 .ToArray();
         }
         catch (ArgumentException exception)
@@ -1272,6 +1271,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             $"sqlConnectionSecretName={SqlConnectionSecretName}", $"signingKeySecretName={SigningKeySecretName}",
             $"adminPasswordSecretName={AdminPasswordSecretName}", $"adminUsername={AdminUsername}",
             $"elsaVersion={command.Plan.ElsaVersion}",
+            $"sqlWorkflowPackageVersion={command.Plan.SqlWorkflowPackageVersion}", $"sqlQuartzPackageVersion={command.Plan.SqlQuartzPackageVersion}",
             $"templateFingerprint={command.Context.TemplateFingerprint}", "deployWorkload=false", "--query", "properties.outputs", "--output", "json", "--only-show-errors"];
 
     private IReadOnlyList<string> AcrDeploymentArguments(AzureProviderRunnerCommand command, string identityId, string principalId, string deploymentName) =>
@@ -1290,6 +1290,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             $"sqlConnectionSecretName={SqlConnectionSecretName}", $"signingKeySecretName={SigningKeySecretName}",
             $"adminPasswordSecretName={AdminPasswordSecretName}", $"adminUsername={AdminUsername}",
             $"elsaVersion={command.Plan.ElsaVersion}",
+            $"sqlWorkflowPackageVersion={command.Plan.SqlWorkflowPackageVersion}", $"sqlQuartzPackageVersion={command.Plan.SqlQuartzPackageVersion}",
             $"templateFingerprint={command.Context.TemplateFingerprint}", "deployWorkload=true", $"workloadRevisionSuffix={revision}",
             $"stableTrafficRevisionName={stable ?? string.Empty}", "--query", "properties.outputs", "--output", "json", "--only-show-errors"];
 
@@ -1312,11 +1313,12 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             throw new InvalidOperationException("The Azure operation is not bound to the configured target scope.");
         if (!string.Equals(command.Plan.Topology, AzureWorkloadPlanTranslator.SupportedTopology, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(command.Plan.Isolation, AzureWorkloadPlanTranslator.SupportedIsolation, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(command.Plan.ReleaseLine, AzureWorkloadPlanTranslator.SupportedReleaseLine, StringComparison.OrdinalIgnoreCase) ||
             !BelongsToReleaseLine(command.Plan.ReleaseLine, command.Plan.ElsaVersion) ||
-            !string.Equals(command.Plan.ImageRepository, SupportedImageRepository, StringComparison.Ordinal) ||
+            !string.Equals(command.Plan.ImageRepository, AzureWorkloadPlanTranslator.SupportedRepository, StringComparison.Ordinal) ||
             !AzureWorkloadPlanTranslator.IsSupportedLocation(command.Plan.Location) ||
             command.Plan.ImageDigest.Length != 64 || !command.Plan.ImageDigest.All(Uri.IsHexDigit) ||
+            !AzureProviderOperationValidation.IsSafePackageVersion(command.Plan.SqlWorkflowPackageVersion) ||
+            !AzureProviderOperationValidation.IsSafePackageVersion(command.Plan.SqlQuartzPackageVersion) ||
             !AzureProviderOperationValidation.IsSafeImmutableEvidenceReference(command.Plan.ReleaseManifestReference, command.Plan.ReleaseManifestDigest) ||
             !AzureProviderOperationValidation.IsSafeImmutableEvidenceReference(command.Plan.ReleaseManifestSignatureReference, command.Plan.ReleaseManifestSignatureDigest) ||
             !AzureProviderOperationValidation.IsSafeSecretReferences(command.Plan.SecretReferences))
@@ -1535,21 +1537,6 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     private static bool IsSafeWorkloadName(string? value) => value is not null && value.Length is >= 3 and <= 16 &&
         char.IsAsciiLetterOrDigit(value[0]) && char.IsAsciiLetterOrDigit(value[^1]) &&
         value.All(character => char.IsAsciiLetterOrDigit(character) || character == '-');
-    private static string MapSecretName(string key)
-    {
-        var normalized = key.Trim().ToLowerInvariant();
-        var mapped = normalized switch
-        {
-            "database:connectionstring" or "database:connection-string" or "sql-connection" => "sql-connection",
-            "identity:signingkey" or "identity:signing-key" or "identity-signing-key" => "identity-signing-key",
-            "admin:password" or "admin-password" => "admin-password",
-            _ => normalized.Replace(':', '-').Replace('_', '-')
-        };
-        if (mapped.Length is 0 or > 127 || mapped.Any(character => !char.IsAsciiLetterOrDigit(character) && character != '-'))
-            throw new ArgumentException("The secret reference key cannot be mapped to a governed Azure secret name.", nameof(key));
-        return mapped;
-    }
-
     private static void ValidateExactResourceId(string id, string subscription, string group, string provider, string type, string name)
     {
         var expected = $"/subscriptions/{subscription}/resourceGroups/{group}/providers/{provider}/{type}/{name}";
