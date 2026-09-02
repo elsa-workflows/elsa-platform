@@ -11,12 +11,16 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class PublicBuilderBundleApiTests
+public sealed class PublicBuilderBundleApiTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public PublicBuilderBundleApiTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Trusted_builder_client_can_generate_bundle()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var response = await BuilderClient(app).PostControlJsonAsync("/api/builder/bundle", MinimalRequest());
 
@@ -34,7 +38,7 @@ public sealed class PublicBuilderBundleApiTests
     [Fact]
     public async Task Dependency_resolved_plan_can_be_posted_directly_to_bundle()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var sourceId = Guid.Empty;
         await app.SeedAsync(db =>
         {
@@ -94,7 +98,7 @@ public sealed class PublicBuilderBundleApiTests
     [Fact]
     public async Task Direct_untrusted_bundle_calls_are_rejected()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
 
         var response = await app.CreateClient().PostControlJsonAsync("/api/builder/bundle", MinimalRequest());
@@ -105,7 +109,7 @@ public sealed class PublicBuilderBundleApiTests
     [Fact]
     public async Task Builder_credentials_do_not_authorize_admin_apis()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = BuilderClient(app);
 
@@ -119,7 +123,7 @@ public sealed class PublicBuilderBundleApiTests
     [Fact]
     public async Task Admin_credentials_do_not_authorize_builder_bundle_generation()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateClient();
         client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, "local-dev-key");
@@ -132,7 +136,7 @@ public sealed class PublicBuilderBundleApiTests
     [Fact]
     public async Task Blocked_domain_response_returns_empty_files()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
 
         var response = await BuilderClient(app).PostControlJsonAsync("/api/builder/bundle", MinimalRequest(imageSlug: "missing"));
