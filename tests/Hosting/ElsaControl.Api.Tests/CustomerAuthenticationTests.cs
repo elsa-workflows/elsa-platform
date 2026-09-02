@@ -8,8 +8,12 @@ using Microsoft.Net.Http.Headers;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class CustomerAuthenticationTests
+public sealed class CustomerAuthenticationTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public CustomerAuthenticationTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Session_reports_login_disabled_when_customer_oidc_is_not_configured()
     {
@@ -67,7 +71,7 @@ public sealed class CustomerAuthenticationTests
     [Fact]
     public void Customer_session_cookie_is_separate_from_operator_cookie()
     {
-        using var app = new ControlApiTestApplication();
+        var app = _app;
         var options = app.Services.GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>();
 
         var customer = options.Get(CustomerAuthenticationDefaults.CookieScheme);
@@ -99,7 +103,7 @@ public sealed class CustomerAuthenticationTests
     [Fact]
     public async Task Logout_rejects_cross_site_post()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var client = app.CreateClient(new() { AllowAutoRedirect = false });
         using var request = new HttpRequestMessage(HttpMethod.Post, CustomerAuthenticationDefaults.LogoutPath);
         request.Headers.Add(HeaderNames.Origin, "https://evil.example");
@@ -112,7 +116,7 @@ public sealed class CustomerAuthenticationTests
     [Fact]
     public async Task Logout_accepts_same_origin_post()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var client = app.CreateClient(new() { AllowAutoRedirect = false });
         using var request = new HttpRequestMessage(HttpMethod.Post, CustomerAuthenticationDefaults.LogoutPath);
         request.Headers.Add(HeaderNames.Origin, "http://localhost");

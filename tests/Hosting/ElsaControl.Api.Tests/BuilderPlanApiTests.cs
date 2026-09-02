@@ -14,12 +14,16 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class BuilderPlanApiTests
+public sealed class BuilderPlanApiTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public BuilderPlanApiTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Public_plan_returns_resolved_state_and_auto_added_shape()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
 
         var response = await app.CreateClient().PostControlJsonAsync("/api/builder/plan", new BuilderPlanApiRequest(MinimalIntent()));
@@ -78,7 +82,7 @@ public sealed class BuilderPlanApiTests
     [Fact]
     public async Task Public_plan_completes_a_fifteen_package_sixty_seven_feature_intent_under_ten_seconds()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var sourceId = Guid.Empty;
         await app.SeedAsync(db =>
         {
@@ -118,7 +122,7 @@ public sealed class BuilderPlanApiTests
     [Fact]
     public async Task Workspace_plan_requires_membership()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var member = WorkspaceClient(app, "member");
         var workspaceId = (await member.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Workspaces.Single().Id;
