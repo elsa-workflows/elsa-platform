@@ -17,6 +17,24 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Classify changed paths for .NET gate
+        id: dotnet-gate
+        env:
+          CI_EVENT_NAME: ${{ github.event_name }}
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 scripts/ci/classify_dotnet_changes.py \
+            --event-name "$CI_EVENT_NAME" \
+            --base-sha "$CI_BASE_SHA" \
+            --head-sha "$CI_HEAD_SHA" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Validate CI path classification contract
+        run: python3 scripts/tests/test_ci_path_classification.py
 
       - name: Validate Azure deployment workflow contract
         run: python3 scripts/tests/test_azure_api_deploy_workflow.py
@@ -47,21 +65,30 @@ jobs:
           az bicep build --file infra/azure-workload-proof/acr-pull-role.bicep --stdout >/dev/null
 
       - name: Setup .NET SDK
+        if: ${{ steps.dotnet-gate.outputs.run_dotnet == 'true' }}
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
 
       - name: Show dotnet version
+        if: ${{ steps.dotnet-gate.outputs.run_dotnet == 'true' }}
         run: dotnet --version
 
       - name: Restore
+        if: ${{ steps.dotnet-gate.outputs.run_dotnet == 'true' }}
         run: dotnet restore ElsaControl.sln
 
       - name: Build
+        if: ${{ steps.dotnet-gate.outputs.run_dotnet == 'true' }}
         run: dotnet build ElsaControl.sln --configuration Release --no-restore
 
       - name: Test
+        if: ${{ steps.dotnet-gate.outputs.run_dotnet == 'true' }}
         run: dotnet test ElsaControl.sln --configuration Release --no-build --verbosity normal
+
+      - name: Report skipped .NET gate
+        if: ${{ steps.dotnet-gate.outputs.run_dotnet == 'false' }}
+        run: echo "::notice::The .NET setup, restore, build, and test steps were skipped because this pull request changed only paths on the conservative unrelated-path allowlist."
 
   console:
     name: Console quality gates
