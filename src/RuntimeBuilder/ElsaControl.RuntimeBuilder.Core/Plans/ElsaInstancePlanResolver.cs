@@ -184,6 +184,23 @@ public sealed class ElsaInstancePlanResolver(
                 continue;
             }
 
+            var extensionClass = MapExtensionClass(version.ExtensionClass);
+            if (extensionClass == ResolvedExtensionClass.Unspecified)
+            {
+                findings.Add(Error("package.extensionClass.required", "A selected package is missing its governed extension classification.", "packages"));
+                continue;
+            }
+            if (!IsSha256(version.PolicyEvidenceDigest))
+            {
+                findings.Add(Error("package.policyEvidenceDigest.invalid", "A selected package is missing immutable policy evidence.", "packages"));
+                continue;
+            }
+            if (!ResolvedExtensionPolicy.IsAllowed(request.InstanceIntent.Placement.IsolationProfile, extensionClass))
+            {
+                findings.Add(Error("package.extensionClass.forbidden", "The selected extension class is not permitted by the isolation profile.", "packages"));
+                continue;
+            }
+
             if (!RuntimeKindCompatibilityPolicy.IsCompatible(version.RuntimeKinds, topologyRuntimeKinds))
                 findings.Add(Error("package.runtimeKindUnsupported", "A selected package is incompatible with the selected topology runtime kinds.", "packages"));
 
@@ -226,7 +243,9 @@ public sealed class ElsaInstancePlanResolver(
                 version.Version,
                 version.ManifestDigest!,
                 version.RuntimeKinds ?? [],
-                features));
+                features,
+                extensionClass,
+                version.PolicyEvidenceDigest));
         }
 
         if (findings.Count > 0)
@@ -788,6 +807,9 @@ public sealed class ElsaInstancePlanResolver(
     {
         if (string.Equals(placement.TargetMode, "managed", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(placement.RegionCode))
             findings.Add(Error("placement.region.required", "Managed placement requires a governed region outcome.", "placement"));
+        if (string.Equals(placement.TargetMode, "managed", StringComparison.OrdinalIgnoreCase) &&
+            !ResolvedExtensionPolicy.IsAvailableForManagedLaunch(placement.IsolationProfile))
+            findings.Add(Error("isolation.profile.unavailable", "The selected isolation profile is not available for managed deployment.", "isolation"));
     }
 
     private void ValidateLegacyBuilderInputs(RuntimeBuilderIntent builderIntent, List<ElsaInstancePlanResolutionFinding> findings)
@@ -845,6 +867,8 @@ public sealed class ElsaInstancePlanResolver(
 
             if (selection.SourceId == Guid.Empty || !IsSafeIdentityText(selection.PackageId) || !IsSafeIdentityText(selection.Version))
                 findings.Add(Error("package.selection.invalid", "A package selection is invalid.", "packages"));
+            else if (!ResolvedPackageVersionPolicy.IsExact(selection.Version))
+                findings.Add(Error("package.version.inexact", "An exact semantic package version is required.", "packages"));
 
             foreach (var featureId in selection.SelectedFeatures ?? [])
                 if (!IsSafeIdentityText(featureId))
@@ -925,6 +949,15 @@ public sealed class ElsaInstancePlanResolver(
         && value.Length == 71
         && value.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)
         && value[7..].All(Uri.IsHexDigit);
+
+    private static ResolvedExtensionClass MapExtensionClass(PackageExtensionClass extensionClass) =>
+        extensionClass switch
+        {
+            PackageExtensionClass.BuiltIn => ResolvedExtensionClass.BuiltIn,
+            PackageExtensionClass.ValenceApproved => ResolvedExtensionClass.ValenceApproved,
+            PackageExtensionClass.ArbitraryCustomer => ResolvedExtensionClass.ArbitraryCustomer,
+            _ => ResolvedExtensionClass.Unspecified
+        };
 
     private static bool IsStrictEvidenceReference(string reference, string? digest) =>
         (digest is null || ReleaseManifestAdmissionService.IsDigest(digest))

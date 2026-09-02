@@ -35,7 +35,7 @@ values, or a provider-specific reconciliation command.
 | `SchemaVersion` | Version of this contract, independent of Elsa versions | Elsa Control contract |
 | `Release` | Distribution, release line, exact version, source commit and verified release-manifest identity | Image/distribution producer, verified and projected by Control |
 | `Topology` | One or more runtime components, their roles, immutable images, runtime kinds, endpoints and capabilities | Producer manifest projected by Control |
-| `Packages` | Exact package source/version/manifest identities, resolved runtime kinds and selected compatible features | Package Catalog and specification metadata |
+| `Packages` | Exact package source/version/manifest identities, server-derived extension class and policy-evidence digest, resolved runtime kinds and selected compatible features | Package Catalog ownership, approval/validation state and specification metadata |
 | `Configuration` | Typed configuration shape, safe non-secret values, and provider-backed secret references | Desired state plus package feature metadata |
 | `Capacity` | Component replica/compute bounds and durable storage outcomes | Control policy/profile |
 | `Network` | Ingress/egress and endpoint outcomes, without provider resource shape | Control policy/profile and resolved feature requirements |
@@ -58,7 +58,11 @@ registry.example/runtime@sha256:<64 hex characters>
 
 Tags such as `latest` and `3.8.0-preview.5413` may be retained as discovery metadata in
 the producer catalog, but they are not valid provider inputs. Package selections carry a
-catalog source ID, exact package version and manifest digest. The release carries the
+catalog source ID, exact semantic package version, manifest digest, extension class and
+policy-evidence digest. The class is derived by Control from catalog ownership and governed
+state; it is never accepted from customer intent. The evidence digest is a deterministic
+resolution-time decision seal, not a package signature or a substitute for revocation
+handling. The release carries the
 producer manifest reference and digest, plus its source repository and commit.
 
 ### Topology composition
@@ -102,11 +106,11 @@ to the catalog transition policy and lifecycle services, not to a provider-speci
 |---|---|---|
 | `RuntimeBuilderIntent.Image` | Release/topology lookup input | Slug/tag selects catalog metadata; the plan stores verified image digest and component topology, never the mutable tag as the deployment identity |
 | `RuntimeImage` | Producer-projected topology/component metadata | Existing UI/build hints are not provider resources; topology components become the stable provider input |
-| `BundlePackageSelection` | `ResolvedElsaPackage` and `ResolvedElsaFeature` | Source ID, package ID and exact version are retained; the package manifest hash/digest, runtime kinds and compatibility findings explain resolution |
+| `BundlePackageSelection` | `ResolvedElsaPackage` and `ResolvedElsaFeature` | Source ID, package ID and exact version are retained; server-derived extension class, package manifest digest, policy-evidence digest, runtime kinds and compatibility findings explain resolution |
 | `BundlePackageSelection.Settings` | `ResolvedConfigurationShape.Entries` | Non-secret values may be resolved; secret settings become safe secret references and raw values are rejected |
 | `PackageSourceSelection` | Package source identity used during resolution | Source URLs are catalog metadata; credentials and feed tokens never enter the plan |
 | `InfrastructureSelection` | `ProviderCapabilities` and capacity/network outcomes | Existing provider IDs/strategies are resolver inputs or local bundle hints; Azure/provider resource identifiers do not cross this boundary |
-| `PublicPackageVersionProjection` | Package/feature compatibility input and evidence | Package metadata can constrain runtime kinds, dependencies, conflicts and required capabilities |
+| `PublicPackageVersionProjection` | Package/feature compatibility input and evidence | Catalog-owned public sources can produce `ValenceApproved`; workspace-owned sources remain `ArbitraryCustomer` even when workspace-approved. Approval, validity, listing, suspicious-change and immutable-manifest facts are bound into safe evidence |
 | `CompatibilityCheckResult` | `Evidence` plus resolver findings | Compatibility is evaluated before a plan is accepted; a provider does not reimplement catalog policy |
 | `RuntimeConfiguration.IntentJson` | Customer-intent input | It is not itself a provider plan and must be resolved before provider execution |
 | `RuntimeConfigurationVersion` | Versioned desired-state source | A resolved plan can be persisted inside an immutable desired-state/deployment revision |
@@ -117,9 +121,9 @@ to the catalog transition policy and lifecycle services, not to a provider-speci
 | `DeploymentCommand*` | Remote apply/checkpoint transport | Commands contain safe metadata and references only; the resolved plan is not a license to place raw secrets in history |
 
 This is an adapter boundary, not a replacement for the existing Runtime Builder,
-Package Catalog or Deployment models. A later resolver service should translate those
-models into this contract and a provider adapter should translate it into a provider
-plan.
+Package Catalog or Deployment models. The instance resolver translates those models
+into this contract, and each provider adapter translates the validated result into its
+provider plan.
 
 ## Elsa 3.8 Combined example
 
@@ -243,6 +247,8 @@ differences are catalog data and the component composition; no `Elsa3Plan`,
 
 - missing or unsupported contract versions and release identity fields;
 - image/package/evidence values without a `sha256` digest;
+- floating package versions, missing or unknown extension classification/evidence,
+  unavailable isolation profiles and extension classes forbidden by the launch matrix;
 - mutable image tag references, duplicate component/package/feature/configuration
   identities, and empty topology/runtime-kind collections;
 - embedded secret values or invalid secret references;
@@ -258,12 +264,14 @@ null nested records/items are rejected deterministically at serialization, while
 Unknown JSON properties are ignored by the default `System.Text.Json` deserializer so
 additive fields can be introduced in a later schema version. Removing or changing field
 meaning requires a new schema version and an explicit compatibility/migration decision.
+The new package authority fields are additive in contract v1, but legacy stored plans that
+omit them deserialize to `Unspecified`/`null` and are deliberately rejected at restore,
+reservation and provider translation boundaries. They are never silently upgraded.
 
 The v1 tests cover deterministic serialization, round-trip deserialization, immutable
-identity validation, secret rejection, and both Combined and Server-plus-Studio
-compositions across `3.8` and `4.0` release lines. A resolver implementation should add
-catalog-backed compatibility and manifest-verification tests when the producer release
-manifest issue is delivered.
+identity validation, secret rejection, catalog-derived extension authority, fail-closed
+legacy plans, lifecycle reservation and provider-boundary rejection, and arbitrary Elsa
+release lines without a major-version enum.
 
 ## Follow-up implementation
 

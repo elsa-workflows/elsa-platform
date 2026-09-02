@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using ElsaControl.PackageCatalog.Abstractions.Catalog;
 using ElsaControl.PackageCatalog.Core.Accounts;
@@ -168,6 +170,8 @@ public sealed class PublicCatalogQueries(CatalogDbContext dbContext) : IPublicCa
     {
         var compatibility = ResolveRuntimeCompatibility(version);
         var featureCategories = GetFeatureCategories(version.ManifestJson);
+        var manifestDigest = NormalizeManifestDigest(version.ManifestHash);
+        var extensionClass = ClassifyExtension(version.Package?.Source);
         var versionRuntimeKinds = compatibility.PackageRuntimeKinds.Count > 0
             ? compatibility.PackageRuntimeKinds
             : compatibility.FeatureRuntimeKinds.Values
@@ -183,7 +187,53 @@ public sealed class PublicCatalogQueries(CatalogDbContext dbContext) : IPublicCa
             versionRuntimeKinds,
             version.PublishedAt,
             version.Features.Select(feature => ToFeatureProjection(feature, version, compatibility, featureCategories)).ToList(),
-            NormalizeManifestDigest(version.ManifestHash));
+            manifestDigest,
+            extensionClass,
+            CreatePolicyEvidenceDigest(version, manifestDigest, extensionClass));
+    }
+
+    private static PackageExtensionClass ClassifyExtension(PackageSource? source) =>
+        source switch
+        {
+            {
+                Visibility: PackageSourceVisibility.Public,
+                OwnerWorkspaceId: null,
+                ApprovalPolicy: PackageSourceApprovalPolicy.AutoApprove or PackageSourceApprovalPolicy.Manual
+            } => PackageExtensionClass.ValenceApproved,
+            {
+                Visibility: PackageSourceVisibility.Workspace,
+                OwnerWorkspaceId: not null,
+                ApprovalPolicy: PackageSourceApprovalPolicy.AutoApprove or PackageSourceApprovalPolicy.Manual
+            } => PackageExtensionClass.ArbitraryCustomer,
+            _ => PackageExtensionClass.Unspecified
+        };
+
+    private static string? CreatePolicyEvidenceDigest(
+        PackageVersion version,
+        string? manifestDigest,
+        PackageExtensionClass extensionClass)
+    {
+        var package = version.Package;
+        var source = package?.Source;
+        if (package is null || source is null || manifestDigest is null || extensionClass == PackageExtensionClass.Unspecified)
+            return null;
+
+        var canonical = string.Join('\n',
+            "elsa-control/package-policy/v1",
+            source.Id.ToString("D"),
+            source.OwnerWorkspaceId?.ToString("D") ?? "-",
+            source.Visibility.ToString(),
+            source.ApprovalPolicy.ToString(),
+            package.PackageId.Trim().ToLowerInvariant(),
+            version.Version.Trim().ToLowerInvariant(),
+            manifestDigest.ToLowerInvariant(),
+            extensionClass.ToString(),
+            package.Approved,
+            version.ApprovalStatus,
+            version.ValidationStatus,
+            version.IsListed,
+            version.SuspiciousChangeDetected);
+        return $"sha256:{Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)))}";
     }
 
     private static string? NormalizeManifestDigest(string? manifestHash)

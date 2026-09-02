@@ -108,7 +108,7 @@ public sealed class AdmittedAzureProofPlanFactoryTests
                         new(AzureWorkloadPlanTranslator.SqlQuartzPackageId, "3.8.0-preview.342")
                     ])),
             new("combined", [component]),
-            [new(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), "Elsa.Core", "3.8.0-preview.5413", ImageDigest, ["elsa.server"], [new("runtime", "Elsa.Runtime", ["elsa.server"], ["workflow.runtime"])])],
+            [new(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), "Elsa.Core", "3.8.0-preview.5413", ImageDigest, ["elsa.server"], [new("runtime", "Elsa.Runtime", ["elsa.server"], ["workflow.runtime"])], ResolvedExtensionClass.BuiltIn, ImageDigest)],
             new([
                 new("Database:ConnectionString", "string", true, true, false, "ELSA_DATABASE_CONNECTION", null, "secret://vault/database-connection", null),
                 new("Identity:SigningKey", "string", true, true, false, "ELSA_IDENTITY_SIGNING_KEY", null, "secret://vault/identity-signing-key", null),

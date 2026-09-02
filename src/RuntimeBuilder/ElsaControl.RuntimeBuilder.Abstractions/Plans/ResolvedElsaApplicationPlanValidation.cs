@@ -94,7 +94,14 @@ public static class ResolvedElsaApplicationPlanValidator
                 findings.Add(new("package.source.required", "Package source identity is required.", $"package:{package.PackageId}"));
             Required(package.PackageId, "package.id.required", "Package identity is required.", "packages");
             Required(package.Version, "package.version.required", "Package version is required.", $"package:{package.PackageId}");
+            if (!string.IsNullOrWhiteSpace(package.Version) && !ResolvedPackageVersionPolicy.IsExact(package.Version))
+                findings.Add(new("package.version.inexact", "An exact semantic package version is required.", "packages"));
             Digest(package.ManifestDigest, "package.manifestDigest.invalid", $"package:{package.PackageId}/manifestDigest", findings);
+            if (!Enum.IsDefined(package.ExtensionClass) || package.ExtensionClass == ResolvedExtensionClass.Unspecified)
+                findings.Add(new("package.extensionClass.required", "Package extension classification is required.", "packages"));
+            else if (!ResolvedExtensionPolicy.IsAllowed(plan.Isolation, package.ExtensionClass))
+                findings.Add(new("package.extensionClass.forbidden", "The selected extension class is not permitted by the isolation profile.", "packages"));
+            Digest(package.PolicyEvidenceDigest, "package.policyEvidenceDigest.invalid", "packages", findings);
             if (package.RuntimeKinds is null || package.RuntimeKinds.Count == 0)
                 findings.Add(new("package.runtimeKinds.required", "At least one package runtime kind is required.", $"package:{package.PackageId}/runtimeKinds"));
             Duplicate(package.Features, x => x.Id, "feature.duplicate", $"package:{package.PackageId}");
@@ -216,6 +223,8 @@ public static class ResolvedElsaApplicationPlanValidator
         }
 
         Required(plan.Isolation, "isolation.required", "Isolation outcome is required.", "isolation");
+        if (!string.IsNullOrWhiteSpace(plan.Isolation) && !ResolvedExtensionPolicy.IsKnownIsolation(plan.Isolation))
+            findings.Add(new("isolation.profile.unknown", "The selected isolation profile is unknown.", "isolation"));
         if (plan.ReleasePolicy is null)
             findings.Add(new("releasePolicy.required", "Release policy is required.", "releasePolicy"));
         else

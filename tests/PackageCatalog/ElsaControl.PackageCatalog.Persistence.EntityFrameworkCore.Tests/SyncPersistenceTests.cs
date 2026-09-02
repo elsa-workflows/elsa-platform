@@ -1,4 +1,5 @@
 using System.Data.Common;
+using ElsaControl.PackageCatalog.Abstractions.Catalog;
 using ElsaControl.PackageCatalog.Core.Accounts;
 using ElsaControl.PackageCatalog.Core.Manifests;
 using ElsaControl.PackageCatalog.Core.Packaging;
@@ -154,6 +155,74 @@ public sealed class SyncPersistenceTests
         Assert.Equal(new[] { "elsa.server", "acme.custom-host" }.Order(), projectedVersion.Features.Single(x => x.FeatureId == "server").RuntimeKinds.Order());
 
         Assert.Equal("elsa.studio", Assert.Single(projectedVersion.Features.Single(x => x.FeatureId == "studio").RuntimeKinds));
+    }
+
+    [Fact]
+    public async Task Public_catalog_derives_extension_class_and_evidence_from_source_authority()
+    {
+        await using var db = await CreateOpenDbContextAsync();
+        var organization = new Organization { Name = "Customer organization" };
+        var workspace = new Workspace { Name = "Customer workspace", Organization = organization };
+        var governedSource = PublicCatalogSeedData.CreatePackageSource();
+        var governedPackage = PublicCatalogSeedData.CreatePackage(governedSource, "Elsa.Governed");
+        var governedVersion = PublicCatalogSeedData.AddVersion(governedPackage);
+        governedVersion.ManifestHash = new string('a', 64);
+        var workspaceSource = PublicCatalogSeedData.CreatePackageSource();
+        workspaceSource.Visibility = PackageSourceVisibility.Workspace;
+        workspaceSource.OwnerWorkspaceId = workspace.Id;
+        workspaceSource.OwnerWorkspace = workspace;
+        var workspacePackage = PublicCatalogSeedData.CreatePackage(workspaceSource, "Customer.Arbitrary");
+        var workspaceVersion = PublicCatalogSeedData.AddVersion(workspacePackage);
+        workspaceVersion.ManifestHash = new string('b', 64);
+        db.AddRange(organization, workspace, governedSource, workspaceSource);
+        await db.SaveChangesAsync();
+
+        var queries = new PublicCatalogQueries(db);
+        var governed = await queries.GetVersionForWorkspaceAsync(
+            workspace.Id,
+            governedSource.Id,
+            governedPackage.PackageId,
+            governedVersion.Version);
+        var arbitrary = await queries.GetVersionForWorkspaceAsync(
+            workspace.Id,
+            workspaceSource.Id,
+            workspacePackage.PackageId,
+            workspaceVersion.Version);
+        var governedAgain = await queries.GetVersionForWorkspaceAsync(
+            workspace.Id,
+            governedSource.Id,
+            governedPackage.PackageId,
+            governedVersion.Version);
+
+        Assert.Equal(PackageExtensionClass.ValenceApproved, Assert.IsType<PublicPackageVersionProjection>(governed).ExtensionClass);
+        Assert.Equal(PackageExtensionClass.ArbitraryCustomer, Assert.IsType<PublicPackageVersionProjection>(arbitrary).ExtensionClass);
+        Assert.StartsWith("sha256:", governed.PolicyEvidenceDigest, StringComparison.Ordinal);
+        Assert.StartsWith("sha256:", arbitrary.PolicyEvidenceDigest, StringComparison.Ordinal);
+        Assert.Equal(governed.PolicyEvidenceDigest, Assert.IsType<PublicPackageVersionProjection>(governedAgain).PolicyEvidenceDigest);
+        Assert.NotEqual(governed.PolicyEvidenceDigest, arbitrary.PolicyEvidenceDigest);
+    }
+
+    [Fact]
+    public async Task Public_catalog_withholds_unapproved_invalid_or_suspicious_versions_from_admission()
+    {
+        await using var db = await CreateOpenDbContextAsync();
+        var source = PublicCatalogSeedData.CreatePackageSource();
+        var package = PublicCatalogSeedData.CreatePackage(source, "Elsa.Governed");
+        PublicCatalogSeedData.AddVersion(package, "1.0.0", manifestHash: new string('a', 64));
+        PublicCatalogSeedData.AddVersion(
+            package, "1.0.1", approvalStatus: PackageApprovalStatus.Pending, manifestHash: new string('b', 64));
+        PublicCatalogSeedData.AddVersion(
+            package, "1.0.2", validationStatus: ValidationStatus.Invalid, manifestHash: new string('c', 64));
+        PublicCatalogSeedData.AddVersion(
+            package, "1.0.3", suspicious: true, manifestHash: new string('d', 64));
+        db.Add(source);
+        await db.SaveChangesAsync();
+
+        var versions = await new PublicCatalogQueries(db).ListVersionsAsync(source.Id, package.PackageId);
+
+        var admitted = Assert.Single(versions);
+        Assert.Equal("1.0.0", admitted.Version);
+        Assert.Equal(PackageExtensionClass.ValenceApproved, admitted.ExtensionClass);
     }
 
     [Fact]

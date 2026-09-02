@@ -49,7 +49,9 @@ public sealed class ElsaInstancePlanResolverTests
                 "email", "Elsa.Email", "2.0.0", new(sourceId, "source", "https://packages.example.test/index.json"),
                 "Elsa.Email.Feature", "Email", null, null, Categories: [], RequiredCapabilities: [], RuntimeKinds: ["elsa.server"],
                 Dependencies: [], Conflicts: [], Infrastructure: [], Advanced: false, Experimental: false, ExtensionsJson: "{}", Settings: [])],
-            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            PackageExtensionClass.ValenceApproved,
+            "sha256:9999999999999999999999999999999999999999999999999999999999999999");
         var intent = new ElsaInstanceIntent(
             new("future-runtime", "5.0", channel: "preview"),
             new("server-studio", featurePresetId: "starter", packagePolicy: "approved"),
@@ -73,8 +75,137 @@ public sealed class ElsaInstancePlanResolverTests
         Assert.Equal(result.Reference, result.CurrentResolvedRelease.PlanReference);
         Assert.Equal(result.Plan!.Release.ReleaseManifestDigest, result.CurrentResolvedRelease.ManifestDigest);
         Assert.Equal("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", result.Plan.Packages[0].ManifestDigest);
+        Assert.Equal(ResolvedExtensionClass.ValenceApproved, result.Plan.Packages[0].ExtensionClass);
+        Assert.Equal("sha256:9999999999999999999999999999999999999999999999999999999999999999", result.Plan.Packages[0].PolicyEvidenceDigest);
         Assert.Equal("sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", Assert.Single(result.CurrentResolvedRelease.ComponentDigests).Digest);
         Assert.Equal(result.Reference.ContentHash, ComputeHash(result.Plan));
+    }
+
+    [Fact]
+    public async Task Rejects_arbitrary_customer_package_before_plan_projection()
+    {
+        var sourceId = Guid.NewGuid();
+        var source = new PublicPackageSourceProjection(sourceId, "customer", "https://packages.example.test/customer.json");
+        var version = new PublicPackageVersionProjection(
+            "Customer.Arbitrary",
+            "1.0.0",
+            source,
+            "1.0",
+            ["elsa.server"],
+            null,
+            [],
+            Digest('a'),
+            PackageExtensionClass.ArbitraryCustomer,
+            Digest('9'));
+        var baseline = CreateRequest();
+        var request = baseline with
+        {
+            BuilderIntent = baseline.BuilderIntent with
+            {
+                Packages = [new(sourceId, "Customer.Arbitrary", "1.0.0", [], null)]
+            }
+        };
+
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([version]), new FakeCompatibility())
+            .ResolveAsync(request);
+
+        var finding = Assert.Single(result.Findings, candidate => candidate.Code == "package.extensionClass.forbidden");
+        Assert.False(result.Succeeded);
+        Assert.Null(result.Plan);
+        Assert.Equal("packages", finding.Scope);
+        Assert.DoesNotContain("Customer.Arbitrary", System.Text.Json.JsonSerializer.Serialize(result.Findings), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Rejects_missing_catalog_extension_authority_before_plan_projection()
+    {
+        var sourceId = Guid.NewGuid();
+        var source = new PublicPackageSourceProjection(sourceId, "catalog", "https://packages.example.test/index.json");
+        var version = new PublicPackageVersionProjection(
+            "Elsa.Email", "2.0.0", source, "1.0", ["elsa.server"], null, [], Digest('a'));
+        var baseline = CreateRequest();
+        var request = baseline with
+        {
+            BuilderIntent = baseline.BuilderIntent with
+            {
+                Packages = [new(sourceId, "Elsa.Email", "2.0.0", [], null)]
+            }
+        };
+
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([version], deriveGovernedAuthority: false), new FakeCompatibility())
+            .ResolveAsync(request);
+
+        Assert.False(result.Succeeded);
+        Assert.Null(result.Plan);
+        Assert.Contains(result.Findings, candidate => candidate.Code == "package.extensionClass.required");
+    }
+
+    [Fact]
+    public async Task Rejects_floating_package_version_before_catalog_lookup()
+    {
+        var sourceId = Guid.NewGuid();
+        var source = new PublicPackageSourceProjection(sourceId, "catalog", "https://packages.example.test/index.json");
+        var version = new PublicPackageVersionProjection(
+            "Elsa.Email", "1.*", source, "1.0", ["elsa.server"], null, [], Digest('a'),
+            PackageExtensionClass.ValenceApproved, Digest('9'));
+        var baseline = CreateRequest();
+        var request = baseline with
+        {
+            BuilderIntent = baseline.BuilderIntent with
+            {
+                Packages = [new(sourceId, "Elsa.Email", "1.*", [], null)]
+            }
+        };
+
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([version]), new FakeCompatibility())
+            .ResolveAsync(request);
+
+        Assert.False(result.Succeeded);
+        Assert.Null(result.Plan);
+        Assert.Contains(result.Findings, candidate => candidate.Code == "package.version.inexact");
+    }
+
+    [Fact]
+    public async Task Rejects_unavailable_isolation_profile_even_without_package_selections()
+    {
+        var baseline = CreateRequest();
+        var request = baseline with
+        {
+            InstanceIntent = baseline.InstanceIntent with
+            {
+                Placement = baseline.InstanceIntent.Placement with { IsolationProfile = "shared" }
+            }
+        };
+
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([]), new FakeCompatibility())
+            .ResolveAsync(request);
+
+        Assert.False(result.Succeeded);
+        Assert.Null(result.Plan);
+        Assert.Contains(result.Findings, candidate => candidate.Code == "isolation.profile.unavailable");
+    }
+
+    [Fact]
+    public async Task Preserves_known_nonmanaged_isolation_profile_without_enabling_managed_launch()
+    {
+        var baseline = CreateRequest();
+        var request = baseline with
+        {
+            InstanceIntent = baseline.InstanceIntent with
+            {
+                Placement = baseline.InstanceIntent.Placement with
+                {
+                    TargetMode = "customer-owned",
+                    IsolationProfile = "private"
+                }
+            }
+        };
+
+        var result = await new ElsaInstancePlanResolver(new FakeCatalog([]), new FakeCompatibility())
+            .ResolveAsync(request);
+
+        Assert.True(result.Succeeded, string.Join("; ", result.Findings.Select(candidate => candidate.Code)));
+        Assert.Equal("private", result.Plan!.Isolation);
     }
 
     [Fact]
@@ -1027,15 +1158,27 @@ public sealed class ElsaInstancePlanResolverTests
             new("subject", "paid", manifest.Topologies[0].Id, AllowLegacySchema: true));
     }
 
-    private sealed class FakeCatalog(IReadOnlyList<PublicPackageVersionProjection> versions) : IPublicCatalogQueries
+    private sealed class FakeCatalog(
+        IReadOnlyList<PublicPackageVersionProjection> versions,
+        bool deriveGovernedAuthority = true) : IPublicCatalogQueries
     {
+        private readonly IReadOnlyList<PublicPackageVersionProjection> _versions = versions
+            .Select(version => deriveGovernedAuthority && version.ExtensionClass == PackageExtensionClass.Unspecified
+                ? version with
+                {
+                    ExtensionClass = PackageExtensionClass.ValenceApproved,
+                    PolicyEvidenceDigest = Digest('9')
+                }
+                : version)
+            .ToArray();
+
         public Task<IReadOnlyList<PublicPackageProjection>> ListPackagesAsync(IReadOnlyList<Guid> sourceIds, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<PublicPackageProjection>> ListPackagesForWorkspaceAsync(Guid workspaceId, IReadOnlyList<Guid> sourceIds, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<PublicPackageProjection?> GetPackageAsync(Guid sourceId, string packageId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<PublicPackageProjection?> GetPackageForWorkspaceAsync(Guid workspaceId, Guid sourceId, string packageId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<IReadOnlyList<PublicPackageVersionProjection>> ListVersionsAsync(Guid sourceId, string packageId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<PublicPackageVersionProjection>>(versions.Where(x => x.Source.Id == sourceId && x.PackageId == packageId).ToArray());
+        public Task<IReadOnlyList<PublicPackageVersionProjection>> ListVersionsAsync(Guid sourceId, string packageId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<PublicPackageVersionProjection>>(_versions.Where(x => x.Source.Id == sourceId && x.PackageId == packageId).ToArray());
         public Task<IReadOnlyList<PublicPackageVersionProjection>> ListVersionsForWorkspaceAsync(Guid workspaceId, Guid sourceId, string packageId, CancellationToken cancellationToken = default) => ListVersionsAsync(sourceId, packageId, cancellationToken);
-        public Task<PublicPackageVersionProjection?> GetVersionAsync(Guid sourceId, string packageId, string version, CancellationToken cancellationToken = default) => Task.FromResult(versions.SingleOrDefault(x => x.Source.Id == sourceId && x.PackageId == packageId && x.Version == version));
+        public Task<PublicPackageVersionProjection?> GetVersionAsync(Guid sourceId, string packageId, string version, CancellationToken cancellationToken = default) => Task.FromResult(_versions.SingleOrDefault(x => x.Source.Id == sourceId && x.PackageId == packageId && x.Version == version));
         public Task<PublicPackageVersionProjection?> GetVersionForWorkspaceAsync(Guid workspaceId, Guid sourceId, string packageId, string version, CancellationToken cancellationToken = default) => GetVersionAsync(sourceId, packageId, version, cancellationToken);
         public Task<IReadOnlyList<PublicFeatureProjection>> ListFeaturesAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<PublicFeatureProjection?> GetFeatureAsync(string featureId, CancellationToken cancellationToken = default) => throw new NotSupportedException();

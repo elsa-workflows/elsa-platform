@@ -82,6 +82,46 @@ public sealed class AzureWorkloadPlanTranslatorTests
     }
 
     [Fact]
+    public void Rejects_arbitrary_extension_before_Azure_translation()
+    {
+        var plan = CreatePlan();
+        var unsafePlan = plan with
+        {
+            Packages =
+            [
+                plan.Packages[0] with
+                {
+                    PackageId = "Customer.SecretPackage",
+                    ExtensionClass = ResolvedExtensionClass.ArbitraryCustomer
+                }
+            ]
+        };
+
+        var result = AzureWorkloadPlanTranslator.Translate(unsafePlan, new("workload-a", "westeurope"));
+
+        Assert.False(result.IsAccepted);
+        Assert.Null(result.Plan);
+        var finding = Assert.Single(result.Findings, candidate => candidate.Code == "package.extensionClass.forbidden");
+        Assert.DoesNotContain("Customer.SecretPackage", System.Text.Json.JsonSerializer.Serialize(finding), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Rejects_floating_extension_version_before_Azure_translation()
+    {
+        var plan = CreatePlan();
+        var unsafePlan = plan with
+        {
+            Packages = [plan.Packages[0] with { Version = "1.*" }]
+        };
+
+        var result = AzureWorkloadPlanTranslator.Translate(unsafePlan, new("workload-a", "westeurope"));
+
+        Assert.False(result.IsAccepted);
+        Assert.Null(result.Plan);
+        Assert.Contains(result.Findings, candidate => candidate.Code == "package.version.inexact");
+    }
+
+    [Fact]
     public void Rejects_null_collections_without_throwing()
     {
         var result = AzureWorkloadPlanTranslator.Translate(
@@ -591,9 +631,9 @@ public sealed class AzureWorkloadPlanTranslatorTests
                     ])),
             new("combined", [component]),
             [
-                new(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), "Elsa.Core", version, ImageDigest, ["elsa.server"], [new("runtime", "Elsa.Runtime", ["elsa.server"], ["workflow.runtime"])]),
-                new(Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"), AzureWorkloadPlanTranslator.SqlWorkflowPackageId, "3.8.0-preview.5413", ImageDigest, ["elsa.server"], []),
-                new(Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"), AzureWorkloadPlanTranslator.SqlQuartzPackageId, "3.8.0-preview.342", ImageDigest, ["elsa.server"], [])
+                new(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), "Elsa.Core", version, ImageDigest, ["elsa.server"], [new("runtime", "Elsa.Runtime", ["elsa.server"], ["workflow.runtime"])], ResolvedExtensionClass.BuiltIn, ImageDigest),
+                new(Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"), AzureWorkloadPlanTranslator.SqlWorkflowPackageId, "3.8.0-preview.5413", ImageDigest, ["elsa.server"], [], ResolvedExtensionClass.BuiltIn, ImageDigest),
+                new(Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"), AzureWorkloadPlanTranslator.SqlQuartzPackageId, "3.8.0-preview.342", ImageDigest, ["elsa.server"], [], ResolvedExtensionClass.BuiltIn, ImageDigest)
             ],
             new([
                 new("Database:ConnectionString", "string", true, true, false, "ELSA_DATABASE_CONNECTION", null, "secret://vault/database-connection", null),
