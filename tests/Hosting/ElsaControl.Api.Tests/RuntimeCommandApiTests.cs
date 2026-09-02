@@ -12,12 +12,16 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class RuntimeCommandApiTests
+public sealed class RuntimeCommandApiTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public RuntimeCommandApiTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Runtime_applier_client_can_poll_claim_report_progress_and_complete_command()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("runtime-applier-client-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -56,7 +60,7 @@ public sealed class RuntimeCommandApiTests
     [Fact]
     public async Task Runtime_applier_client_can_use_engine_secret_without_workspace_identity()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("runtime-engine-secret-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -96,7 +100,7 @@ public sealed class RuntimeCommandApiTests
     [Fact]
     public async Task Runtime_can_poll_claim_report_progress_and_complete_command()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("runtime-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -153,7 +157,7 @@ public sealed class RuntimeCommandApiTests
     [Fact]
     public async Task Runtime_can_download_artifact_with_active_lease_and_report_per_artifact_outcome()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("runtime-artifact-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -205,7 +209,7 @@ public sealed class RuntimeCommandApiTests
     [Fact]
     public async Task Runtime_claim_conflicts_when_command_is_already_leased()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("runtime-conflict-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -228,7 +232,7 @@ public sealed class RuntimeCommandApiTests
     [Fact]
     public async Task Runtime_can_fail_or_reject_with_safe_diagnostics()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("runtime-fail-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -259,7 +263,7 @@ public sealed class RuntimeCommandApiTests
     [Fact]
     public async Task Webhook_notification_is_safe_trigger_and_runtime_must_poll_to_claim()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("runtime-webhook-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();

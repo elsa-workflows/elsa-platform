@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using ElsaControl.Api.Authentication;
 using ElsaControl.Deployment.Core.Cockpit;
 using ElsaControl.Deployment.Core.Workspace;
+using ElsaControl.PackageCatalog.Core.Packages;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -14,6 +15,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace ElsaControl.Api.Tests;
 
@@ -44,6 +46,8 @@ internal sealed class ControlApiTestApplication : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+        builder.ConfigureLogging(logging =>
+            logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.Warning));
         builder.ConfigureAppConfiguration((_, configuration) =>
         {
             var values = new Dictionary<string, string?>
@@ -86,6 +90,8 @@ internal sealed class ControlApiTestApplication : WebApplicationFactory<Program>
     public async Task SeedAsync(Func<CatalogDbContext, Task> seed)
     {
         await using var scope = Services.CreateAsyncScope();
+        // Reused hosts retain singleton catalog state, while each test resets the database below.
+        scope.ServiceProvider.GetService<IPublicCatalogCacheInvalidator>()?.Invalidate();
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
         await db.Database.EnsureDeletedAsync();
         await db.Database.EnsureCreatedAsync();
@@ -143,6 +149,15 @@ internal sealed class ControlApiTestApplication : WebApplicationFactory<Program>
         options.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false));
         return options;
     }
+}
+
+public sealed class DefaultControlApiTestApplicationFixture : IAsyncLifetime
+{
+    internal ControlApiTestApplication Application { get; } = new();
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync() => await ((IAsyncDisposable)Application).DisposeAsync();
 }
 
 internal static class ControlApiJsonExtensions

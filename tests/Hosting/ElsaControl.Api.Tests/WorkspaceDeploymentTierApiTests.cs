@@ -6,12 +6,19 @@ using ElsaControl.PackageCatalog.Core.Accounts;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class WorkspaceDeploymentTierApiTests
+public sealed class WorkspaceDeploymentTierApiTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public WorkspaceDeploymentTierApiTests(DefaultControlApiTestApplicationFixture fixture)
+    {
+        _app = fixture.Application;
+    }
+
     [Fact]
     public async Task Owner_can_list_capabilities_and_default_tiers()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("tier-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -31,7 +38,7 @@ public sealed class WorkspaceDeploymentTierApiTests
     [Fact]
     public async Task Owner_can_create_update_preview_archive_and_restore_tier()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("tier-admin");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -72,7 +79,7 @@ public sealed class WorkspaceDeploymentTierApiTests
     [Fact]
     public async Task Duplicate_tier_names_and_non_admin_mutations_are_rejected()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("tier-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -93,7 +100,7 @@ public sealed class WorkspaceDeploymentTierApiTests
     [Fact]
     public async Task Environment_create_update_uses_tier_id_and_cockpit_returns_tier_shape()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("tier-env-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -121,7 +128,7 @@ public sealed class WorkspaceDeploymentTierApiTests
     [Fact]
     public async Task Archived_tier_assignment_is_rejected()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("tier-archive-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -142,7 +149,7 @@ public sealed class WorkspaceDeploymentTierApiTests
     [Fact]
     public async Task Legacy_environment_requests_map_to_default_tiers_during_transition()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("tier-legacy-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -167,7 +174,7 @@ public sealed class WorkspaceDeploymentTierApiTests
     [Fact]
     public async Task Promotion_preview_uses_tier_capabilities_rather_than_names()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("tier-preview-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();

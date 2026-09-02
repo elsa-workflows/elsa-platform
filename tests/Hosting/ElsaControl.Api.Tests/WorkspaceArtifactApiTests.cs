@@ -11,12 +11,16 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class WorkspaceArtifactApiTests
+public sealed class WorkspaceArtifactApiTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public WorkspaceArtifactApiTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Owner_can_register_list_and_read_safe_artifact_metadata()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("artifact-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -45,7 +49,7 @@ public sealed class WorkspaceArtifactApiTests
     [Fact]
     public async Task Owner_can_register_envelope_metadata_and_discover_artifact_types()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("artifact-envelope-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -84,7 +88,7 @@ public sealed class WorkspaceArtifactApiTests
     [Fact]
     public async Task Studio_submit_artifact_registration_does_not_create_deployment_run()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("studio-submit-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -108,7 +112,7 @@ public sealed class WorkspaceArtifactApiTests
     [Fact]
     public async Task Envelope_registration_rejects_unknown_type_and_unsafe_metadata()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("artifact-envelope-invalid-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -135,7 +139,7 @@ public sealed class WorkspaceArtifactApiTests
     [Fact]
     public async Task Duplicate_registration_is_deterministic()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("artifact-duplicate-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -155,7 +159,7 @@ public sealed class WorkspaceArtifactApiTests
     [Fact]
     public async Task Owner_can_archive_and_restore_artifact_without_removing_detail_history()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("artifact-archive-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -183,7 +187,7 @@ public sealed class WorkspaceArtifactApiTests
     [Fact]
     public async Task Artifact_routes_enforce_read_and_setup_permissions()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("artifact-permission-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -220,7 +224,7 @@ public sealed class WorkspaceArtifactApiTests
         await File.WriteAllBytesAsync(artifactPath, bytes);
         try
         {
-            await using var app = new ControlApiTestApplication();
+            var app = _app;
             await app.SeedAsync(_ => Task.CompletedTask);
             var owner = app.CreateTrustedWorkspaceClient("artifact-download-owner");
             var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -244,7 +248,7 @@ public sealed class WorkspaceArtifactApiTests
     [Fact]
     public async Task List_and_detail_are_workspace_isolated()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("artifact-isolation-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -264,7 +268,7 @@ public sealed class WorkspaceArtifactApiTests
     [Fact]
     public async Task Refresh_marks_missing_and_unsupported_references_without_changing_identity()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("artifact-refresh-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -288,7 +292,7 @@ public sealed class WorkspaceArtifactApiTests
     [Fact]
     public async Task Normal_artifact_dataset_lists_under_three_seconds()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("artifact-large-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -307,7 +311,7 @@ public sealed class WorkspaceArtifactApiTests
     [Fact]
     public async Task Owner_can_upload_zip_and_server_computes_artifact_identity()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("artifact-upload-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();

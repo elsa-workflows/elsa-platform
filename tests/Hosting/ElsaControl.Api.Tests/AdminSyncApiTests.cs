@@ -14,8 +14,15 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace ElsaControl.Api.Tests;
 
 [Collection(AdminSyncApiTestCollection.Name)]
-public sealed class AdminSyncApiTests
+public sealed class AdminSyncApiTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public AdminSyncApiTests(DefaultControlApiTestApplicationFixture fixture)
+    {
+        _app = fixture.Application;
+    }
+
     [Fact]
     public async Task Manual_sync_creates_running_sync_run_and_completes_in_background()
     {
@@ -57,7 +64,7 @@ public sealed class AdminSyncApiTests
     [Fact]
     public async Task Sync_run_list_includes_source_metadata_and_item_count()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var (runId, sourceId) = await SeedSyncRunWithSourceAsync(app);
 
         var client = app.CreateClient();
@@ -77,7 +84,7 @@ public sealed class AdminSyncApiTests
     [Fact]
     public async Task Sync_run_details_include_source_metadata_and_item_count()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var (runId, sourceId) = await SeedSyncRunWithSourceAsync(app);
 
         var client = app.CreateClient();
@@ -155,7 +162,7 @@ public sealed class AdminSyncApiTests
     [Fact]
     public async Task Delete_sync_run_removes_history_and_preserves_catalog_state()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var runId = await SeedPackageLinkedSyncRunAsync(app);
         var client = AuthenticatedClient(app);
 
@@ -181,7 +188,7 @@ public sealed class AdminSyncApiTests
     [Fact]
     public async Task Delete_sync_run_is_idempotent_for_missing_run()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = AuthenticatedClient(app);
 
@@ -196,7 +203,7 @@ public sealed class AdminSyncApiTests
     [Fact]
     public async Task Delete_sync_run_refuses_running_run()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var runId = Guid.NewGuid();
         await app.SeedAsync(db =>
         {
@@ -213,7 +220,7 @@ public sealed class AdminSyncApiTests
     [Fact]
     public async Task Bulk_cleanup_previews_and_deletes_terminal_runs_before_cutoff()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var cutoff = DateTimeOffset.UtcNow.AddDays(-7);
         var oldCompleted = CompletedRun(cutoff.AddDays(-1), SyncRunStatus.Completed, 2);
         var oldFailed = CompletedRun(cutoff.AddDays(-2), SyncRunStatus.Failed, 1);
@@ -245,7 +252,7 @@ public sealed class AdminSyncApiTests
     [Fact]
     public async Task Bulk_cleanup_rejects_future_cutoff()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             db.SyncRuns.Add(CompletedRun(DateTimeOffset.UtcNow.AddDays(-1)));
@@ -265,7 +272,7 @@ public sealed class AdminSyncApiTests
     [Fact]
     public async Task Delete_sync_run_requires_admin_authentication()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateClient();
 
@@ -382,6 +389,7 @@ public sealed class AdminSyncApiTests
     private static async Task SeedAsync(WebApplicationFactory<Program> app, Func<CatalogDbContext, Task> seed)
     {
         await using var scope = app.Services.CreateAsyncScope();
+        scope.ServiceProvider.GetService<IPublicCatalogCacheInvalidator>()?.Invalidate();
         var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
         await db.Database.EnsureDeletedAsync();
         await db.Database.EnsureCreatedAsync();

@@ -15,12 +15,19 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class WorkspaceCustomFeedsApiTests
+public sealed class WorkspaceCustomFeedsApiTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public WorkspaceCustomFeedsApiTests(DefaultControlApiTestApplicationFixture fixture)
+    {
+        _app = fixture.Application;
+    }
+
     [Fact]
     public async Task Me_workspaces_provisions_account_and_personal_workspace_idempotently()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = WorkspaceClient(app);
 
@@ -37,7 +44,7 @@ public sealed class WorkspaceCustomFeedsApiTests
     [Fact]
     public async Task Me_workspaces_handles_concurrent_first_sign_in_for_same_identity()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
 
         var responses = await Task.WhenAll(Enumerable.Range(0, 6)
@@ -51,7 +58,7 @@ public sealed class WorkspaceCustomFeedsApiTests
     [Fact]
     public async Task Me_workspaces_rejects_missing_trusted_identity()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
 
         var response = await app.CreateClient().GetAsync("/api/me/workspaces");
@@ -62,7 +69,7 @@ public sealed class WorkspaceCustomFeedsApiTests
     [Fact]
     public async Task Me_workspaces_rejects_trusted_headers_from_untrusted_remote_ip()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = WorkspaceClient(app);
         client.DefaultRequestHeaders.Add(ControlApiTestApplication.TestRemoteIpHeader, "203.0.113.10");
@@ -75,7 +82,7 @@ public sealed class WorkspaceCustomFeedsApiTests
     [Fact]
     public async Task Workspace_source_creation_requires_entitlement_and_enforces_source_limit()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = WorkspaceClient(app);
         var workspaceId = (await client.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Workspaces.Single().Id;
@@ -103,7 +110,7 @@ public sealed class WorkspaceCustomFeedsApiTests
     [Fact]
     public async Task Admin_entitlement_update_returns_not_found_for_unknown_workspace()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
 
         var response = await AdminClient(app).PutControlJsonAsync(
@@ -116,7 +123,7 @@ public sealed class WorkspaceCustomFeedsApiTests
     [Fact]
     public async Task Workspace_source_creation_enforces_source_limit_under_concurrent_requests()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = WorkspaceClient(app);
         var workspaceId = (await client.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Workspaces.Single().Id;
@@ -133,7 +140,7 @@ public sealed class WorkspaceCustomFeedsApiTests
     [Fact]
     public async Task Admin_entitlement_update_replaces_existing_workspace_snapshot()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = WorkspaceClient(app);
         var workspaceId = (await client.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Workspaces.Single().Id;
@@ -154,7 +161,7 @@ public sealed class WorkspaceCustomFeedsApiTests
     [Fact]
     public async Task Workspace_sources_and_packages_are_visible_only_to_workspace_members()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var publicSource = PublicCatalogSeedData.CreatePackageSource();
@@ -208,7 +215,7 @@ public sealed class WorkspaceCustomFeedsApiTests
     [Fact]
     public async Task Workspace_sources_returns_problem_details_when_identity_lacks_workspace_access()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = WorkspaceClient(app);
         var workspaceId = (await owner.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Workspaces.Single().Id;

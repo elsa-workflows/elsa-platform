@@ -7,12 +7,16 @@ using ElsaControl.PackageCatalog.Testing;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class PublicPackagesApiTests
+public sealed class PublicPackagesApiTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public PublicPackagesApiTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Get_packages_returns_only_visible_packages()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var source = PublicCatalogSeedData.CreatePackageSource();
@@ -36,7 +40,7 @@ public sealed class PublicPackagesApiTests
     [Fact]
     public async Task Get_public_sources_returns_sanitized_indexed_sources()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var source = PublicCatalogSeedData.CreatePackageSource();
@@ -58,7 +62,7 @@ public sealed class PublicPackagesApiTests
     [Fact]
     public async Task Get_public_sources_excludes_non_browseable_sources()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var publicSource = PublicCatalogSeedData.CreatePackageSource();
@@ -83,7 +87,7 @@ public sealed class PublicPackagesApiTests
     [Fact]
     public async Task Get_packages_filters_by_selected_source_ids()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var selectedSourceId = Guid.Empty;
         await app.SeedAsync(db =>
         {
@@ -109,7 +113,7 @@ public sealed class PublicPackagesApiTests
     [Fact]
     public async Task Get_packages_excludes_non_browseable_sources_even_when_selected()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var sourceId = Guid.Empty;
         await app.SeedAsync(db =>
         {
@@ -132,7 +136,7 @@ public sealed class PublicPackagesApiTests
     [Fact]
     public async Task Get_package_resolves_duplicate_package_id_by_source()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var selectedSourceId = Guid.Empty;
         var otherSourceId = Guid.Empty;
         await app.SeedAsync(db =>
@@ -165,7 +169,7 @@ public sealed class PublicPackagesApiTests
     [Fact]
     public async Task Get_packages_hides_invalid_unlisted_rejected_and_suspicious_versions()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var sourceId = Guid.Empty;
         await app.SeedAsync(db =>
         {
@@ -190,7 +194,7 @@ public sealed class PublicPackagesApiTests
     [Fact]
     public async Task Get_package_returns_not_found_for_hidden_package()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var sourceId = Guid.Empty;
         await app.SeedAsync(db =>
         {
@@ -210,7 +214,7 @@ public sealed class PublicPackagesApiTests
     [Fact]
     public async Task Get_package_ignores_malformed_default_value_json()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var sourceId = Guid.Empty;
         await app.SeedAsync(db =>
         {
@@ -232,7 +236,7 @@ public sealed class PublicPackagesApiTests
     [Fact]
     public async Task Get_package_projects_runtime_kind_metadata()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var sourceId = Guid.Empty;
         await app.SeedAsync(db =>
         {
