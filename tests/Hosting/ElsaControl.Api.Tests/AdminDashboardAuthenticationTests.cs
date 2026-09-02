@@ -19,12 +19,16 @@ using Microsoft.Net.Http.Headers;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class AdminDashboardAuthenticationTests
+public sealed class AdminDashboardAuthenticationTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public AdminDashboardAuthenticationTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Dashboard_route_renders_local_console_shell_without_starting_oidc_challenge()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var client = app.CreateClient(new() { AllowAutoRedirect = false });
         using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/overview");
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/html"));
@@ -39,7 +43,7 @@ public sealed class AdminDashboardAuthenticationTests
     [Fact]
     public async Task Dashboard_root_serves_console_shell_without_redirect()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var client = app.CreateClient(new() { AllowAutoRedirect = false });
         using var request = new HttpRequestMessage(HttpMethod.Get, "/admin");
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/html"));
@@ -54,7 +58,7 @@ public sealed class AdminDashboardAuthenticationTests
     [Fact]
     public async Task Dashboard_root_serves_console_shell_when_forwarded_as_path_base()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var client = app.CreateClient(new() { AllowAutoRedirect = false });
         using var request = new HttpRequestMessage(HttpMethod.Get, "/");
         request.Headers.Add(ControlApiTestApplication.TestPathBaseHeader, "/admin");
@@ -70,7 +74,7 @@ public sealed class AdminDashboardAuthenticationTests
     [Fact]
     public async Task Dashboard_shell_renders_local_sign_in_fallback_without_starting_oidc_challenge()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var client = app.CreateClient(new() { AllowAutoRedirect = false });
         using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/");
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/html"));
@@ -85,7 +89,7 @@ public sealed class AdminDashboardAuthenticationTests
     [Fact]
     public async Task Missing_dashboard_asset_remains_not_found()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var response = await app.CreateClient(new() { AllowAutoRedirect = false })
             .GetAsync("/admin/assets/index.js");
 
@@ -111,7 +115,7 @@ public sealed class AdminDashboardAuthenticationTests
     [Fact]
     public async Task Legacy_login_path_redirects_to_control_sign_in()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var response = await app.CreateClient(new() { AllowAutoRedirect = false })
             .GetAsync($"{AdminDashboardAuthenticationDefaults.LoginPath}?returnUrl=/admin/sources");
 
@@ -122,7 +126,7 @@ public sealed class AdminDashboardAuthenticationTests
     [Fact]
     public async Task Legacy_login_path_ignores_unsafe_return_url()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var response = await app.CreateClient(new() { AllowAutoRedirect = false })
             .GetAsync($"{AdminDashboardAuthenticationDefaults.LoginPath}?returnUrl=https://evil.example/admin");
 
@@ -133,7 +137,7 @@ public sealed class AdminDashboardAuthenticationTests
     [Fact]
     public async Task Legacy_login_path_ignores_logout_return_url()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var response = await app.CreateClient(new() { AllowAutoRedirect = false })
             .GetAsync($"{AdminDashboardAuthenticationDefaults.LoginPath}?returnUrl={AdminDashboardAuthenticationDefaults.LogoutPath}");
 
@@ -144,7 +148,7 @@ public sealed class AdminDashboardAuthenticationTests
     [Fact]
     public async Task Legacy_logout_post_preserves_post_method_for_customer_logout()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var response = await app.CreateClient(new() { AllowAutoRedirect = false })
             .PostAsync(AdminDashboardAuthenticationDefaults.LogoutPath, content: null);
 
@@ -155,7 +159,7 @@ public sealed class AdminDashboardAuthenticationTests
     [Fact]
     public async Task Api_key_authorizes_admin_api_for_machine_access()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateClient();
         client.DefaultRequestHeaders.Add(ApiKeyAuthenticationDefaults.HeaderName, "local-dev-key");
@@ -168,7 +172,7 @@ public sealed class AdminDashboardAuthenticationTests
     [Fact]
     public async Task Control_admin_session_authorizes_admin_api()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateClient(new() { AllowAutoRedirect = false });
         AddControlSessionCookie(app, client, new Claim("role", AdminAuthorization.ControlAdminRole));
@@ -181,7 +185,7 @@ public sealed class AdminDashboardAuthenticationTests
     [Fact]
     public async Task Control_session_without_admin_role_is_forbidden_for_admin_api()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateClient(new() { AllowAutoRedirect = false });
         AddControlSessionCookie(app, client);
@@ -232,7 +236,7 @@ public sealed class AdminDashboardAuthenticationTests
     [Fact]
     public async Task Control_admin_api_mutation_rejects_cross_origin_request()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var client = app.CreateClient(new() { AllowAutoRedirect = false });
         AddControlSessionCookie(app, client, new Claim("role", AdminAuthorization.ControlAdminRole));
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/admin/sync/packages/Elsa.Workflows");
@@ -246,7 +250,7 @@ public sealed class AdminDashboardAuthenticationTests
     [Fact]
     public async Task Control_admin_api_mutation_accepts_same_origin_request()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var client = app.CreateClient(new() { AllowAutoRedirect = false });
         AddControlSessionCookie(app, client, new Claim("role", AdminAuthorization.ControlAdminRole));
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/admin/sync/packages/Elsa.Workflows");
@@ -260,7 +264,7 @@ public sealed class AdminDashboardAuthenticationTests
     [Fact]
     public async Task Control_admin_api_mutation_accepts_same_origin_referer_fallback()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var client = app.CreateClient(new() { AllowAutoRedirect = false });
         AddControlSessionCookie(app, client, new Claim("role", AdminAuthorization.ControlAdminRole));
 
@@ -275,7 +279,7 @@ public sealed class AdminDashboardAuthenticationTests
     [Fact]
     public async Task Control_admin_api_mutation_rejects_missing_origin_and_referer()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var client = app.CreateClient(new() { AllowAutoRedirect = false });
         AddControlSessionCookie(app, client, new Claim("role", AdminAuthorization.ControlAdminRole));
 
@@ -287,7 +291,7 @@ public sealed class AdminDashboardAuthenticationTests
     [Fact]
     public async Task Admin_api_mutation_fails_closed_without_api_key_or_valid_control_session()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var client = app.CreateClient(new() { AllowAutoRedirect = false });
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/admin/sync/packages/Elsa.Workflows");
@@ -301,7 +305,7 @@ public sealed class AdminDashboardAuthenticationTests
     [Fact]
     public async Task Same_origin_validation_uses_effective_request_host()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var client = app.CreateClient(new() { AllowAutoRedirect = false });
         AddControlSessionCookie(app, client, new Claim("role", AdminAuthorization.ControlAdminRole));
 
@@ -317,7 +321,7 @@ public sealed class AdminDashboardAuthenticationTests
     [Fact]
     public async Task Same_origin_validation_uses_forwarded_scheme()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var client = app.CreateClient(new() { AllowAutoRedirect = false });
         AddControlSessionCookie(app, client, new Claim("role", AdminAuthorization.ControlAdminRole));
 
@@ -334,7 +338,7 @@ public sealed class AdminDashboardAuthenticationTests
     [Fact]
     public async Task Same_origin_validation_uses_forwarded_host()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var client = app.CreateClient(new() { AllowAutoRedirect = false });
         AddControlSessionCookie(app, client, new Claim("role", AdminAuthorization.ControlAdminRole));
 
@@ -352,7 +356,7 @@ public sealed class AdminDashboardAuthenticationTests
     [Fact]
     public async Task Api_key_authenticated_admin_api_mutation_bypasses_browser_origin_check()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var client = app.CreateClient(new() { AllowAutoRedirect = false });
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/admin/sync/packages/Elsa.Workflows");
         request.Headers.Add(ApiKeyAuthenticationDefaults.HeaderName, "local-dev-key");
@@ -366,7 +370,7 @@ public sealed class AdminDashboardAuthenticationTests
     [Fact]
     public async Task Public_endpoint_remains_anonymous()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var response = await app.CreateClient().GetAsync("/health");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
