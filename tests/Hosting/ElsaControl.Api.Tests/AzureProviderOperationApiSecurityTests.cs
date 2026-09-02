@@ -7,12 +7,16 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class AzureProviderOperationApiSecurityTests
+public sealed class AzureProviderOperationApiSecurityTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public AzureProviderOperationApiSecurityTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Caller_asserted_provider_projection_cannot_be_submitted_through_the_public_api()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateTrustedWorkspaceClient("azure-operation-caller");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
@@ -45,7 +49,7 @@ public sealed class AzureProviderOperationApiSecurityTests
     [Fact]
     public async Task Azure_operation_status_requires_workspace_access_and_does_not_cross_workspace_boundaries()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var workspaceAClient = app.CreateTrustedWorkspaceClient("azure-status-a");
         var workspaceBClient = app.CreateTrustedWorkspaceClient("azure-status-b");
@@ -65,7 +69,7 @@ public sealed class AzureProviderOperationApiSecurityTests
     [Fact]
     public async Task Azure_operation_status_projects_only_customer_safe_state()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateTrustedWorkspaceClient("azure-status-safe-projection");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
