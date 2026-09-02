@@ -97,9 +97,16 @@ function protectedOperationStatus(page: Page) {
 }
 
 function requirePublicHttpsOrigin(value: string, variableName: string) {
-  const uri = new URL(value);
+  const message = `${variableName} must be a public HTTPS origin without credentials, query, or fragment.`;
+  let uri: URL;
+  try {
+    uri = new URL(value);
+  }
+  catch {
+    throw new Error(message);
+  }
   if (uri.protocol !== "https:" || uri.username || uri.password || uri.pathname !== "/" || uri.search || uri.hash)
-    throw new Error(`${variableName} must be a public HTTPS origin without credentials, query, or fragment.`);
+    throw new Error(message);
 }
 
 function escapeRegExp(value: string) {
