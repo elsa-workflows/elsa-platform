@@ -260,7 +260,7 @@ public sealed class ManagedElsaHandoffPersistenceTests
             Assert.Equal(ManagedElsaInstanceIdentityBindingWriteOutcome.Conflict, invalid.Outcome);
 
             var instance = await rotateDb.ElsaInstances.SingleAsync();
-            instance.CurrentDeploymentEndpointUri = "https://rotated.example.test/runtime/health";
+            instance.CurrentDeploymentEndpointUri = "https://rotated.example.test";
             await rotateDb.SaveChangesAsync();
 
             var rotated = await store.BindAsync(organizationId, workspaceId, instanceId,
@@ -392,7 +392,7 @@ public sealed class ManagedElsaHandoffPersistenceTests
             NetworkOutcome = "public",
             DomainOutcome = "managed",
             CurrentDeploymentId = "deployment-managed",
-            CurrentDeploymentEndpointUri = "https://managed.example.test/runtime/health",
+            CurrentDeploymentEndpointUri = "https://managed.example.test",
             DesiredLifecycle = ElsaDesiredLifecycle.Running,
             ObservedLifecycle = ElsaObservedLifecycle.Pending,
             Health = ElsaInstanceHealth.Unknown,

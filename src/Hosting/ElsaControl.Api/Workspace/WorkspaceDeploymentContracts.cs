@@ -131,5 +131,27 @@ public sealed record WorkspaceDeploymentRunDetailResponse(
 public sealed record WorkspaceRuntimeControlRunRequest(Guid ConfirmationId);
 
 public sealed record AzureProviderOperationResponse(
-    AzureProviderOperation Operation,
-    IReadOnlyList<AzureProviderOperationTransition> Transitions);
+    AzureProviderOperationSummaryResponse Operation,
+    IReadOnlyList<AzureProviderOperationTransitionResponse> Transitions);
+
+public sealed record AzureProviderOperationSummaryResponse(
+    Guid Id,
+    AzureProviderOperationAction Action,
+    AzureProviderOperationStatus Status,
+    AzureProviderOperationPhase Phase,
+    long CheckpointSequence,
+    int AttemptNumber,
+    long Version,
+    string? EndpointUri,
+    AzureProviderHealth Health,
+    IReadOnlyList<string> DiagnosticCodes,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    DateTimeOffset? CompletedAt);
+
+public sealed record AzureProviderOperationTransitionResponse(
+    long Sequence,
+    AzureProviderOperationStatus Status,
+    AzureProviderOperationPhase Phase,
+    string Code,
+    DateTimeOffset OccurredAt);

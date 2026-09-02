@@ -418,7 +418,10 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             ValidateComponentDigests(instance.CurrentReleaseComponentDigestsJson);
             instance.CurrentDeploymentId = OptionalSafeReference(instance.CurrentDeploymentId, nameof(instance.CurrentDeploymentId), 128);
             instance.CurrentDeploymentRevisionId = OptionalSafeReference(instance.CurrentDeploymentRevisionId, nameof(instance.CurrentDeploymentRevisionId), 128);
-            instance.CurrentDeploymentEndpointUri = OptionalEndpointUri(instance.CurrentDeploymentEndpointUri, nameof(instance.CurrentDeploymentEndpointUri));
+            var endpointProperty = entry.Property(x => x.CurrentDeploymentEndpointUri);
+            instance.CurrentDeploymentEndpointUri = OptionalManagedEndpointOrigin(
+                instance.CurrentDeploymentEndpointUri,
+                allowLegacyInvalid: entry.State == EntityState.Modified && !endpointProperty.IsModified);
             instance.PlacementAssignmentId = OptionalSafeReference(instance.PlacementAssignmentId, nameof(instance.PlacementAssignmentId), 128);
             instance.ElsaTenantId = OptionalSafeReference(instance.ElsaTenantId, nameof(instance.ElsaTenantId), 128);
             var tenantAudience = OptionalAudience(instance.ElsaTenantAudience, nameof(instance.ElsaTenantAudience));
@@ -1145,6 +1148,22 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) && !localHttp)
             throw new InvalidOperationException($"{name} must be a safe HTTPS endpoint URI.");
         return uri.AbsoluteUri.TrimEnd('/');
+    }
+
+    private static string? OptionalManagedEndpointOrigin(string? value, bool allowLegacyInvalid)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+        try
+        {
+            return new ElsaManagedEndpointOrigin(value).Value;
+        }
+        catch (ArgumentException)
+        {
+            if (allowLegacyInvalid)
+                return null;
+            throw new InvalidOperationException("Managed deployment endpoint origin is invalid.");
+        }
     }
 
     private static Uri ParseSafeUri(string value, string name, bool allowLocalHttp)

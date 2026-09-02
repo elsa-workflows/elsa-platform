@@ -211,7 +211,7 @@ public sealed class ManagedElsaHandoffTests
                 "managed-handoff-production-wiring",
                 instanceId));
             const string deploymentId = "deployment-managed";
-            const string endpointUri = "https://managed.example.test/runtime/health";
+            const string endpointUri = "https://managed.example.test";
             await db.Database.ExecuteSqlInterpolatedAsync(
                 $"UPDATE ElsaInstances SET CurrentDeploymentId = {deploymentId}, CurrentDeploymentEndpointUri = {endpointUri}, DesiredLifecycle = {ElsaDesiredLifecycle.Running.ToString()}, ObservedLifecycle = {ElsaObservedLifecycle.Ready.ToString()}, Health = {ElsaInstanceHealth.Healthy.ToString()} WHERE Id = {instanceId}");
             db.ChangeTracker.Clear();
@@ -835,7 +835,7 @@ public sealed class ManagedElsaHandoffTests
         ElsaObservedLifecycle observedLifecycle,
         ElsaInstanceHealth health) =>
         db.Database.ExecuteSqlInterpolatedAsync(
-            $"UPDATE ElsaInstances SET DesiredLifecycle = {desiredLifecycle.ToString()}, ObservedLifecycle = {observedLifecycle.ToString()}, Health = {health.ToString()}, CurrentDeploymentEndpointUri = {"https://managed.example.test/runtime/health"} WHERE Id = {instanceId}");
+            $"UPDATE ElsaInstances SET DesiredLifecycle = {desiredLifecycle.ToString()}, ObservedLifecycle = {observedLifecycle.ToString()}, Health = {health.ToString()}, CurrentDeploymentEndpointUri = {"https://managed.example.test"} WHERE Id = {instanceId}");
 
     private sealed record ManagedInstanceSetup(
         ControlApiTestApplication App,

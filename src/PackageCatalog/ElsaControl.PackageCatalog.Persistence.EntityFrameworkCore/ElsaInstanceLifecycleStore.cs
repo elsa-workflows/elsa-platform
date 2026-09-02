@@ -2078,10 +2078,12 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
 
     private static void SynchronizeIdentityBinding(ElsaInstanceEntity instance, DateTimeOffset changedAt)
     {
-        if (!Uri.TryCreate(instance.CurrentDeploymentEndpointUri, UriKind.Absolute, out var endpoint))
+        if (instance.CurrentDeploymentEndpointUri is null)
             return;
+        if (!ElsaManagedEndpointOrigin.TryCreate(instance.CurrentDeploymentEndpointUri, out var endpointOrigin))
+            throw new InvalidOperationException("Managed deployment endpoint origin is invalid.");
 
-        var verifiedOrigin = endpoint.GetLeftPart(UriPartial.Authority);
+        var verifiedOrigin = endpointOrigin.Value;
         if (instance.IdentityBinding is null)
         {
             var created = ElsaInstanceIdentityBinding.Create(instance.Id, verifiedOrigin, changedAt);
@@ -2934,7 +2936,10 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 throw new InvalidOperationException();
             return null;
         }
-        return new ElsaCurrentDeploymentReference(entity.CurrentDeploymentId, entity.CurrentDeploymentRevisionId, entity.CurrentDeploymentEndpointUri);
+        var endpoint = ElsaManagedEndpointOrigin.TryCreate(entity.CurrentDeploymentEndpointUri, out var origin)
+            ? origin.Value
+            : null;
+        return new ElsaCurrentDeploymentReference(entity.CurrentDeploymentId, entity.CurrentDeploymentRevisionId, endpoint);
     }
 
     private static ElsaTenantReference? MapTenant(ElsaInstanceEntity entity)
@@ -2949,17 +2954,9 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
     }
 
     private static ElsaInstanceIdentityBinding? MapIdentityBinding(ElsaInstanceEntity entity)
-    {
-        var binding = entity.IdentityBinding;
-        if (binding is null)
-            return null;
-        var expectedAudience = ElsaInstanceIdentityBinding.AudienceFor(entity.Id);
-        var expectedCallback = ElsaInstanceIdentityBinding.CanonicalizeCallbackUri(binding.VerifiedEndpointOrigin);
-        if (!string.Equals(binding.Audience, expectedAudience, StringComparison.Ordinal) ||
-            !string.Equals(binding.CanonicalCallbackUri, expectedCallback, StringComparison.Ordinal))
-            throw new InvalidOperationException();
-        return ElsaInstanceIdentityBinding.Hydrate(entity.Id, binding.VerifiedEndpointOrigin, binding.BindingVersion, binding.ChangedAt);
-    }
+        => ManagedElsaIdentityBindingMapper.TryMapCurrent(entity, out var binding, out _)
+            ? binding
+            : null;
 
     private static ElsaDesiredStateRevisionId? OptionalRevision(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : new ElsaDesiredStateRevisionId(value);

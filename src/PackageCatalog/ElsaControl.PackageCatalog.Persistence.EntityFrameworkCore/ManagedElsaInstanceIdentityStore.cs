@@ -60,14 +60,14 @@ public sealed class EfCoreManagedElsaInstanceIdentityStore(CatalogDbContext dbCo
             projected.ObservedLifecycle == ElsaObservedLifecycle.Deleting ||
             projected.ObservedLifecycle == ElsaObservedLifecycle.Deleted ||
             projected.DeletedAt is not null ||
-            !Uri.TryCreate(projected.CurrentDeploymentEndpointUri, UriKind.Absolute, out var endpoint))
+            !ElsaManagedEndpointOrigin.TryCreate(projected.CurrentDeploymentEndpointUri, out var endpointOrigin))
             return null;
 
         var created = await BindAsync(
             organizationId,
             projected.WorkspaceId,
             instanceId,
-            endpoint.GetLeftPart(UriPartial.Authority),
+            endpointOrigin.Value,
             projected.BindingVersion,
             DateTimeOffset.UtcNow,
             cancellationToken);
@@ -187,8 +187,8 @@ public sealed class EfCoreManagedElsaInstanceIdentityStore(CatalogDbContext dbCo
         try
         {
             var candidate = ElsaInstanceIdentityBinding.Create(instanceId, verifiedEndpointOrigin, changedAt);
-            if (!Uri.TryCreate(entity.CurrentDeploymentEndpointUri, UriKind.Absolute, out var currentEndpoint) ||
-                !string.Equals(currentEndpoint.GetLeftPart(UriPartial.Authority), candidate.VerifiedEndpointOrigin,
+            if (!ElsaManagedEndpointOrigin.TryCreate(entity.CurrentDeploymentEndpointUri, out var currentEndpoint) ||
+                !string.Equals(currentEndpoint.Value, candidate.VerifiedEndpointOrigin,
                     StringComparison.Ordinal))
                 return Conflict();
 

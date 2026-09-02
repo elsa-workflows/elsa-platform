@@ -1,5 +1,5 @@
 using System.Collections.ObjectModel;
-using System.Net;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace ElsaControl.Deployment.Abstractions.Instances;
@@ -148,6 +148,36 @@ public sealed record ElsaCurrentResolvedRelease
 }
 
 /// <summary>
+/// Canonical customer-facing origin for a managed Elsa deployment. Provider resource
+/// identifiers, credentials, paths and request-specific URI components are excluded.
+/// </summary>
+public readonly record struct ElsaManagedEndpointOrigin
+{
+    public ElsaManagedEndpointOrigin(string value) =>
+        Value = ElsaInstanceReferenceValue.RequireManagedEndpointOrigin(value, nameof(value));
+
+    public string Value { get; }
+
+    public bool IsEmpty => string.IsNullOrEmpty(Value);
+
+    public override string ToString() => Value;
+
+    public static bool TryCreate(string? value, out ElsaManagedEndpointOrigin origin)
+    {
+        try
+        {
+            origin = new ElsaManagedEndpointOrigin(value!);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            origin = default;
+            return false;
+        }
+    }
+}
+
+/// <summary>
 /// Provider-neutral deployment observation. Values are control-owned safe references;
 /// provider resource IDs, credentials and command details are deliberately excluded.
 /// </summary>
@@ -157,14 +187,17 @@ public sealed record ElsaCurrentDeploymentReference
     {
         DeploymentId = ElsaInstanceReferenceValue.RequireToken(deploymentId, nameof(deploymentId));
         RevisionId = ElsaInstanceReferenceValue.OptionalToken(revisionId, nameof(revisionId));
-        EndpointUri = endpointUri is null ? null : ElsaInstanceReferenceValue.RequireSafeEndpointUri(endpointUri, nameof(endpointUri));
+        EndpointOrigin = endpointUri is null ? null : new ElsaManagedEndpointOrigin(endpointUri);
     }
 
     public string DeploymentId { get; }
 
     public string? RevisionId { get; }
 
-    public string? EndpointUri { get; }
+    [JsonIgnore]
+    public ElsaManagedEndpointOrigin? EndpointOrigin { get; }
+
+    public string? EndpointUri => EndpointOrigin?.Value;
 
     public string DeploymentReference => DeploymentId;
 
@@ -269,16 +302,28 @@ internal static partial class ElsaInstanceReferenceValue
         return uri.AbsoluteUri;
     }
 
-    public static string RequireSafeEndpointUri(string? value, string parameterName)
+    public static string RequireManagedEndpointOrigin(string? value, string parameterName)
     {
+        const string error = "Managed deployment endpoints must be absolute HTTPS origins.";
         var uri = ParseAbsoluteUri(value, parameterName);
-        var https = string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
-        var localHttp = string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
-                        (string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase) ||
-                         (IPAddress.TryParse(uri.Host, out var address) && IPAddress.IsLoopback(address)));
-        if (!https && !localHttp)
-            throw new ArgumentException("Deployment endpoints must use HTTPS; HTTP is allowed only for localhost development.", parameterName);
-        return uri.AbsoluteUri.TrimEnd('/');
+        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            uri.AbsolutePath is not ("" or "/") ||
+            uri.Host.Contains('*', StringComparison.Ordinal))
+            throw new ArgumentException(error, parameterName);
+
+        string host;
+        try
+        {
+            host = uri.IdnHost.ToLowerInvariant();
+        }
+        catch (UriFormatException)
+        {
+            throw new ArgumentException(error, parameterName);
+        }
+        var authority = uri.HostNameType == UriHostNameType.IPv6 ? "[" + host + "]" : host;
+        if (!uri.IsDefaultPort)
+            authority += ":" + uri.Port;
+        return Uri.UriSchemeHttps + "://" + authority;
     }
 
     public static string RequireSafeAudience(string? value, string parameterName)

@@ -591,8 +591,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                 var host = output.ToString().Trim();
                 if (string.IsNullOrWhiteSpace(host))
                     throw new FormatException();
-                var endpoint = host.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ? host : $"https://{host}";
-                AzureProviderOperationValidation.ValidateEndpoint(endpoint);
+                var rawEndpoint = host.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ? host : $"https://{host}";
+                var endpoint = AzureProviderOperationValidation.NormalizeEndpoint(rawEndpoint)!;
                 if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) ||
                     !uri.Host.EndsWith(".azurecontainerapps.io", StringComparison.OrdinalIgnoreCase) ||
                     !uri.Host.StartsWith(AppName(command) + ".", StringComparison.OrdinalIgnoreCase))

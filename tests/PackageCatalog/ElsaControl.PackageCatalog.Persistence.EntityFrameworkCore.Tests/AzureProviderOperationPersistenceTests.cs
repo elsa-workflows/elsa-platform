@@ -497,7 +497,7 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         var observed = Assert.IsType<AzureProviderOperation>(await store.CheckpointAsync(
             _workspaceId, operation.Id, "lease",
             new(AzureProviderOperationPhase.HealthVerified, "health.verified", "Verified.", new(),
-                "https://workload.example.test", AzureProviderHealth.Healthy, []),
+                " HTTPS://Workload.Example.Test:443/ ", AzureProviderHealth.Healthy, []),
             now, claimed.Version));
 
         var preserved = await store.CheckpointAsync(

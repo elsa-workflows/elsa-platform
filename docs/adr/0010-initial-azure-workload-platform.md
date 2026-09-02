@@ -20,7 +20,7 @@ The [#108 conclusion](../spikes/108-azure-workload-provider-preflight.md) record
 
 - Use Azure Container Apps for the initial Azure workload provider and managed Elsa vertical slice.
 - Use Azure SQL with a database per Dedicated instance initially; later isolation profiles require separate evidence.
-- Use direct Container Apps HTTPS ingress for the provider slice. Front Door, custom domains and managed edge routing remain a separate concern.
+- Use direct Container Apps HTTPS ingress for the provider slice. Persist its managed-TLS origin only; health paths and Azure resource identifiers remain provider-owned and are not part of the customer endpoint contract. Front Door, custom domains and managed edge routing remain a separate concern.
 - Use managed identity and Key Vault for provider/workload secrets; store only safe references in control-plane history.
 - Treat a deployment stamp as a provider-owned unit of region, capacity, failure containment and isolation.
 - Use checked-in Bicep/provider modules as the production resource-realization source of truth, with Elsa Control provider commands orchestrating idempotent plan/apply/checkpoint behavior. Aspire remains local orchestration/developer experience.

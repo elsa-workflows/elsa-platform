@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Core.Cockpit;
 using ElsaControl.Deployment.Core.Workspace;
 using ElsaControl.Deployment.Azure;
@@ -41,7 +42,7 @@ public static class WorkspaceDeploymentEndpoints
             var result = await operations.GetStatusAsync(workspaceId, operationId, cancellationToken);
             return result is null
                 ? Results.NotFound()
-                : Results.Ok(new AzureProviderOperationResponse(result.Operation, result.Transitions));
+                : Results.Ok(ToResponse(result.Operation, result.Transitions));
         }).RequireDeploymentPermission(WorkspaceDeploymentPermissions.Read);
 
         group.MapGet("/tier-capabilities", (DeploymentTierService tiers) =>
@@ -594,6 +595,36 @@ public static class WorkspaceDeploymentEndpoints
         }).RequireDeploymentPermission(WorkspaceDeploymentPermissions.ExecuteControls);
 
         return endpoints;
+    }
+
+    private static AzureProviderOperationResponse ToResponse(
+        AzureProviderOperation operation,
+        IReadOnlyList<AzureProviderOperationTransition> transitions)
+    {
+        var endpointUri = ElsaManagedEndpointOrigin.TryCreate(operation.Endpoint, out var endpointOrigin)
+            ? endpointOrigin.Value
+            : null;
+        return new(
+            new(
+                operation.Id,
+                operation.Action,
+                operation.Status,
+                operation.Phase,
+                operation.CheckpointSequence,
+                operation.AttemptNumber,
+                operation.Version,
+                endpointUri,
+                operation.Health,
+                operation.Diagnostics.Select(x => x.Code).Distinct(StringComparer.Ordinal).ToArray(),
+                operation.CreatedAt,
+                operation.UpdatedAt,
+                operation.CompletedAt),
+            transitions.Select(x => new AzureProviderOperationTransitionResponse(
+                x.Sequence,
+                x.Status,
+                x.Phase,
+                x.Code,
+                x.OccurredAt)).ToArray());
     }
 
     private static string SerializeDesiredState(IReadOnlyList<WorkspaceDesiredStateRecordRequest> records)

@@ -627,6 +627,32 @@ public sealed class ElsaInstanceContractTests
         Assert.False(typeof(ElsaInstance).GetProperty(nameof(ElsaInstance.CurrentResolvedRelease))!.SetMethod!.IsPublic);
     }
 
+    [Fact]
+    public void Managed_deployment_endpoint_is_a_canonical_typed_https_origin()
+    {
+        var deployment = new ElsaCurrentDeploymentReference(
+            "deployment_01", endpointUri: " HTTPS://Runtime.Example.Test:443/ ");
+
+        Assert.Equal(new ElsaManagedEndpointOrigin("https://runtime.example.test"), deployment.EndpointOrigin);
+        Assert.Equal("https://runtime.example.test", deployment.EndpointUri);
+    }
+
+    [Theory]
+    [InlineData("http://runtime.example.test")]
+    [InlineData("https:///runtime")]
+    [InlineData("https://user:password@runtime.example.test")]
+    [InlineData("https://runtime.example.test/runtime")]
+    [InlineData("https://runtime.example.test?token=value")]
+    [InlineData("https://runtime.example.test#fragment")]
+    [InlineData("https://*.example.test")]
+    [InlineData("https://runtime.example.test/\r\nsecret")]
+    public void Managed_deployment_endpoint_rejects_non_origins(string endpoint)
+    {
+        Assert.False(ElsaManagedEndpointOrigin.TryCreate(endpoint, out _));
+        Assert.Throws<ArgumentException>(() =>
+            new ElsaCurrentDeploymentReference("deployment_01", endpointUri: endpoint));
+    }
+
     [Theory]
     [InlineData("md5:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
     [InlineData("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
