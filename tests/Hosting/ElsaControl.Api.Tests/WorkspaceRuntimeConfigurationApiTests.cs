@@ -7,12 +7,16 @@ using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class WorkspaceRuntimeConfigurationApiTests
+public sealed class WorkspaceRuntimeConfigurationApiTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public WorkspaceRuntimeConfigurationApiTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Workspace_member_can_create_list_and_get_configuration()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = WorkspaceClient(app);
         var workspaceId = await GetWorkspaceIdAsync(client);
@@ -31,7 +35,7 @@ public sealed class WorkspaceRuntimeConfigurationApiTests
     [Fact]
     public async Task Workspace_member_can_update_delete_and_clone_configuration()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = WorkspaceClient(app);
         var workspaceId = await GetWorkspaceIdAsync(client);
@@ -55,7 +59,7 @@ public sealed class WorkspaceRuntimeConfigurationApiTests
     [Fact]
     public async Task Workspace_member_can_create_versions_and_generate_bundle_from_configuration()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = WorkspaceClient(app);
         var workspaceId = await GetWorkspaceIdAsync(client);
@@ -77,7 +81,7 @@ public sealed class WorkspaceRuntimeConfigurationApiTests
     [Fact]
     public async Task Workspace_configuration_routes_reject_non_members()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var member = WorkspaceClient(app, "member");
         var workspaceId = await GetWorkspaceIdAsync(member);
