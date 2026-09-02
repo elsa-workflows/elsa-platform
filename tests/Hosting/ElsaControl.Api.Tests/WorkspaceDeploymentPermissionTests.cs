@@ -6,12 +6,16 @@ using ElsaControl.PackageCatalog.Core.Accounts;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class WorkspaceDeploymentPermissionTests
+public sealed class WorkspaceDeploymentPermissionTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public WorkspaceDeploymentPermissionTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Owner_can_create_application_environment_and_engine()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("deployment-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -29,7 +33,7 @@ public sealed class WorkspaceDeploymentPermissionTests
     [Fact]
     public async Task Owner_can_edit_application_environment_and_engine()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("deployment-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -68,7 +72,7 @@ public sealed class WorkspaceDeploymentPermissionTests
     [Fact]
     public async Task Member_without_setup_permission_cannot_create_application()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -83,7 +87,7 @@ public sealed class WorkspaceDeploymentPermissionTests
     [Fact]
     public async Task Member_without_setup_permission_cannot_edit_application()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -99,7 +103,7 @@ public sealed class WorkspaceDeploymentPermissionTests
     [Fact]
     public async Task Member_with_setup_permission_can_create_application()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();

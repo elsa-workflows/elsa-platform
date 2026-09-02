@@ -13,12 +13,16 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class WorkspaceIsolationTests
+public sealed class WorkspaceIsolationTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public WorkspaceIsolationTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Workspace_sources_are_visible_only_to_members()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var context = await CreateWorkspaceSourceWithPackageAsync(app);
         var nonMember = await ProvisionClientAsync(app, "non-member");
@@ -33,7 +37,7 @@ public sealed class WorkspaceIsolationTests
     [Fact]
     public async Task Workspace_packages_are_hidden_from_anonymous_and_non_members()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var context = await CreateWorkspaceSourceWithPackageAsync(app);
         var nonMember = await ProvisionClientAsync(app, "non-member");
@@ -50,7 +54,7 @@ public sealed class WorkspaceIsolationTests
     [Fact]
     public async Task Workspace_builder_catalog_is_visible_only_to_members()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var context = await CreateWorkspaceSourceWithPackageAsync(app);
         var nonMember = await ProvisionClientAsync(app, "non-member");
@@ -65,7 +69,7 @@ public sealed class WorkspaceIsolationTests
     [Fact]
     public async Task Workspace_runtime_configurations_are_isolated_by_workspace()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateControlIdentityClient(subject: "owner");
         var ownerWorkspaceId = await GetWorkspaceIdAsync(owner);
@@ -84,7 +88,7 @@ public sealed class WorkspaceIsolationTests
     [Fact]
     public async Task Anonymous_public_catalog_does_not_include_workspace_sources()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var publicSource = PublicCatalogSeedData.CreatePackageSource();
