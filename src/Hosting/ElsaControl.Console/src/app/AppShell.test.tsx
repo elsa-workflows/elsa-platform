@@ -37,6 +37,9 @@ describe("AppShell", () => {
     expect(screen.getAllByRole("link", { name: "Build configurations" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("link", { name: "Console" }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Managed Runtimes").length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: "Runtime Operations" }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("link", { name: "Audit" })).not.toBeInTheDocument();
+    expect(screen.getByText("Audit").closest("[aria-disabled='true']")).toBeInTheDocument();
     expect(navigationText).toContain("ControlOverview");
     expect(navigationText).toContain("DeliverOverviewApplicationsArtifacts");
     expect(navigationText).toContain("OperateTiersEngine credentialsConsole");

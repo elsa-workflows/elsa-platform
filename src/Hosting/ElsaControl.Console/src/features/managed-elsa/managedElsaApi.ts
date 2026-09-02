@@ -7,6 +7,8 @@ import type {
   ManagedElsaInstanceList,
   ManagedElsaOnboardingOptions,
   ManagedElsaOperation,
+  ManagedElsaInstanceAudit,
+  ManagedElsaInstanceHealth,
 } from "@/features/managed-elsa/managedElsaModels";
 
 export async function listManagedElsaInstances(workspaceId: string) {
@@ -63,6 +65,19 @@ export function getManagedElsaOperation(workspaceId: string, instanceId: string,
     `/api/workspaces/${encodeURIComponent(workspaceId)}/instances/${encodeURIComponent(instanceId)}/operations/${encodeURIComponent(operationId)}`
   );
 }
+
+export function getManagedElsaInstanceHealth(workspaceId: string, instanceId: string) {
+  return apiRequest<ManagedElsaInstanceHealth>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/instances/${encodeURIComponent(instanceId)}/health`
+  );
+}
+
+export function getManagedElsaInstanceAudit(workspaceId: string, instanceId: string) {
+  return apiRequest<ManagedElsaInstanceAudit>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/instances/${encodeURIComponent(instanceId)}/audit`
+  );
+}
+
 export function issueManagedElsaHandoff(request: ManagedElsaHandoffIssueRequest) {
   return apiRequest<ManagedElsaHandoffIssueResponse>("/api/managed-elsa/handoff/issue", {
     method: "POST",

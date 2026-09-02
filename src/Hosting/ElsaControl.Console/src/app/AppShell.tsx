@@ -68,7 +68,7 @@ const navSections: Array<{ label: string; items: NavItem[] }> = [
       { to: "/admin/console", label: "Console", icon: Terminal },
       { to: "/admin/targets", label: "Targets", icon: Cloud, disabled: true },
       { to: "/admin/runtimes", label: "Managed Runtimes", icon: Gauge },
-      { to: "/admin/operations", label: "Runtime Operations", icon: Activity, disabled: true },
+      { to: "/admin/operations", label: "Runtime Operations", icon: Activity },
       { to: "/admin/audit", label: "Audit", icon: FileClock, disabled: true }
     ]
   },
