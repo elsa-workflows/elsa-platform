@@ -6,7 +6,12 @@ repo_root=$(cd -- "$script_dir/../.." && pwd)
 proof_output=$(mktemp -d "${TMPDIR:-/tmp}/elsa-managed-azure-browser-proof.XXXXXX")
 
 cleanup() {
-  find "$proof_output" -depth -delete
+  local exit_status=$?
+  set +e
+  if [[ -d "$proof_output" ]]; then
+    find "$proof_output" -depth -delete
+  fi
+  exit "$exit_status"
 }
 trap cleanup EXIT
 

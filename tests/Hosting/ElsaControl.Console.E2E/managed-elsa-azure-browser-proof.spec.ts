@@ -30,6 +30,7 @@ test.describe("managed Elsa Azure browser proof", () => {
     expect(await protectedOperationStatus(page)).toBe(200);
 
     expect(callbackForm).toBeDefined();
+    expect([...callbackForm!.keys()].sort()).toEqual(["code", "state"]);
     const replay = await page.request.post(`${runtimeOrigin}/managed-elsa/handoff/callback`, {
       form: Object.fromEntries(callbackForm!)
     });
