@@ -13,20 +13,22 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class ManagedElsaInstanceApiTests
+public sealed class ManagedElsaInstanceApiTests : IClassFixture<ManagedElsaInstanceApiTests.Fixture>
 {
+    private readonly Fixture _fixture;
+
+    public ManagedElsaInstanceApiTests(Fixture fixture) => _fixture = fixture;
+
     [Fact]
     public async Task Onboarding_options_are_server_owned_and_workspace_scoped()
     {
-        var catalog = new CapturingReleaseCatalogStore([
+        var app = await PrepareApplicationAsync([], [
             CatalogEntry("future-runtime", "5.0", "5.0.1", "stable", "combined", "supported", "paid"),
             CatalogEntry("ambiguous-runtime", "4.2", "4.2.0", "stable", "combined", "supported", "paid"),
             CatalogEntry("ambiguous-runtime", "4.2", "4.2.0", "stable", "combined", "supported", "paid", digestMarker: 'd'),
             CatalogEntry("preview-runtime", "4.1", "4.1.0-preview.1", "preview", "combined", "preview", "paid"),
             CatalogEntry("community-runtime", "3.9", "3.9.0", "stable", "combined", "supported", "community")
         ]);
-        await using var app = CreateApplication([], catalog);
-        await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateControlIdentityClient(subject: "managed-owner");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
         await EnableManagedHostingAsync(app, workspaceId);
@@ -42,8 +44,8 @@ public sealed class ManagedElsaInstanceApiTests
         Assert.Equal("standard-small", options.LaunchProfile.CapacityProfile);
         Assert.Equal("public", options.LaunchProfile.NetworkOutcome);
         Assert.Equal("managed", options.LaunchProfile.DomainOutcome);
-        Assert.Equal("supported", catalog.Query?.CatalogLifecycle);
-        Assert.Equal("paid", catalog.Query?.RegistryClass);
+        Assert.Equal("supported", _fixture.ReleaseCatalog.Query?.CatalogLifecycle);
+        Assert.Equal("paid", _fixture.ReleaseCatalog.Query?.RegistryClass);
         var release = Assert.Single(options.Releases);
         Assert.Equal("future-runtime", release.DistributionId);
         Assert.Equal("5.0", release.ReleaseLine);
@@ -55,8 +57,7 @@ public sealed class ManagedElsaInstanceApiTests
     [Fact]
     public async Task Create_rejects_a_release_outside_the_eligible_catalog()
     {
-        await using var app = CreateApplication([]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([]);
         var client = app.CreateTrustedWorkspaceClient("managed-ineligible-release-owner");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
         await EnableManagedHostingAsync(app, workspaceId);
@@ -81,8 +82,7 @@ public sealed class ManagedElsaInstanceApiTests
     [Fact]
     public async Task Create_rejects_a_client_overridden_launch_profile()
     {
-        await using var app = CreateApplication([]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([]);
         var client = app.CreateTrustedWorkspaceClient("managed-placement-owner");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
         await EnableManagedHostingAsync(app, workspaceId);
@@ -118,7 +118,7 @@ public sealed class ManagedElsaInstanceApiTests
     public async Task Healthy_bound_instance_is_openable_but_deleting_instance_fails_closed()
     {
         var healthy = Guid.NewGuid();
-        await using var app = CreateApplication([
+        var app = await PrepareApplicationAsync([
             Instance(healthy, "Claims runtime", "claims-runtime"),
             Instance(
                 Guid.NewGuid(),
@@ -134,7 +134,6 @@ public sealed class ManagedElsaInstanceApiTests
                 "unbound-healthy-runtime",
                 bound: false)
         ]);
-        await app.SeedAsync(_ => Task.CompletedTask);
 
         var client = app.CreateControlIdentityClient(subject: "managed-owner");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
@@ -165,8 +164,7 @@ public sealed class ManagedElsaInstanceApiTests
     [Fact]
     public async Task Caller_without_workspace_access_cannot_read_managed_instances()
     {
-        await using var app = CreateApplication([Instance(Guid.NewGuid(), "Claims runtime", "claims-runtime")]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([Instance(Guid.NewGuid(), "Claims runtime", "claims-runtime")]);
         var owner = app.CreateControlIdentityClient(subject: "managed-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
 
@@ -180,8 +178,7 @@ public sealed class ManagedElsaInstanceApiTests
     public async Task Workspace_reader_without_open_permission_sees_redacted_binding()
     {
         var instanceId = Guid.NewGuid();
-        await using var app = CreateApplication([Instance(instanceId, "Claims runtime", "claims-runtime")]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([Instance(instanceId, "Claims runtime", "claims-runtime")]);
         var owner = app.CreateTrustedWorkspaceClient("managed-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
         await app.AddWorkspaceMemberAsync(workspaceId, "managed-reader", ElsaControl.PackageCatalog.Core.Accounts.WorkspaceRole.Reader);
@@ -200,8 +197,7 @@ public sealed class ManagedElsaInstanceApiTests
     [Fact]
     public async Task Canonical_create_returns_an_async_operation_and_safe_detail_projection()
     {
-        await using var app = CreateApplication([]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([]);
         var client = app.CreateTrustedWorkspaceClient("managed-instance-api-owner");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
         await EnableManagedHostingAsync(app, workspaceId);
@@ -248,8 +244,7 @@ public sealed class ManagedElsaInstanceApiTests
     [Fact]
     public async Task Concurrent_canonical_create_reserves_one_collection_idempotency_key_and_replays_exactly()
     {
-        await using var app = CreateApplication([]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([]);
         var client = app.CreateTrustedWorkspaceClient("managed-instance-concurrent-create");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
         await EnableManagedHostingAsync(app, workspaceId);
@@ -299,8 +294,7 @@ public sealed class ManagedElsaInstanceApiTests
     [Fact]
     public async Task Canonical_detail_uses_current_identity_seam_for_callback_rotation_and_rejects_stale_binding()
     {
-        await using var app = CreateApplication([]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([]);
         var client = app.CreateTrustedWorkspaceClient("managed-instance-current-identity");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
         await EnableManagedHostingAsync(app, workspaceId);
@@ -367,8 +361,7 @@ public sealed class ManagedElsaInstanceApiTests
     [Fact]
     public async Task Canonical_list_handles_large_page_numbers_without_overflowing_has_more()
     {
-        await using var app = CreateApplication([]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([]);
         var client = app.CreateTrustedWorkspaceClient("managed-instance-api-pagination");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
         await EnableManagedHostingAsync(app, workspaceId);
@@ -394,8 +387,7 @@ public sealed class ManagedElsaInstanceApiTests
     [Fact]
     public async Task Canonical_mutations_require_idempotency_and_strong_etags()
     {
-        await using var app = CreateApplication([]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([]);
         var client = app.CreateTrustedWorkspaceClient("managed-instance-api-preconditions");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
         var instanceId = Guid.NewGuid();
@@ -428,8 +420,7 @@ public sealed class ManagedElsaInstanceApiTests
     [Fact]
     public async Task Canonical_mutations_reject_ambiguous_multi_value_if_match()
     {
-        await using var app = CreateApplication([]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([]);
         var client = app.CreateTrustedWorkspaceClient("managed-instance-api-multi-if-match");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
         var instanceId = Guid.NewGuid();
@@ -448,8 +439,7 @@ public sealed class ManagedElsaInstanceApiTests
     [Fact]
     public async Task Canonical_operation_maps_typed_version_conflict_to_precondition_failed()
     {
-        await using var app = CreateApplication([]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([]);
         var client = app.CreateTrustedWorkspaceClient("managed-instance-version-conflict");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
         await EnableManagedHostingAsync(app, workspaceId);
@@ -465,8 +455,7 @@ public sealed class ManagedElsaInstanceApiTests
     [Fact]
     public async Task Canonical_operation_maps_typed_active_operation_conflict_to_conflict()
     {
-        await using var app = CreateApplication([]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([]);
         var client = app.CreateTrustedWorkspaceClient("managed-instance-active-operation");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
         await EnableManagedHostingAsync(app, workspaceId);
@@ -486,8 +475,7 @@ public sealed class ManagedElsaInstanceApiTests
     public async Task Canonical_operation_maps_invalid_request_state_to_stable_conflict(
         ElsaInstanceOperationAction action)
     {
-        await using var app = CreateApplication([]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([]);
         var client = app.CreateTrustedWorkspaceClient($"managed-instance-invalid-{action}");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
         await EnableManagedHostingAsync(app, workspaceId);
@@ -504,8 +492,7 @@ public sealed class ManagedElsaInstanceApiTests
     [Fact]
     public async Task Canonical_operation_key_cannot_be_reused_for_a_different_terminal_action()
     {
-        await using var app = CreateApplication([]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([]);
         var client = app.CreateTrustedWorkspaceClient("managed-instance-cross-action-idempotency");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
         await EnableManagedHostingAsync(app, workspaceId);
@@ -529,8 +516,7 @@ public sealed class ManagedElsaInstanceApiTests
     [Fact]
     public async Task Canonical_delete_requires_matching_confirmation_and_replays_exact_request()
     {
-        await using var app = CreateApplication([]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([]);
         var client = app.CreateTrustedWorkspaceClient("managed-instance-delete-owner");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
         await EnableManagedHostingAsync(app, workspaceId);
@@ -574,8 +560,7 @@ public sealed class ManagedElsaInstanceApiTests
     [Fact]
     public async Task Canonical_operation_rejects_fields_that_do_not_apply_to_action()
     {
-        await using var app = CreateApplication([]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([]);
         var client = app.CreateTrustedWorkspaceClient("managed-instance-operation-shape");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
         await EnableManagedHostingAsync(app, workspaceId);
@@ -598,8 +583,7 @@ public sealed class ManagedElsaInstanceApiTests
     [Fact]
     public async Task Canonical_create_ignores_caller_supplied_instance_id_without_identity_oracle()
     {
-        await using var app = CreateApplication([]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([]);
         var client = app.CreateTrustedWorkspaceClient("managed-instance-server-identity");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
         await EnableManagedHostingAsync(app, workspaceId);
@@ -627,8 +611,7 @@ public sealed class ManagedElsaInstanceApiTests
     [Fact]
     public async Task Delete_confirmation_requires_explicit_delete_permission()
     {
-        await using var app = CreateApplication([]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([]);
         var owner = app.CreateTrustedWorkspaceClient("managed-instance-delete-permission-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
         await app.AddWorkspaceMemberAsync(workspaceId, "managed-instance-delete-reader", WorkspaceRole.Reader);
@@ -649,8 +632,7 @@ public sealed class ManagedElsaInstanceApiTests
     [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
     public async Task Canonical_mutations_reject_unsafe_idempotency_keys_at_api_boundary(string idempotencyKey)
     {
-        await using var app = CreateApplication([]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([]);
         var client = app.CreateTrustedWorkspaceClient("managed-instance-unsafe-idempotency");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
         await EnableManagedHostingAsync(app, workspaceId);
@@ -693,8 +675,7 @@ public sealed class ManagedElsaInstanceApiTests
     [Fact]
     public async Task Canonical_create_fails_closed_when_managed_hosting_entitlement_is_missing()
     {
-        await using var app = CreateApplication([]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([]);
         var client = app.CreateTrustedWorkspaceClient("managed-instance-api-no-entitlement");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
         var request = new HttpRequestMessage(HttpMethod.Post, $"/api/workspaces/{workspaceId}/instances")
@@ -714,8 +695,7 @@ public sealed class ManagedElsaInstanceApiTests
     [Fact]
     public async Task Canonical_create_rejects_display_names_over_256_characters_as_unprocessable()
     {
-        await using var app = CreateApplication([]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([]);
         var client = app.CreateTrustedWorkspaceClient("managed-instance-api-long-name");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
         await EnableManagedHostingAsync(app, workspaceId);
@@ -790,8 +770,7 @@ public sealed class ManagedElsaInstanceApiTests
     [Fact]
     public async Task Instance_from_another_workspace_and_unknown_instance_are_indistinguishable()
     {
-        await using var app = CreateApplication([]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([]);
         var first = app.CreateTrustedWorkspaceClient("managed-instance-owner-a");
         var firstWorkspaceId = await first.GetDefaultWorkspaceIdAsync();
         await EnableManagedHostingAsync(app, firstWorkspaceId);
@@ -817,8 +796,7 @@ public sealed class ManagedElsaInstanceApiTests
     [Fact]
     public async Task Operational_health_is_safe_and_does_not_reveal_cross_workspace_existence()
     {
-        await using var app = CreateApplication([]);
-        await app.SeedAsync(_ => Task.CompletedTask);
+        var app = await PrepareApplicationAsync([]);
         var owner = app.CreateTrustedWorkspaceClient("managed-health-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
         await EnableManagedHostingAsync(app, workspaceId);
@@ -850,33 +828,63 @@ public sealed class ManagedElsaInstanceApiTests
         Assert.Equal(unknown.StatusCode, crossWorkspace.StatusCode);
     }
 
-    private static ControlApiTestApplication CreateApplication(
-        IReadOnlyList<ManagedElsaInstanceSummary> instances,
-        IGovernedReleaseCatalogStore? releaseCatalog = null)
+    public sealed class Fixture : IAsyncLifetime
     {
-        return new ControlApiTestApplication(
-            configureServices: services =>
-            {
-                services.RemoveAll<IManagedElsaInstanceCatalog>();
-                services.AddSingleton<IManagedElsaInstanceCatalog>(new FakeManagedElsaInstanceCatalog(instances));
-                releaseCatalog ??= new CapturingReleaseCatalogStore([
-                    CatalogEntry("valence-runtime", "3.8", "3.8.4", "stable", "combined", "supported", "paid")
-                ]);
-                services.RemoveAll<IGovernedReleaseCatalogStore>();
-                services.AddSingleton(releaseCatalog);
-            });
-    }
+        private readonly FakeManagedElsaInstanceCatalog _instanceCatalog = new();
+        private readonly CapturingReleaseCatalogStore _releaseCatalog = new();
 
-    private sealed class CapturingReleaseCatalogStore : IGovernedReleaseCatalogStore
-    {
-        private readonly IReadOnlyList<GovernedReleaseCatalogEntry> _entries;
+        internal ControlApiTestApplication Application { get; }
 
-        public CapturingReleaseCatalogStore(IReadOnlyList<GovernedReleaseCatalogEntry>? entries = null)
+        internal CapturingReleaseCatalogStore ReleaseCatalog => _releaseCatalog;
+
+        public Fixture()
         {
-            _entries = entries ?? [];
+            Application = new ControlApiTestApplication(
+                configureServices: services =>
+                {
+                    services.RemoveAll<IManagedElsaInstanceCatalog>();
+                    services.AddSingleton<IManagedElsaInstanceCatalog>(_instanceCatalog);
+                    services.RemoveAll<IGovernedReleaseCatalogStore>();
+                    services.AddSingleton<IGovernedReleaseCatalogStore>(_releaseCatalog);
+                });
         }
 
+        internal void Reset(
+            IReadOnlyList<ManagedElsaInstanceSummary> instances,
+            IReadOnlyList<GovernedReleaseCatalogEntry> releaseEntries)
+        {
+            _instanceCatalog.SetInstances(instances);
+            _releaseCatalog.SetEntries(releaseEntries);
+        }
+
+        public Task InitializeAsync() => Task.CompletedTask;
+
+        public async Task DisposeAsync() => await ((IAsyncDisposable)Application).DisposeAsync();
+    }
+
+    private async Task<ControlApiTestApplication> PrepareApplicationAsync(
+        IReadOnlyList<ManagedElsaInstanceSummary> instances,
+        IReadOnlyList<GovernedReleaseCatalogEntry>? releaseEntries = null)
+    {
+        _fixture.Reset(
+            instances,
+            releaseEntries
+            ?? [CatalogEntry("valence-runtime", "3.8", "3.8.4", "stable", "combined", "supported", "paid")]);
+        await _fixture.Application.SeedAsync(_ => Task.CompletedTask);
+        return _fixture.Application;
+    }
+
+    internal sealed class CapturingReleaseCatalogStore : IGovernedReleaseCatalogStore
+    {
+        private IReadOnlyList<GovernedReleaseCatalogEntry> _entries = [];
+
         public GovernedReleaseCatalogQuery? Query { get; private set; }
+
+        public void SetEntries(IReadOnlyList<GovernedReleaseCatalogEntry> entries)
+        {
+            _entries = entries.ToArray();
+            Query = null;
+        }
 
         public Task<GovernedReleaseCatalogWriteResult> StoreAsync(
             IReadOnlyList<GovernedReleaseCatalogEntry> entries,
@@ -1048,9 +1056,17 @@ public sealed class ManagedElsaInstanceApiTests
         return (await response.Content.ReadControlJsonAsync<ActionConfirmation>())!;
     }
 
-    private sealed class FakeManagedElsaInstanceCatalog(IReadOnlyList<ManagedElsaInstanceSummary> instances) : IManagedElsaInstanceCatalog
+    private sealed class FakeManagedElsaInstanceCatalog : IManagedElsaInstanceCatalog
     {
+        private readonly List<ManagedElsaInstanceSummary> _instances = [];
+
+        public void SetInstances(IReadOnlyList<ManagedElsaInstanceSummary> instances)
+        {
+            _instances.Clear();
+            _instances.AddRange(instances);
+        }
+
         public Task<IReadOnlyList<ManagedElsaInstanceSummary>> ListAsync(Guid workspaceId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(instances);
+            Task.FromResult<IReadOnlyList<ManagedElsaInstanceSummary>>(_instances);
     }
 }
