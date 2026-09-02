@@ -7,12 +7,16 @@ using ElsaControl.PackageCatalog.Testing;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class PublicBuilderApiTests
+public sealed class PublicBuilderApiTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public PublicBuilderApiTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Get_builder_catalog_returns_package_provenance_and_infrastructure()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var source = PublicCatalogSeedData.CreatePackageSource();
@@ -47,9 +51,35 @@ public sealed class PublicBuilderApiTests
     }
 
     [Fact]
+    public async Task Reused_host_reset_replaces_database_and_catalog_cache()
+    {
+        var app = _app;
+
+        async Task SeedPackageAsync(string packageId)
+        {
+            await app.SeedAsync(db =>
+            {
+                var source = PublicCatalogSeedData.CreatePackageSource();
+                PublicCatalogSeedData.AddVersion(PublicCatalogSeedData.CreatePackage(source, packageId));
+                db.PackageSources.Add(source);
+                return Task.CompletedTask;
+            });
+        }
+
+        await SeedPackageAsync("Elsa.BeforeReset");
+        var before = await app.CreateClient().GetFromJsonAsync<BuilderCatalogResponse>("/api/builder/catalog");
+        Assert.Contains(before!.Packages, x => x.PackageId == "Elsa.BeforeReset");
+
+        await SeedPackageAsync("Elsa.AfterReset");
+        var after = await app.CreateClient().GetFromJsonAsync<BuilderCatalogResponse>("/api/builder/catalog");
+        Assert.Contains(after!.Packages, x => x.PackageId == "Elsa.AfterReset");
+        Assert.DoesNotContain(after.Packages, x => x.PackageId == "Elsa.BeforeReset");
+    }
+
+    [Fact]
     public async Task Get_builder_catalog_returns_image_and_feature_runtime_kinds()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var source = PublicCatalogSeedData.CreatePackageSource();
@@ -92,7 +122,7 @@ public sealed class PublicBuilderApiTests
     [Fact]
     public async Task Get_builder_catalog_filters_by_selected_source_ids()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var selectedSourceId = Guid.Empty;
         await app.SeedAsync(db =>
         {
@@ -116,7 +146,7 @@ public sealed class PublicBuilderApiTests
     [Fact]
     public async Task Get_builder_catalog_returns_all_runtime_kind_features_for_client_side_image_filtering()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(db =>
         {
             var source = PublicCatalogSeedData.CreatePackageSource();
@@ -153,7 +183,8 @@ public sealed class PublicBuilderApiTests
     [Fact]
     public async Task Resolve_returns_bad_request_when_packages_are_missing()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
+        await app.SeedAsync(_ => Task.CompletedTask);
 
         var response = await app.CreateClient().PostAsJsonAsync("/api/builder/resolve", new
         {
@@ -169,7 +200,8 @@ public sealed class PublicBuilderApiTests
     [InlineData(" ", "1.0.0")]
     public async Task Resolve_reports_invalid_package_selections(string? packageId, string version)
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
+        await app.SeedAsync(_ => Task.CompletedTask);
 
         var response = await app.CreateClient().PostAsJsonAsync("/api/builder/resolve", new
         {
@@ -188,7 +220,7 @@ public sealed class PublicBuilderApiTests
     [Fact]
     public async Task Resolve_returns_success_for_compatible_selection()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var sourceId = Guid.Empty;
         await app.SeedAsync(db =>
         {
@@ -225,7 +257,7 @@ public sealed class PublicBuilderApiTests
     [Fact]
     public async Task Resolve_uses_source_qualified_package_version_when_package_ids_overlap()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var compatibleSourceId = Guid.Empty;
         await app.SeedAsync(db =>
         {
@@ -272,7 +304,7 @@ public sealed class PublicBuilderApiTests
     [Fact]
     public async Task Resolve_treats_non_browseable_source_versions_as_missing()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var sourceId = Guid.Empty;
         await app.SeedAsync(db =>
         {
@@ -306,7 +338,7 @@ public sealed class PublicBuilderApiTests
     [Fact]
     public async Task Resolve_reports_feature_dependency_and_conflict_failures()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         var sourceId = Guid.Empty;
         await app.SeedAsync(db =>
         {

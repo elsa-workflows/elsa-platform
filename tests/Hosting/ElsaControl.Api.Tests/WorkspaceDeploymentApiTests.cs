@@ -12,15 +12,19 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class WorkspaceDeploymentApiTests
+public sealed class WorkspaceDeploymentApiTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public WorkspaceDeploymentApiTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     // Regression guard for the endpoint-filter refactor: the shared ApiExceptionMappingEndpointFilter
     // now maps service exceptions on handlers that previously had no try/catch (and therefore returned
     // 500). These two pin the normalized 400/409 contract so the mapping can't silently regress.
     [Fact]
     public async Task Creating_application_with_blank_name_returns_bad_request()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("blank-app-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -35,7 +39,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Creating_revision_for_missing_environment_returns_conflict()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("missing-env-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -50,7 +54,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Workspace_member_can_read_persisted_deployment_cockpit()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateTrustedWorkspaceClient();
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
@@ -71,7 +75,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Deployment_cockpit_route_rejects_non_members()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var member = app.CreateTrustedWorkspaceClient("member");
         var workspaceId = await member.GetDefaultWorkspaceIdAsync();
@@ -87,7 +91,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Normal_dataset_cockpit_loads_under_three_seconds()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var client = app.CreateTrustedWorkspaceClient("large-workspace");
         var workspaceId = await client.GetDefaultWorkspaceIdAsync();
@@ -107,7 +111,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Owner_can_create_update_and_read_environment_tier_shape()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("tier-environment-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -139,7 +143,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Desired_state_requirements_omit_observability_for_dev_tier()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("requirements-dev-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -166,7 +170,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Desired_state_requirements_include_observability_for_production_tier()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("requirements-prod-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -198,7 +202,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Environment_assignment_rejects_archived_tiers()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("tier-archive-env-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -220,7 +224,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Owner_can_create_environment_without_engine_registration()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("environment-only-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -246,7 +250,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Owner_can_register_engine_with_registered_credential_reference()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("engine-credential-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -299,7 +303,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Owner_can_create_local_engine_credential_store_without_echoing_secret_values()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("local-secret-store-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -341,7 +345,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task External_engine_credential_stores_reject_secret_values()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("external-secret-store-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -368,7 +372,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Owner_can_register_engine_with_credentials_deferred_and_inspect_reference_usage()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("deferred-engine-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -458,7 +462,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Secret_store_and_credential_reference_reads_require_deployment_read_permission()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("secret-store-permission-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -487,7 +491,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Owner_can_create_desired_state_revision_and_preview_promotion()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("preview-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -522,7 +526,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Owner_can_list_and_fetch_application_revisions()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("revision-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -556,7 +560,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Application_revision_reads_require_deployment_read_permission()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("revision-permission-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -580,7 +584,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Promotion_preview_requires_preview_permission_for_readers()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("preview-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -601,7 +605,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Promotion_with_blank_label_returns_bad_request()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("promotion-label-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -616,7 +620,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Owner_can_promote_artifact_backed_revision_and_queue_safe_command()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("artifact-promotion-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -664,7 +668,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Deployment_run_rejects_artifact_digest_mismatch_before_consuming_confirmation()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("artifact-run-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -694,7 +698,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Deployment_run_uses_artifact_type_default_capabilities_when_hints_are_empty()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("artifact-capability-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -724,7 +728,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Owner_can_roll_back_to_artifact_backed_revision_and_queue_safe_command()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("artifact-rollback-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -780,7 +784,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Artifact_backed_rollback_rejects_missing_artifact_before_consuming_confirmation()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("artifact-rollback-missing-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -806,7 +810,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Owner_can_confirm_queue_inspect_and_rollback_deployment_run()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("run-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();
@@ -837,7 +841,7 @@ public sealed class WorkspaceDeploymentApiTests
     [Fact]
     public async Task Deployment_run_confirmation_rejects_wrong_user_replay_and_expired_confirmation()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateTrustedWorkspaceClient("run-owner");
         var workspaceId = await owner.GetDefaultWorkspaceIdAsync();

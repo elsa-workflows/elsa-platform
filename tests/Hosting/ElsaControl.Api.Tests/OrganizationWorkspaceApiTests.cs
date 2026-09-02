@@ -8,12 +8,16 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class OrganizationWorkspaceApiTests
+public sealed class OrganizationWorkspaceApiTests : IClassFixture<DefaultControlApiTestApplicationFixture>
 {
+    private readonly ControlApiTestApplication _app;
+
+    public OrganizationWorkspaceApiTests(DefaultControlApiTestApplicationFixture fixture) => _app = fixture.Application;
+
     [Fact]
     public async Task Owner_can_create_and_list_organization_workspaces()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateControlIdentityClient(subject: "owner");
         var context = await owner.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
@@ -36,7 +40,7 @@ public sealed class OrganizationWorkspaceApiTests
     [Fact]
     public async Task Duplicate_active_workspace_name_is_rejected()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateControlIdentityClient(subject: "owner");
         var organizationId = (await owner.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Organizations.Single().Id;
@@ -51,7 +55,7 @@ public sealed class OrganizationWorkspaceApiTests
     [Fact]
     public async Task Concurrent_workspace_creates_cannot_exceed_organization_workspace_limit()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateControlIdentityClient(subject: "owner");
         var organizationId = (await owner.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Organizations.Single().Id;
@@ -73,7 +77,7 @@ public sealed class OrganizationWorkspaceApiTests
     [Fact]
     public async Task Concurrent_workspace_creates_cannot_create_duplicate_active_names()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateControlIdentityClient(subject: "owner");
         var organizationId = (await owner.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Organizations.Single().Id;
@@ -98,7 +102,7 @@ public sealed class OrganizationWorkspaceApiTests
     [Fact]
     public async Task Owner_can_rename_and_archive_workspace()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateControlIdentityClient(subject: "owner");
         var organizationId = (await owner.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Organizations.Single().Id;
@@ -123,7 +127,7 @@ public sealed class OrganizationWorkspaceApiTests
     [Fact]
     public async Task Organization_member_lists_only_assigned_workspaces()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateControlIdentityClient(subject: "owner");
         var ownerContext = await owner.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
@@ -147,7 +151,7 @@ public sealed class OrganizationWorkspaceApiTests
     [Fact]
     public async Task Other_organization_owner_cannot_list_workspaces()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateControlIdentityClient(subject: "owner");
         var other = app.CreateControlIdentityClient(subject: "other");
@@ -162,7 +166,7 @@ public sealed class OrganizationWorkspaceApiTests
     [Fact]
     public async Task Organization_membership_alone_does_not_authorize_workspace_resources()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateControlIdentityClient(subject: "owner");
         var ownerContext = await owner.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
@@ -177,7 +181,7 @@ public sealed class OrganizationWorkspaceApiTests
     [Fact]
     public async Task Workspace_membership_target_must_be_organization_member()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateControlIdentityClient(subject: "owner");
         var organizationId = (await owner.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Organizations.Single().Id;
@@ -195,7 +199,7 @@ public sealed class OrganizationWorkspaceApiTests
     [Fact]
     public async Task Workspace_owner_can_be_removed_when_another_owner_exists()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateControlIdentityClient(subject: "owner");
         var ownerContext = await owner.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
@@ -215,7 +219,7 @@ public sealed class OrganizationWorkspaceApiTests
     [Fact]
     public async Task Removing_the_only_workspace_owner_is_rejected()
     {
-        await using var app = new ControlApiTestApplication();
+        var app = _app;
         await app.SeedAsync(_ => Task.CompletedTask);
         var owner = app.CreateControlIdentityClient(subject: "owner");
         var ownerContext = await owner.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces");
