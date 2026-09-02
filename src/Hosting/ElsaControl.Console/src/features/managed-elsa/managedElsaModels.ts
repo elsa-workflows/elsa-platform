@@ -27,6 +27,81 @@ export type ManagedElsaInstance = {
   audience: string | null;
   redirectUri: string | null;
   unavailableReason: string | null;
+  version?: number;
+  eTag?: string;
+  intent?: ManagedElsaInstanceIntent | null;
+};
+
+export type ManagedElsaInstanceList = {
+  items: ManagedElsaInstance[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  hasMore: boolean;
+};
+
+export type ManagedElsaLaunchProfile = {
+  name: string;
+  description: string;
+  targetMode: string;
+  regionCode: string;
+  isolationProfile: string;
+  capacityProfile: string;
+  networkOutcome: string;
+  domainOutcome: string;
+};
+
+export type ManagedElsaOnboardingOptions = {
+  releases: Array<{
+    distributionId: string;
+    releaseLine: string;
+    version: string;
+    channel: string;
+    topologyId: string;
+  }>;
+  launchProfile: ManagedElsaLaunchProfile;
+};
+
+export type ManagedElsaInstanceIntent = {
+  release: {
+    distributionId: string;
+    releaseLine: string;
+    requestedVersion: string;
+    channel: string;
+    patchUpdates: string;
+    minorUpdates: string;
+    majorMigrations: string;
+  };
+  application: {
+    topologyId: string;
+    featurePresetId: string | null;
+    featureOverrides: Record<string, ManagedElsaFeatureOverride>;
+    packagePolicy: string | null;
+    configurationShapeRevisionId: string | null;
+  };
+  placement: Omit<ManagedElsaLaunchProfile, "name" | "description">;
+  desiredLifecycle: "Running";
+};
+
+export type ManagedElsaFeatureOverride = {
+  kind: "Boolean" | "Number" | "Catalog";
+  value: string;
+};
+
+export type ManagedElsaOperation = {
+  id: string;
+  instanceId: string;
+  action: string;
+  state: "Accepted" | "WaitingForPriorOperation" | "Queued" | "Running" | "Succeeded" | "Failed" | "RecoveryRequired" | "Cancelled";
+  attemptNumber: number;
+  failureCode: string | null;
+  links: Record<string, string>;
+};
+
+export type ManagedElsaAccepted = {
+  instance: ManagedElsaInstance;
+  operation: ManagedElsaOperation;
+  links: Record<string, string>;
 };
 
 export type ManagedElsaHandoffIssueRequest = {

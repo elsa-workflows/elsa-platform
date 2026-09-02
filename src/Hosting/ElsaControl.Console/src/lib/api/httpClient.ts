@@ -58,6 +58,8 @@ async function toApiError(response: Response) {
       return new ApiError("NotFound", message, response.status, details);
     case 409:
       return new ApiError("Conflict", message, response.status, details);
+    case 422:
+      return new ApiError("Validation", message, response.status, details);
     case 503:
       return new ApiError("Unavailable", message, response.status, details);
     default:

@@ -3,6 +3,7 @@ using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Core.Instances;
 using ElsaControl.Deployment.Core.Workspace;
 using ElsaControl.PackageCatalog.Core.Accounts;
+using ElsaControl.RuntimeBuilder.Abstractions.ReleaseCatalog;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ElsaControl.Api.Workspace;
@@ -13,6 +14,10 @@ namespace ElsaControl.Api.Workspace;
 /// </summary>
 public static class ManagedElsaInstanceEndpoints
 {
+    private static readonly ManagedElsaInstanceLaunchProfile InitialLaunchProfile = new(
+        "West Europe Dedicated", "Managed hosting in West Europe.",
+        "managed", "westeurope", "dedicated", "standard-small", "public", "managed");
+
     public static IEndpointRouteBuilder MapManagedElsaInstanceEndpoints(this IEndpointRouteBuilder endpoints)
     {
         MapLegacyList(endpoints);
@@ -60,11 +65,54 @@ public static class ManagedElsaInstanceEndpoints
                 offset + currentPageSize < pageResult.TotalCount));
         }).RequireWorkspaceAccess();
 
+        group.MapGet("/onboarding-options", async (
+            Guid workspaceId,
+            HttpContext context,
+            IAccountWorkspaceStore accountStore,
+            IGovernedReleaseCatalogStore catalog,
+            CancellationToken cancellationToken) =>
+        {
+            var access = context.GetWorkspaceAccess();
+            if (!await HasManagedHostingEntitlementAsync(accountStore, access.OrganizationId, cancellationToken))
+                return Problem("instance.entitlement-required", "Managed hosting is not enabled for this organization.", StatusCodes.Status422UnprocessableEntity);
+
+            // Match the lifecycle resolver's fail-closed eligibility boundary so
+            // every option shown here can be resolved when the customer submits it.
+            var entries = await catalog.QueryAsync(new GovernedReleaseCatalogQuery(
+                CatalogLifecycle: "supported",
+                RegistryClass: "paid"), cancellationToken);
+            // The durable resolver requires one exact governed row. Do not offer
+            // a display-equivalent choice when multiple immutable admissions
+            // would make that later resolution ambiguous.
+            var releases = entries
+                .GroupBy(entry => (
+                    entry.Distribution.Id.Trim().ToUpperInvariant(),
+                    entry.Distribution.ReleaseLine.Trim().ToUpperInvariant(),
+                    entry.Distribution.ReleaseVersion.Trim().ToUpperInvariant(),
+                    entry.Distribution.Channel.Trim().ToUpperInvariant(),
+                    entry.Topology.Id.Trim().ToUpperInvariant()))
+                .Where(group => group.Take(2).Count() == 1)
+                .Select(group => group.Single())
+                .Select(entry => new ManagedElsaInstanceReleaseOption(
+                    entry.Distribution.Id,
+                    entry.Distribution.ReleaseLine,
+                    entry.Distribution.ReleaseVersion,
+                    entry.Distribution.Channel,
+                    entry.Topology.Id))
+                .OrderBy(x => x.ReleaseLine, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(x => x.Version, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(x => x.DistributionId, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(x => x.TopologyId, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            return Results.Ok(new ManagedElsaInstanceOnboardingOptionsResponse(releases, InitialLaunchProfile));
+        }).RequireWorkspaceAccess();
+
         group.MapPost("", async (
             Guid workspaceId,
             ManagedElsaInstanceCreateRequest request,
             HttpContext context,
             IAccountWorkspaceStore accountStore,
+            IGovernedReleaseCatalogStore catalog,
             WorkspacePermissionService permissions,
             ElsaInstanceLifecycleService lifecycle,
             IElsaInstanceLifecycleStore lifecycleStore,
@@ -85,6 +133,9 @@ public static class ManagedElsaInstanceEndpoints
             var entitlement = await accountStore.GetLatestOrganizationEntitlementAsync(access.OrganizationId, cancellationToken);
             if (entitlement is not { ManagedHostingEnabled: true })
                 return Problem("instance.entitlement-required", "Managed hosting is not enabled for this organization.", StatusCodes.Status422UnprocessableEntity);
+            if (!MatchesInitialLaunchProfile(request.Intent.Placement) ||
+                !await HasOneEligibleCatalogMatchAsync(catalog, request.Intent, cancellationToken))
+                return Problem("instance.catalog-selection-unavailable", "The selected managed release or launch profile is unavailable.", StatusCodes.Status422UnprocessableEntity);
 
             try
             {
@@ -340,6 +391,33 @@ public static class ManagedElsaInstanceEndpoints
         return endpoints;
     }
 
+    private static async Task<bool> HasOneEligibleCatalogMatchAsync(
+        IGovernedReleaseCatalogStore catalog,
+        ElsaInstanceIntent intent,
+        CancellationToken cancellationToken)
+    {
+        var entries = await catalog.QueryAsync(new GovernedReleaseCatalogQuery(
+            DistributionId: intent.Release.DistributionId,
+            ReleaseLine: intent.Release.ReleaseLine,
+            ReleaseVersion: intent.Release.RequestedVersion,
+            Channel: intent.Release.Channel,
+            CatalogLifecycle: "supported",
+            RegistryClass: "paid",
+            TopologyId: intent.Application.TopologyId), cancellationToken);
+        return entries.Take(2).Count() == 1;
+    }
+
+    private static bool MatchesInitialLaunchProfile(ElsaPlacementIntent placement) =>
+        Equal(placement.TargetMode, InitialLaunchProfile.TargetMode) &&
+        Equal(placement.RegionCode, InitialLaunchProfile.RegionCode) &&
+        Equal(placement.IsolationProfile, InitialLaunchProfile.IsolationProfile) &&
+        Equal(placement.CapacityProfile, InitialLaunchProfile.CapacityProfile) &&
+        Equal(placement.NetworkOutcome, InitialLaunchProfile.NetworkOutcome) &&
+        Equal(placement.DomainOutcome, InitialLaunchProfile.DomainOutcome);
+
+    private static bool Equal(string left, string right) =>
+        string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+
     private static void MapLegacyList(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/api/workspaces/{workspaceId:guid}/managed-elsa/instances", async (
@@ -535,6 +613,24 @@ public sealed record ManagedElsaInstanceCreateRequest(string? Name, string? Slug
 public sealed record ManagedElsaInstancePatchRequest(ElsaInstanceIntent? Intent = null, string? Name = null, string? Reason = null);
 public sealed record ManagedElsaInstanceOperationRequest(ElsaInstanceOperationAction Action, int? ExpectedVersion = null, string? Reason = null, ElsaInstanceIntent? Intent = null, string? Name = null, Guid? DeleteConfirmationId = null);
 public sealed record ManagedElsaInstanceListResponse(IReadOnlyList<ManagedElsaInstanceResponse> Items, int Page, int PageSize, int TotalCount, bool HasMore);
+public sealed record ManagedElsaInstanceOnboardingOptionsResponse(
+    IReadOnlyList<ManagedElsaInstanceReleaseOption> Releases,
+    ManagedElsaInstanceLaunchProfile LaunchProfile);
+public sealed record ManagedElsaInstanceReleaseOption(
+    string DistributionId,
+    string ReleaseLine,
+    string Version,
+    string Channel,
+    string TopologyId);
+public sealed record ManagedElsaInstanceLaunchProfile(
+    string Name,
+    string Description,
+    string TargetMode,
+    string RegionCode,
+    string IsolationProfile,
+    string CapacityProfile,
+    string NetworkOutcome,
+    string DomainOutcome);
 public sealed record ManagedElsaInstanceAcceptedResponse(ManagedElsaInstanceResponse Instance, ManagedElsaInstanceOperationResponse Operation, IReadOnlyDictionary<string, string> Links);
 public sealed record ManagedElsaInstanceOperationResponse(Guid Id, Guid InstanceId, ElsaInstanceOperationAction Action, ElsaInstanceOperationState State, int ExpectedVersion, int AttemptNumber, DateTimeOffset AcceptedAt, DateTimeOffset? StartedAt, DateTimeOffset? CompletedAt, string? DesiredStateRevisionId, string? ResolvedPlanId, Guid? DeploymentRunId, string? FailureCode, ElsaObservedLifecycle? ReconciledObservedLifecycle, ElsaInstanceHealth? ReconciledHealth, IReadOnlyDictionary<string, string> Links);
 public sealed record ManagedElsaInstanceIdentityBindingResponse(string Audience, string CanonicalCallbackUri, string VerifiedEndpointOrigin, int BindingVersion, DateTimeOffset ChangedAt);

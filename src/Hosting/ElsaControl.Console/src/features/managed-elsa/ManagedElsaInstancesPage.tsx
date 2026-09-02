@@ -10,6 +10,7 @@ import { managedElsaHandoffTokenType, type ManagedElsaInstance } from "@/feature
 import { ApiError } from "@/lib/api/httpClient";
 import { queryKeys } from "@/lib/query/queryClient";
 import { cn } from "@/lib/utils";
+import { ManagedElsaCreatePanel } from "@/features/managed-elsa/ManagedElsaCreatePanel";
 
 export function ManagedElsaInstancesPage() {
   const { selectedWorkspaceId, isLoading: workspaceLoading } = useWorkspaceContext();
@@ -50,7 +51,7 @@ export function ManagedElsaInstancesPage() {
     // correlation state; no handoff secret is carried by this URL.
     navigate("/admin/runtimes", { replace: true });
 
-    const instance = instances.data.find((item) => item.instanceId === handoffContinuation.instanceId);
+    const instance = instances.data.items.find((item) => item.instanceId === handoffContinuation.instanceId);
     if (!instance) {
       setOpenError("This managed instance is no longer available. Refresh the page and try again.");
       return;
@@ -90,7 +91,7 @@ export function ManagedElsaInstancesPage() {
   if (instances.isError)
     return <RequestStateView state="unexpected" title="Managed instances could not load" description="Try again when Elsa Control is available." />;
 
-  const items = instances.data ?? [];
+  const items = instances.data?.items ?? [];
   return (
     <section className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -116,6 +117,8 @@ export function ManagedElsaInstancesPage() {
           </div>
         </div>
       ) : null}
+
+      {selectedWorkspaceId ? <ManagedElsaCreatePanel key={selectedWorkspaceId} workspaceId={selectedWorkspaceId} /> : null}
 
       {items.length === 0 ? (
         <EmptyState
