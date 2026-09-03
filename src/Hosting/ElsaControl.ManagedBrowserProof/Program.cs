@@ -9,15 +9,13 @@ using Microsoft.EntityFrameworkCore;
 const string FixtureKey = "managed-browser-proof-v1";
 var instanceId = Guid.Parse("00000000-0000-0000-0000-000000000185");
 
-if (args.Length != 3 || args[0] is not ("seed" or "revoke" or "restore" or "unavailable"))
-    return Fail("Usage: ElsaControl.ManagedBrowserProof <seed|revoke|restore|unavailable> <sqlite-db-path> <runtime-origin>.");
+if (args.Length < 2 || args[0] is not ("initialize" or "seed" or "revoke" or "restore" or "unavailable"))
+    return Fail("Usage: ElsaControl.ManagedBrowserProof <initialize|seed|revoke|restore|unavailable> <arguments>.");
 
 var command = args[0];
 var databasePath = Path.GetFullPath(args[1]);
-if (!File.Exists(databasePath))
+if (command != "initialize" && !File.Exists(databasePath))
     return Fail("The fixture database does not exist.");
-if (!ElsaManagedEndpointOrigin.TryCreate(args[2], out var runtimeOrigin))
-    return Fail("The runtime origin must be an absolute HTTPS origin without credentials, path, query, or fragment.");
 
 var options = new DbContextOptionsBuilder<CatalogDbContext>()
     .UseSqlite($"Data Source={databasePath}", sqlite =>
@@ -25,6 +23,28 @@ var options = new DbContextOptionsBuilder<CatalogDbContext>()
     .Options;
 await using var database = new CatalogDbContext(options);
 await database.Database.MigrateAsync();
+
+if (command == "initialize")
+{
+    if (args.Length != 5)
+        return Fail("Usage: ElsaControl.ManagedBrowserProof initialize <sqlite-db-path> <issuer> <realm-json-path> <username>.");
+
+    var result = await InitializeAsync(database, args[2], args[3], args[4]);
+    Console.WriteLine(JsonSerializer.Serialize(new
+    {
+        command,
+        organizationId = result.Workspaces.Single().OrganizationId,
+        workspaceId = result.Workspaces.Single().Id,
+        accountId = result.Account.Id,
+        status = "succeeded"
+    }));
+    return 0;
+}
+
+if (args.Length != 3)
+    return Fail("Usage: ElsaControl.ManagedBrowserProof <seed|revoke|restore|unavailable> <sqlite-db-path> <runtime-origin>.");
+if (!ElsaManagedEndpointOrigin.TryCreate(args[2], out var runtimeOrigin))
+    return Fail("The runtime origin must be an absolute HTTPS origin without credentials, path, query, or fragment.");
 
 var workspaces = await database.Workspaces
     .AsNoTracking()
@@ -75,6 +95,51 @@ Console.WriteLine(JsonSerializer.Serialize(new
     status = "succeeded"
 }));
 return 0;
+
+static async Task<AccountWorkspaceContext> InitializeAsync(
+    CatalogDbContext database,
+    string issuer,
+    string realmPath,
+    string username)
+{
+    if (!Uri.TryCreate(issuer, UriKind.Absolute, out var issuerUri) ||
+        issuerUri.Scheme is not ("http" or "https") ||
+        !string.IsNullOrEmpty(issuerUri.UserInfo) ||
+        !string.IsNullOrEmpty(issuerUri.Query) ||
+        !string.IsNullOrEmpty(issuerUri.Fragment))
+    {
+        throw new InvalidOperationException("The fixture identity issuer is invalid.");
+    }
+
+    await using var realmStream = File.OpenRead(Path.GetFullPath(realmPath));
+    var realmDocument = await JsonDocument.ParseAsync(realmStream);
+    using (realmDocument)
+    {
+        var users = realmDocument.RootElement.GetProperty("users");
+        var matches = users.EnumerateArray()
+            .Where(user => string.Equals(user.GetProperty("username").GetString(), username, StringComparison.Ordinal))
+            .Take(2)
+            .ToList();
+        if (matches.Count != 1)
+            throw new InvalidOperationException("The fixture realm must contain exactly one matching user.");
+
+        var user = matches[0];
+        var subject = user.GetProperty("id").GetString();
+        var firstName = user.TryGetProperty("firstName", out var firstNameProperty) ? firstNameProperty.GetString() : null;
+        var lastName = user.TryGetProperty("lastName", out var lastNameProperty) ? lastNameProperty.GetString() : null;
+        var displayName = string.Join(' ', new[] { firstName, lastName }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        var email = user.TryGetProperty("email", out var emailProperty) ? emailProperty.GetString() : null;
+        if (string.IsNullOrWhiteSpace(subject))
+            throw new InvalidOperationException("The fixture realm user must have a stable subject identifier.");
+
+        var accounts = new AccountWorkspaceService(new AccountWorkspaceStore(database));
+        return await accounts.GetOrCreateAsync(new TrustedWorkspaceIdentity(
+            issuerUri.AbsoluteUri.TrimEnd('/'),
+            subject,
+            displayName,
+            email));
+    }
+}
 
 static async Task SeedAsync(
     CatalogDbContext database,
