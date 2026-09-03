@@ -1,6 +1,8 @@
+using System.Numerics;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using ElsaControl.RuntimeBuilder.Abstractions.Plans;
 using ElsaControl.RuntimeBuilder.Abstractions.ReleaseManifests;
 
@@ -47,6 +49,8 @@ internal static class ProducerReleaseManifestMapper
         ValidateIdentity(channel, "release.channel", findings);
         ValidateIdentity(lifecycle, "release.lifecycle", findings);
         ValidateProductEdition(edition, "release.edition", findings);
+        ValidateReleaseVersion(releaseLine, version, "release.version", findings);
+        ValidateCompatibilityEngineVersion(release.Value, releaseLine, version, findings);
 
         ValidateSigning(root, options, source?.Workflow, findings);
         ValidateIntegrity(root, findings);
@@ -57,7 +61,7 @@ internal static class ProducerReleaseManifestMapper
             && root.TryGetProperty("componentEvidence", out var componentEvidence)
             && componentEvidence.ValueKind == JsonValueKind.Object)
             rootEvidence = ParseEvidence(componentEvidence, "sources", findings);
-        var topologies = ParseDistributions(root, options, rootEvidence, distributionId, version, findings);
+        var topologies = ParseDistributions(root, options, rootEvidence, distributionId, releaseLine, version, findings);
         if (topologies.Count == 0)
             Add(findings, "distributions.required", "At least one producer distribution is required.", "distributions");
 
@@ -84,6 +88,7 @@ internal static class ProducerReleaseManifestMapper
         ReleaseManifestAdmissionOptions options,
         IReadOnlyList<ProducerEvidence> rootEvidence,
         string? releaseDistributionId,
+        string? releaseLine,
         string? version,
         List<ReleaseManifestAdmissionFinding> findings)
     {
@@ -153,6 +158,7 @@ internal static class ProducerReleaseManifestMapper
                     runtimeKinds,
                     endpoints,
                     localEvidence,
+                    releaseLine,
                     version,
                     options.ExpectedSignatureSubject,
                     options.ExpectedOidcIssuer ?? ReleaseManifestSchema.DefaultOidcIssuer,
@@ -246,6 +252,7 @@ internal static class ProducerReleaseManifestMapper
         IReadOnlyList<string> distributionRuntimeKinds,
         IReadOnlyDictionary<string, string> distributionEndpoints,
         IReadOnlyList<ProducerEvidence> distributionEvidence,
+        string? releaseLine,
         string? version,
         string expectedSigner,
         string expectedIssuer,
@@ -266,6 +273,7 @@ internal static class ProducerReleaseManifestMapper
                     distributionRuntimeKinds,
                     distributionEndpoints,
                     distributionEvidence,
+                    releaseLine,
                     version,
                     expectedSigner,
                     expectedIssuer,
@@ -307,6 +315,7 @@ internal static class ProducerReleaseManifestMapper
                     runtimeKinds.Count > 0 ? runtimeKinds : distributionRuntimeKinds,
                     endpoints,
                     evidence,
+                    releaseLine,
                     componentVersion,
                     expectedSigner,
                     expectedIssuer,
@@ -347,6 +356,7 @@ internal static class ProducerReleaseManifestMapper
                     runtimeKinds.Count > 0 ? runtimeKinds : distributionRuntimeKinds,
                     endpoints,
                     evidence,
+                    releaseLine,
                     componentVersion,
                     expectedSigner,
                     expectedIssuer,
@@ -372,13 +382,14 @@ internal static class ProducerReleaseManifestMapper
         IReadOnlyList<string> runtimeKinds,
         IReadOnlyDictionary<string, string> endpoints,
         IReadOnlyList<ProducerEvidence> evidence,
+        string? releaseLine,
         string? version,
         string expectedSigner,
         string expectedIssuer,
         List<ReleaseManifestAdmissionFinding> findings)
     {
         ValidateIdentity(componentId, "component.id", findings);
-        var imageModel = ParseImage(image, edition, componentId, capabilities, runtimeKinds, evidence, expectedSigner, expectedIssuer, findings);
+        var imageModel = ParseImage(image, edition, componentId, topologyId, capabilities, runtimeKinds, evidence, releaseLine, expectedSigner, expectedIssuer, findings);
         if (imageModel is null || topologyId is null || edition is null || componentId is null)
             return null;
 
@@ -399,9 +410,11 @@ internal static class ProducerReleaseManifestMapper
         JsonElement image,
         string? edition,
         string? componentId,
+        string? topologyId,
         IReadOnlyList<string> capabilities,
         IReadOnlyList<string> runtimeKinds,
         IReadOnlyList<ProducerEvidence> inheritedEvidence,
+        string? releaseLine,
         string expectedSigner,
         string expectedIssuer,
         List<ReleaseManifestAdmissionFinding> findings)
@@ -423,6 +436,7 @@ internal static class ProducerReleaseManifestMapper
         var imageCapabilities = StringArrayAny(image, ["capabilities"], "image.capabilities", findings);
         var allCapabilities = capabilities.Count > 0 ? capabilities : imageCapabilities;
         var imageKinds = runtimeKinds.Count > 0 ? runtimeKinds : DeriveRuntimeKinds(componentId, allCapabilities);
+        ValidateRuntimeIntegrations(image, topologyId, allCapabilities, imageKinds, releaseLine, reference, digest, findings);
         var roles = imageKinds.Select(ToRole).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var imageEvidence = ParseEvidence(image, "evidence", findings);
         if (imageEvidence.Count == 0)
@@ -912,6 +926,216 @@ internal static class ProducerReleaseManifestMapper
         if (result.Count == 0 && !string.IsNullOrWhiteSpace(topologyId))
             result.Add($"elsa.{topologyId}");
         return result.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    private static void ValidateRuntimeIntegrations(
+        JsonElement image,
+        string? topologyId,
+        IReadOnlyList<string> capabilities,
+        IReadOnlyList<string> runtimeKinds,
+        string? releaseLine,
+        string? imageReference,
+        string? imageDigest,
+        List<ReleaseManifestAdmissionFinding> findings)
+    {
+        var hasManagedHandoff = capabilities.Contains(
+            ReleaseManifestRuntimeIntegrationCapabilities.ManagedElsaHandoffV1,
+            StringComparer.Ordinal);
+        var hasServerRuntime = runtimeKinds.Contains("elsa.server", StringComparer.OrdinalIgnoreCase);
+        var hasIntegrations = image.TryGetProperty("integrations", out var integrations);
+
+        if (!hasIntegrations)
+        {
+            if (hasManagedHandoff)
+                Add(findings, "integration.managedHandoff.required", "The managed handoff integration descriptor is required for this capability.", "image.integrations");
+            return;
+        }
+
+        if (integrations.ValueKind != JsonValueKind.Array)
+        {
+            Add(findings, "integration.array.invalid", "Runtime integration descriptors must be an array.", "image.integrations");
+            return;
+        }
+
+        var descriptors = integrations.EnumerateArray().ToArray();
+        var managedDescriptors = new List<JsonElement>();
+        foreach (var descriptor in descriptors)
+        {
+            if (descriptor.ValueKind != JsonValueKind.Object)
+            {
+                Add(findings, "integration.object.invalid", "Runtime integration descriptors must be objects.", "image.integrations");
+                continue;
+            }
+
+            if (descriptor.EnumerateObject().Any(property => property.Name is not ("capability" or "elsaVersionRange" or "artifactReference" or "artifactDigest")))
+                Add(findings, "integration.property.unsupported", "Runtime integration descriptors contain an unsupported property.", "image.integrations");
+
+            if (!descriptor.TryGetProperty("capability", out var capability)
+                || capability.ValueKind != JsonValueKind.String
+                || string.IsNullOrWhiteSpace(capability.GetString()))
+            {
+                Add(findings, "integration.capability.required", "A runtime integration capability is required.", "image.integrations");
+                continue;
+            }
+
+            if (!string.Equals(capability.GetString(), ReleaseManifestRuntimeIntegrationCapabilities.ManagedElsaHandoffV1, StringComparison.Ordinal))
+            {
+                Add(findings, "integration.capability.unsupported", "The runtime integration capability is not supported.", "image.integrations");
+                continue;
+            }
+
+            managedDescriptors.Add(descriptor);
+        }
+
+        if (!hasManagedHandoff && managedDescriptors.Count > 0)
+            Add(findings, "integration.managedHandoff.capabilityRequired", "The managed handoff integration requires its declared capability.", "image.integrations");
+        if (hasManagedHandoff && managedDescriptors.Count == 0)
+            Add(findings, "integration.managedHandoff.required", "The managed handoff integration descriptor is required for this capability.", "image.integrations");
+        if (managedDescriptors.Count > 1)
+            Add(findings, "integration.managedHandoff.duplicate", "Only one managed handoff integration descriptor is permitted.", "image.integrations");
+        if (hasManagedHandoff && !hasServerRuntime)
+            Add(findings, "integration.managedHandoff.runtimeKindRequired", "The managed handoff capability requires an Elsa server runtime kind.", "image.integrations");
+        if (hasManagedHandoff && string.Equals(topologyId, "studio", StringComparison.OrdinalIgnoreCase))
+            Add(findings, "integration.managedHandoff.topologyUnsupported", "The managed handoff capability is not supported by a studio topology.", "image.integrations");
+
+        foreach (var descriptor in managedDescriptors.Take(1))
+            ValidateManagedHandoffDescriptor(descriptor, releaseLine, imageReference, imageDigest, findings);
+    }
+
+    private static void ValidateManagedHandoffDescriptor(
+        JsonElement descriptor,
+        string? releaseLine,
+        string? imageReference,
+        string? imageDigest,
+        List<ReleaseManifestAdmissionFinding> findings)
+    {
+        var versionRange = RequiredDescriptorString(descriptor, "elsaVersionRange", "integration.managedHandoff.versionRange.required", findings);
+        if (!TryGetCanonicalManagedHandoffRange(releaseLine, out var expectedRange))
+            Add(findings, "integration.managedHandoff.versionRange.invalid", "The release line cannot produce a canonical managed handoff version range.", "image.integrations");
+        else if (versionRange is not null && !string.Equals(versionRange, expectedRange, StringComparison.Ordinal))
+            Add(findings, "integration.managedHandoff.versionRange.mismatch", "The managed handoff version range must match the release line.", "image.integrations");
+
+        var artifactReference = RequiredDescriptorString(descriptor, "artifactReference", "integration.managedHandoff.artifactReference.required", findings);
+        if (artifactReference is not null)
+        {
+            if (!ReleaseManifestAdmissionService.IsSafeImageReference(artifactReference)
+                || !ReleaseManifestAdmissionService.IsImmutableImageReference(artifactReference))
+                Add(findings, "integration.managedHandoff.artifactReference.invalid", "The managed handoff artifact reference must be a safe immutable image locator.", "image.integrations");
+
+            if (imageReference is null || !string.Equals(artifactReference, imageReference, StringComparison.Ordinal))
+                Add(findings, "integration.managedHandoff.artifactReference.mismatch", "The managed handoff artifact reference must identify the selected image.", "image.integrations");
+        }
+
+        var artifactDigest = RequiredDescriptorString(descriptor, "artifactDigest", "integration.managedHandoff.artifactDigest.required", findings);
+        if (artifactDigest is not null && !ReleaseManifestAdmissionService.IsDigest(artifactDigest))
+            Add(findings, "integration.managedHandoff.artifactDigest.invalid", "The managed handoff artifact identity must use a sha256 digest.", "image.integrations");
+        if (artifactDigest is not null && (imageDigest is null || !string.Equals(artifactDigest, imageDigest, StringComparison.OrdinalIgnoreCase)))
+            Add(findings, "integration.managedHandoff.artifactDigest.mismatch", "The managed handoff artifact identity must match the selected image digest.", "image.integrations");
+        if (artifactReference is not null && artifactDigest is not null
+            && !string.Equals(ReleaseManifestAdmissionService.ExtractDigest(artifactReference), artifactDigest, StringComparison.OrdinalIgnoreCase))
+            Add(findings, "integration.managedHandoff.artifactReferenceDigest.mismatch", "The managed handoff artifact reference and digest must identify the same image.", "image.integrations");
+    }
+
+    private static string? RequiredDescriptorString(
+        JsonElement descriptor,
+        string propertyName,
+        string code,
+        List<ReleaseManifestAdmissionFinding> findings)
+    {
+        if (!descriptor.TryGetProperty(propertyName, out var value)
+            || value.ValueKind != JsonValueKind.String
+            || string.IsNullOrWhiteSpace(value.GetString()))
+        {
+            Add(findings, code, "A managed handoff descriptor value is required.", "image.integrations");
+            return null;
+        }
+
+        return value.GetString();
+    }
+
+    private static bool TryGetCanonicalManagedHandoffRange(string? releaseLine, out string range)
+    {
+        range = string.Empty;
+        if (!TryParseReleaseLine(releaseLine, out var major, out var minor))
+            return false;
+
+        range = FormattableString.Invariant($"[{major}.{minor}.0-0,{major}.{minor + 1}.0)");
+        return true;
+    }
+
+    private static void ValidateReleaseVersion(
+        string? releaseLine,
+        string? releaseVersion,
+        string scope,
+        List<ReleaseManifestAdmissionFinding> findings)
+    {
+        if (string.IsNullOrWhiteSpace(releaseVersion))
+            return;
+
+        var match = Regex.Match(
+            releaseVersion,
+            "\\A(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-(?:0|[1-9]\\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?\\z",
+            RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
+            TimeSpan.FromMilliseconds(100));
+        if (!match.Success)
+        {
+            var code = scope == "release.compatibility.engineVersion"
+                ? "release.compatibility.engineVersion.invalid"
+                : "release.version.invalid";
+            Add(findings, code, "The release version must use a supported version format.", scope);
+            return;
+        }
+
+        var expectedLine = $"{match.Groups[1].Value}.{match.Groups[2].Value}";
+        if (!string.IsNullOrWhiteSpace(releaseLine)
+            && !string.Equals(releaseLine, expectedLine, StringComparison.Ordinal))
+        {
+            var code = scope == "release.compatibility.engineVersion"
+                ? "release.compatibility.engineVersion.releaseLine.mismatch"
+                : "release.version.releaseLine.mismatch";
+            Add(findings, code, "The release version must belong to the declared release line.", scope);
+        }
+    }
+
+    private static void ValidateCompatibilityEngineVersion(
+        JsonElement release,
+        string? releaseLine,
+        string? releaseVersion,
+        List<ReleaseManifestAdmissionFinding> findings)
+    {
+        if (!release.TryGetProperty("compatibility", out var compatibility))
+            return;
+        if (compatibility.ValueKind != JsonValueKind.Object)
+        {
+            Add(findings, "release.compatibility.invalid", "Release compatibility metadata must be an object.", "release.compatibility");
+            return;
+        }
+        if (!compatibility.TryGetProperty("engineVersion", out var engineVersion))
+            return;
+        if (engineVersion.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(engineVersion.GetString()))
+        {
+            Add(findings, "release.compatibility.engineVersion.invalid", "The compatibility engine version must be a non-empty string.", "release.compatibility.engineVersion");
+            return;
+        }
+
+        var engineVersionValue = engineVersion.GetString();
+        ValidateReleaseVersion(releaseLine, engineVersionValue, "release.compatibility.engineVersion", findings);
+        if (releaseVersion is not null && !string.Equals(releaseVersion, engineVersionValue, StringComparison.Ordinal))
+            Add(findings, "release.compatibility.engineVersion.mismatch", "The compatibility engine version must match the release version.", "release.compatibility.engineVersion");
+    }
+
+    private static bool TryParseReleaseLine(string? releaseLine, out BigInteger major, out BigInteger minor)
+    {
+        major = default;
+        minor = default;
+        if (string.IsNullOrWhiteSpace(releaseLine))
+            return false;
+
+        var parts = releaseLine.Split('.', StringSplitOptions.None);
+        if (parts.Length != 2 || parts.Any(part => part.Length == 0 || part.Any(character => character is < '0' or > '9')))
+            return false;
+
+        return BigInteger.TryParse(parts[0], out major) && BigInteger.TryParse(parts[1], out minor);
     }
 
     private static string ToRole(string runtimeKind) => runtimeKind.StartsWith("elsa.", StringComparison.OrdinalIgnoreCase)
