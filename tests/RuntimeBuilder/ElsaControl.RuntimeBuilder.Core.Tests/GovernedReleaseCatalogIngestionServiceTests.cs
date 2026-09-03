@@ -211,6 +211,7 @@ public sealed class GovernedReleaseCatalogIngestionServiceTests
         var producer = JsonNode.Parse(ProducerFixture())!;
         producer["release"]!["releaseLine"] = releaseLine;
         producer["release"]!["version"] = releaseVersion;
+        producer["release"]!["compatibility"]!["engineVersion"] = releaseVersion;
         producer["release"]!["id"] = $"{releaseVersion}-build";
         RefreshProducerCanonicalDigest(producer);
         return producer.ToJsonString();

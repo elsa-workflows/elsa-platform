@@ -22,6 +22,16 @@ public static class ReleaseManifestSchema
     public const string DefaultOidcIssuer = "https://token.actions.githubusercontent.com";
 }
 
+/// <summary>
+/// Stable capability identities declared by producer release images. The descriptor
+/// that accompanies a capability is validated at admission time and is intentionally
+/// not retained in the provider-neutral manifest or resolved plan.
+/// </summary>
+public static class ReleaseManifestRuntimeIntegrationCapabilities
+{
+    public const string ManagedElsaHandoffV1 = "managed-elsa-handoff-v1";
+}
+
 public sealed record CommercialReleaseManifest(
     string SchemaVersion,
     ReleaseManifestDistribution Distribution,

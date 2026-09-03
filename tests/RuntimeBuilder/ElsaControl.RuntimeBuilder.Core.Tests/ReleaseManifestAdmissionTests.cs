@@ -76,6 +76,132 @@ public sealed class ReleaseManifestAdmissionTests
                 .OrderBy(package => package.Id, StringComparer.OrdinalIgnoreCase)
                 .Select(package => (package.Id, package.Version)),
             persisted.Release.ComponentDeclarations.Packages.Select(package => (package.Id, package.Version)));
+        Assert.DoesNotContain(
+            admission.Manifest.Topologies.SelectMany(topology => topology.Images),
+            image => image.Capabilities?.Contains(ReleaseManifestRuntimeIntegrationCapabilities.ManagedElsaHandoffV1, StringComparer.Ordinal) == true);
+    }
+
+    [Theory]
+    [InlineData("3.8")]
+    [InlineData("3.10")]
+    [InlineData("4.1")]
+    [InlineData("5.0")]
+    public async Task Managed_handoff_capability_is_admitted_and_projected_for_arbitrary_release_lines(string releaseLine)
+    {
+        var producer = JsonNode.Parse(ProducerFixture())!;
+        AddManagedHandoffCapability(producer, releaseLine);
+        var artifact = ProducerArtifact(producer.ToJsonString());
+        var admission = await new ReleaseManifestAdmissionService(
+                new StubSignatureVerifier(ProducerVerification(artifact)))
+            .AdmitAsync(artifact, new(ProducerSigner, "paid", "combined"));
+
+        Assert.True(admission.Accepted, string.Join("; ", admission.Findings.Select(x => x.Code)));
+        Assert.Equal(releaseLine, admission.Manifest!.Distribution.ReleaseLine);
+
+        var selectedImage = admission.Manifest.Topologies
+            .Single(topology => topology.Id == "combined")
+            .Images.Single(image => image.RegistryClass == "paid");
+        Assert.Contains(
+            selectedImage.Capabilities!,
+            capability => capability == ReleaseManifestRuntimeIntegrationCapabilities.ManagedElsaHandoffV1);
+
+        var projected = ReleaseManifestPlanProjector.Project(admission, CreatePlan());
+        var component = Assert.Single(projected.Topology.Components);
+        Assert.Contains(
+            component.Capabilities,
+            capability => capability == ReleaseManifestRuntimeIntegrationCapabilities.ManagedElsaHandoffV1);
+        Assert.Equal(selectedImage.Reference, component.Image.Reference);
+        Assert.Equal(selectedImage.IndexDigest, component.Image.Digest);
+        Assert.DoesNotContain("artifactReference", JsonSerializer.Serialize(admission));
+        Assert.DoesNotContain("elsaVersionRange", JsonSerializer.Serialize(admission));
+    }
+
+    [Fact]
+    public async Task Managed_handoff_claim_on_studio_only_image_is_rejected_before_admission()
+    {
+        var producer = JsonNode.Parse(ProducerFixture())!;
+        AddManagedHandoffCapability(producer, "3.8", "studio");
+        var artifact = ProducerArtifact(producer.ToJsonString());
+
+        var admission = await new ReleaseManifestAdmissionService(
+                new StubSignatureVerifier(ProducerVerification(artifact)))
+            .AdmitAsync(artifact, new(ProducerSigner, "paid", "studio"));
+
+        Assert.False(admission.Accepted);
+        Assert.Contains(admission.Findings, finding => finding.Code == "integration.managedHandoff.runtimeKindRequired");
+        Assert.All(admission.Findings, finding => Assert.DoesNotContain("runtime-studio", finding.Message, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Managed_handoff_claim_requires_a_descriptor_and_exact_image_binding()
+    {
+        var missing = JsonNode.Parse(ProducerFixture())!;
+        AddManagedHandoffCapability(missing, "3.8");
+        missing["distributions"]![0]! ["images"]!["paid"]!["integrations"] = new JsonArray();
+        RefreshProducerCanonicalDigest(missing);
+        var missingArtifact = ProducerArtifact(missing.ToJsonString());
+        var missingAdmission = await new ReleaseManifestAdmissionService(
+                new StubSignatureVerifier(ProducerVerification(missingArtifact)))
+            .AdmitAsync(missingArtifact, new(ProducerSigner, "paid", "combined"));
+        Assert.False(missingAdmission.Accepted);
+        Assert.Contains(missingAdmission.Findings, finding => finding.Code == "integration.managedHandoff.required");
+
+        var unsafeBinding = JsonNode.Parse(ProducerFixture())!;
+        AddManagedHandoffCapability(unsafeBinding, "3.8");
+        unsafeBinding["distributions"]![0]! ["images"]!["paid"]!["integrations"]![0]!["artifactReference"] =
+            "ghcr.io/runtime/runtime:latest@" + Digest('e');
+        RefreshProducerCanonicalDigest(unsafeBinding);
+        var unsafeArtifact = ProducerArtifact(unsafeBinding.ToJsonString());
+        var unsafeAdmission = await new ReleaseManifestAdmissionService(
+                new StubSignatureVerifier(ProducerVerification(unsafeArtifact)))
+            .AdmitAsync(unsafeArtifact, new(ProducerSigner, "paid", "combined"));
+        Assert.False(unsafeAdmission.Accepted);
+        Assert.Contains(unsafeAdmission.Findings, finding => finding.Code == "integration.managedHandoff.artifactReference.invalid");
+        Assert.Contains(unsafeAdmission.Findings, finding => finding.Code == "integration.managedHandoff.artifactReference.mismatch");
+        Assert.All(unsafeAdmission.Findings, finding => Assert.DoesNotContain("ghcr.io", finding.Message, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Managed_handoff_rejects_release_version_outside_declared_release_line()
+    {
+        var producer = JsonNode.Parse(ProducerFixture())!;
+        AddManagedHandoffCapability(producer, "3.8");
+        producer["release"]!["version"] = "5.0.0-preview.1";
+        producer["release"]!["compatibility"] = new JsonObject
+        {
+            ["engineVersion"] = "5.0.0"
+        };
+        RefreshProducerCanonicalDigest(producer);
+        var artifact = ProducerArtifact(producer.ToJsonString());
+
+        var admission = await new ReleaseManifestAdmissionService(
+                new StubSignatureVerifier(ProducerVerification(artifact)))
+            .AdmitAsync(artifact, new(ProducerSigner, "paid", "combined"));
+
+        Assert.False(admission.Accepted);
+        Assert.Contains(admission.Findings, finding => finding.Code == "release.version.releaseLine.mismatch");
+        Assert.Contains(admission.Findings, finding => finding.Code == "release.compatibility.engineVersion.releaseLine.mismatch");
+        Assert.Contains(admission.Findings, finding => finding.Code == "release.compatibility.engineVersion.mismatch");
+        Assert.All(admission.Findings, finding => Assert.DoesNotContain("5.0", finding.Message, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Producer_release_version_rejects_empty_prerelease_identifiers()
+    {
+        var producer = JsonNode.Parse(ProducerFixture())!;
+        producer["release"]!["version"] = "3.8.0-preview..1";
+        producer["release"]!["compatibility"]!["engineVersion"] = "3.8.0-preview..1";
+        RefreshProducerCanonicalDigest(producer);
+        var artifact = ProducerArtifact(producer.ToJsonString());
+
+        var admission = await new ReleaseManifestAdmissionService(
+                new StubSignatureVerifier(ProducerVerification(artifact)))
+            .AdmitAsync(artifact, new(ProducerSigner, "paid", "combined"));
+
+        Assert.False(admission.Accepted);
+        Assert.Contains(admission.Findings, finding => finding.Code == "release.version.invalid");
+        Assert.Contains(admission.Findings, finding => finding.Code == "release.compatibility.engineVersion.invalid");
+        Assert.All(admission.Findings, finding => Assert.DoesNotContain("preview", finding.Message, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -872,6 +998,58 @@ public sealed class ReleaseManifestAdmissionTests
 
     private static string ProducerFixture() =>
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "producer-release-manifest-2.0.0.json"));
+
+    private static void AddManagedHandoffCapability(JsonNode producer, string releaseLine, string? topologyId = null)
+    {
+        producer["release"]!["releaseLine"] = releaseLine;
+        producer["release"]!["version"] = $"{releaseLine}.0-preview.1";
+        if (producer["release"]!["compatibility"] is JsonObject compatibility)
+            compatibility["engineVersion"] = $"{releaseLine}.0-preview.1";
+        var distributions = producer["distributions"]!.AsArray();
+        foreach (var distribution in distributions)
+        {
+            if (distribution is not JsonObject distributionObject
+                || (topologyId is not null && !string.Equals(distributionObject["topology"]?.GetValue<string>(), topologyId, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            var distributionCapabilities = distributionObject["capabilities"]!.AsArray();
+            var providesRuntimeApi = distributionCapabilities.Any(capability => string.Equals(capability?.GetValue<string>(), "workflow-runtime", StringComparison.Ordinal))
+                && distributionCapabilities.Any(capability => string.Equals(capability?.GetValue<string>(), "management-api", StringComparison.Ordinal));
+            if (topologyId is null && !providesRuntimeApi)
+                continue;
+
+            var capabilities = distributionCapabilities;
+            if (!capabilities.Any(capability => string.Equals(capability?.GetValue<string>(), ReleaseManifestRuntimeIntegrationCapabilities.ManagedElsaHandoffV1, StringComparison.Ordinal)))
+                capabilities.Add(ReleaseManifestRuntimeIntegrationCapabilities.ManagedElsaHandoffV1);
+
+            foreach (var imageNode in distributionObject["images"]!.AsObject().Select(property => property.Value))
+            {
+                var image = imageNode!.AsObject();
+                var reference = image["reference"]!.GetValue<string>();
+                var digest = image["digest"]!.GetValue<string>();
+                image["integrations"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["capability"] = ReleaseManifestRuntimeIntegrationCapabilities.ManagedElsaHandoffV1,
+                        ["elsaVersionRange"] = ManagedHandoffVersionRange(releaseLine),
+                        ["artifactReference"] = reference,
+                        ["artifactDigest"] = digest
+                    }
+                };
+            }
+        }
+
+        RefreshProducerCanonicalDigest(producer);
+    }
+
+    private static string ManagedHandoffVersionRange(string releaseLine)
+    {
+        var parts = releaseLine.Split('.');
+        var major = int.Parse(parts[0]);
+        var minor = int.Parse(parts[1]);
+        return $"[{major}.{minor}.0-0,{major}.{minor + 1}.0)";
+    }
 
     private static void RefreshProducerCanonicalDigest(JsonNode producer)
     {
