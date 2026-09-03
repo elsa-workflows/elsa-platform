@@ -6,9 +6,9 @@ The four-scenario local real-browser proof passes against the immutable linux/am
 image selected from an admitted release. The shared Azure deployment is healthy on
 the corrected, signed build-133 Combined image and the production Control API is
 running the provider-integration merge.
-The final public-TLS browser journey is ready but still requires the account owner's
-interactive Microsoft Entra sign-in and MFA; the unattended attempts timed out safely
-without retaining browser artifacts or one-time handoff material.
+The final public-TLS browser journey passed after the account owner's normal Microsoft
+Entra sign-in and MFA. The isolated harness completed the remaining Control/runtime
+flow without retaining browser artifacts or one-time handoff material.
 
 ## Immutable inputs
 
@@ -47,7 +47,7 @@ without retaining browser artifacts or one-time handoff material.
 | Azure runtime | Pass | Container App revision `ca-elsa-managed-proof--0000007` is the sole active Healthy revision with one replica and all traffic. It runs the exact Combined image index above with the deterministic instance/audience binding, exact Control continuation and callback, `ManagedElsa:Handoff:StateLifetime=00:01:00`, the internal backend URL, and forwarded-header processing enabled. |
 | Azure Control | Pass | App Service `api-m5uymkuaf222o` is Running, HTTPS-only, healthy on build `89`, and has managed-Elsa handoff enabled with a proof-only signing key. |
 | Azure handoff start | Pass | The runtime start endpoint returned `302` to the configured Control continuation with only the expected safe query-key names recorded. Values were not retained. |
-| Azure public-TLS browser journey | Pending interactive input | The isolated headed run against revision `0000007` reached Microsoft Entra sign-in and timed out after five minutes without the operator completing sign-in/MFA. The harness deleted its unique transient output directory on exit. |
+| Azure public-TLS browser journey | Pass | The isolated headed Chromium run against revision `ca-elsa-managed-proof--0000007` completed operator Entra/MFA, accepted the authenticated Control return, opened the healthy Combined runtime without a second login, received `200` from the protected workflow-definitions API, rejected callback replay with `400`, logged out with `204`, then received `401` from the protected API and rejected the delayed expired browser state with `400`. The browser test passed and the unique transient output directory was deleted on exit. |
 
 Unavailable-instance and membership-revocation simulations intentionally remain
 local: mutating shared production tenancy is outside this proof. The Azure run is
@@ -67,11 +67,6 @@ against the same immutable release.
   baseline.
 - Temporary local and SQL firewall resources were removed. Shared production-scoped
   resource groups were not deleted.
-
-## Required completion evidence
-
-- Complete the isolated headed Chromium run with the account owner's normal Entra/MFA
-  step, then record only the scenario result and exact immutable/environment facts.
 
 ## Reproducible fail-closed preflight
 

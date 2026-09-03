@@ -91,8 +91,12 @@ async function waitForControlReturn(page: Page) {
   const deadline = Date.now() + interactiveSignInTimeoutMs;
   while (Date.now() < deadline) {
     const current = new URL(page.url());
-    if (current.origin === controlOrigin && current.pathname === "/admin/runtimes")
+    const isAdminRoute = current.pathname === "/admin" || current.pathname.startsWith("/admin/");
+    if (current.origin === controlOrigin && isAdminRoute) {
+      if (current.pathname !== "/admin/runtimes")
+        await page.goto(`${controlOrigin}/admin/runtimes`);
       return;
+    }
     await page.waitForTimeout(500);
   }
 
