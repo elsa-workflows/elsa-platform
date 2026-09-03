@@ -164,6 +164,24 @@ console_pid=$!
 wait_for_url "Elsa Control console" "http://localhost:5173/admin/"
 
 npm --prefix "$repo_root/tests/Hosting/ElsaControl.Console.E2E" ci --prefer-offline --no-audit --no-fund >/dev/null
+playwright_list_output="$proof_root/playwright-list.log"
+if ! MANAGED_ELSA_BROWSER_PROOF=1 \
+  MANAGED_ELSA_PROOF_DATABASE="$fixture_database" \
+  MANAGED_ELSA_PROOF_RUNTIME_ORIGIN="$runtime_origin/" \
+  ADMIN_UI_BASE_URL=http://localhost:5173 \
+  FORCE_COLOR=0 \
+  npm --prefix "$repo_root/tests/Hosting/ElsaControl.Console.E2E" run e2e -- \
+    managed-elsa-browser-proof.spec.ts --project=chromium --list --reporter=line 2>&1 | tee "$playwright_list_output"; then
+  echo "Managed Elsa browser proof test discovery failed." >&2
+  exit 1
+fi
+
+expected_scenarios=$(tr -d '\r' <"$playwright_list_output" | grep -Eo 'Total: [0-9]+' | tr -cd '0-9')
+if [[ -z "$expected_scenarios" || "$expected_scenarios" -lt 1 ]]; then
+  echo "Managed Elsa browser proof did not discover any scenarios." >&2
+  exit 1
+fi
+
 playwright_output="$proof_root/playwright.log"
 if ! MANAGED_ELSA_BROWSER_PROOF=1 \
   MANAGED_ELSA_PROOF_DATABASE="$fixture_database" \
@@ -176,8 +194,14 @@ if ! MANAGED_ELSA_BROWSER_PROOF=1 \
   exit 1
 fi
 
-if ! tr -d '\r' <"$playwright_output" | grep -Eq '(^|[[:space:]])4 passed([[:space:]]|$)'; then
-  echo "Managed Elsa local browser proof did not complete all four scenarios." >&2
+playwright_summary=$(tr -d '\r' <"$playwright_output")
+if printf '%s\n' "$playwright_summary" | grep -Eiq '([0-9]+ (failed|skipped)|did not run)'; then
+  echo "Managed Elsa local browser proof did not complete every discovered scenario." >&2
+  exit 1
+fi
+
+if ! printf '%s\n' "$playwright_summary" | grep -Eq "(^|[[:space:]])${expected_scenarios} passed([[:space:]]|$)"; then
+  echo "Managed Elsa local browser proof did not complete all $expected_scenarios scenarios." >&2
   exit 1
 fi
 
