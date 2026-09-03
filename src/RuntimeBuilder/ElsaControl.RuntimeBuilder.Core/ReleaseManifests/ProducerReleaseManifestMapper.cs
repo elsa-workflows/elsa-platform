@@ -389,7 +389,7 @@ internal static class ProducerReleaseManifestMapper
         List<ReleaseManifestAdmissionFinding> findings)
     {
         ValidateIdentity(componentId, "component.id", findings);
-        var imageModel = ParseImage(image, edition, componentId, capabilities, runtimeKinds, evidence, releaseLine, expectedSigner, expectedIssuer, findings);
+        var imageModel = ParseImage(image, edition, componentId, topologyId, capabilities, runtimeKinds, evidence, releaseLine, expectedSigner, expectedIssuer, findings);
         if (imageModel is null || topologyId is null || edition is null || componentId is null)
             return null;
 
@@ -410,6 +410,7 @@ internal static class ProducerReleaseManifestMapper
         JsonElement image,
         string? edition,
         string? componentId,
+        string? topologyId,
         IReadOnlyList<string> capabilities,
         IReadOnlyList<string> runtimeKinds,
         IReadOnlyList<ProducerEvidence> inheritedEvidence,
@@ -435,7 +436,7 @@ internal static class ProducerReleaseManifestMapper
         var imageCapabilities = StringArrayAny(image, ["capabilities"], "image.capabilities", findings);
         var allCapabilities = capabilities.Count > 0 ? capabilities : imageCapabilities;
         var imageKinds = runtimeKinds.Count > 0 ? runtimeKinds : DeriveRuntimeKinds(componentId, allCapabilities);
-        ValidateRuntimeIntegrations(image, allCapabilities, imageKinds, releaseLine, reference, digest, findings);
+        ValidateRuntimeIntegrations(image, topologyId, allCapabilities, imageKinds, releaseLine, reference, digest, findings);
         var roles = imageKinds.Select(ToRole).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var imageEvidence = ParseEvidence(image, "evidence", findings);
         if (imageEvidence.Count == 0)
@@ -929,6 +930,7 @@ internal static class ProducerReleaseManifestMapper
 
     private static void ValidateRuntimeIntegrations(
         JsonElement image,
+        string? topologyId,
         IReadOnlyList<string> capabilities,
         IReadOnlyList<string> runtimeKinds,
         string? releaseLine,
@@ -993,6 +995,8 @@ internal static class ProducerReleaseManifestMapper
             Add(findings, "integration.managedHandoff.duplicate", "Only one managed handoff integration descriptor is permitted.", "image.integrations");
         if (hasManagedHandoff && !hasServerRuntime)
             Add(findings, "integration.managedHandoff.runtimeKindRequired", "The managed handoff capability requires an Elsa server runtime kind.", "image.integrations");
+        if (hasManagedHandoff && string.Equals(topologyId, "studio", StringComparison.OrdinalIgnoreCase))
+            Add(findings, "integration.managedHandoff.topologyUnsupported", "The managed handoff capability is not supported by a studio topology.", "image.integrations");
 
         foreach (var descriptor in managedDescriptors.Take(1))
             ValidateManagedHandoffDescriptor(descriptor, releaseLine, imageReference, imageDigest, findings);
@@ -1071,7 +1075,8 @@ internal static class ProducerReleaseManifestMapper
         var match = Regex.Match(
             releaseVersion,
             "\\A(\\d+)\\.(\\d+)\\.\\d+(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?\\z",
-            RegexOptions.CultureInvariant);
+            RegexOptions.CultureInvariant,
+            TimeSpan.FromMilliseconds(100));
         if (!match.Success)
         {
             var code = scope == "release.compatibility.engineVersion"

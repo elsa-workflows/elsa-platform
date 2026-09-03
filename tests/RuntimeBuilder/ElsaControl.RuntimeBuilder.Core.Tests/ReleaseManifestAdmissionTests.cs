@@ -133,6 +133,33 @@ public sealed class ReleaseManifestAdmissionTests
     }
 
     [Fact]
+    public async Task Managed_handoff_claim_on_studio_topology_cannot_be_rescued_by_runtime_capabilities()
+    {
+        var producer = JsonNode.Parse(ProducerFixture())!;
+        AddManagedHandoffCapability(producer, "3.8", "studio");
+        var studio = producer["distributions"]!
+            .AsArray()
+            .Single(distribution => string.Equals(
+                distribution!["topology"]!.GetValue<string>(),
+                "studio",
+                StringComparison.OrdinalIgnoreCase))!
+            .AsObject();
+        var capabilities = studio["capabilities"]!.AsArray();
+        capabilities.Add("workflow-runtime");
+        capabilities.Add("management-api");
+        RefreshProducerCanonicalDigest(producer);
+        var artifact = ProducerArtifact(producer.ToJsonString());
+
+        var admission = await new ReleaseManifestAdmissionService(
+                new StubSignatureVerifier(ProducerVerification(artifact)))
+            .AdmitAsync(artifact, new(ProducerSigner, "paid", "studio"));
+
+        Assert.False(admission.Accepted);
+        Assert.Contains(admission.Findings, finding => finding.Code == "integration.managedHandoff.topologyUnsupported");
+        Assert.DoesNotContain(admission.Findings, finding => finding.Code == "integration.managedHandoff.runtimeKindRequired");
+    }
+
+    [Fact]
     public async Task Managed_handoff_claim_requires_a_descriptor_and_exact_image_binding()
     {
         var missing = JsonNode.Parse(ProducerFixture())!;
