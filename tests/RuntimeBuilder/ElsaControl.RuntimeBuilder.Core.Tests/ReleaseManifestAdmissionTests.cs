@@ -231,6 +231,45 @@ public sealed class ReleaseManifestAdmissionTests
         Assert.All(admission.Findings, finding => Assert.DoesNotContain("preview", finding.Message, StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData("01.8.0")]
+    [InlineData("3.08.0")]
+    [InlineData("3.8.00")]
+    [InlineData("3.8.0-preview.01")]
+    public async Task Producer_release_version_rejects_noncanonical_semver_identifiers(string version)
+    {
+        var producer = JsonNode.Parse(ProducerFixture())!;
+        producer["release"]!["version"] = version;
+        producer["release"]!["compatibility"]!["engineVersion"] = version;
+        RefreshProducerCanonicalDigest(producer);
+        var artifact = ProducerArtifact(producer.ToJsonString());
+
+        var admission = await new ReleaseManifestAdmissionService(
+                new StubSignatureVerifier(ProducerVerification(artifact)))
+            .AdmitAsync(artifact, new(ProducerSigner, "paid", "combined"));
+
+        Assert.False(admission.Accepted);
+        Assert.Contains(admission.Findings, finding => finding.Code == "release.version.invalid");
+        Assert.Contains(admission.Findings, finding => finding.Code == "release.compatibility.engineVersion.invalid");
+    }
+
+    [Fact]
+    public async Task Missing_release_line_does_not_emit_a_version_line_mismatch()
+    {
+        var producer = JsonNode.Parse(ProducerFixture())!;
+        producer["release"]!["releaseLine"] = "";
+        RefreshProducerCanonicalDigest(producer);
+        var artifact = ProducerArtifact(producer.ToJsonString());
+
+        var admission = await new ReleaseManifestAdmissionService(
+                new StubSignatureVerifier(ProducerVerification(artifact)))
+            .AdmitAsync(artifact, new(ProducerSigner, "paid", "combined"));
+
+        Assert.False(admission.Accepted);
+        Assert.Contains(admission.Findings, finding => finding.Code == "release.releaseLine.required");
+        Assert.DoesNotContain(admission.Findings, finding => finding.Code == "release.version.releaseLine.mismatch");
+    }
+
     [Fact]
     public async Task Producer_component_declarations_are_required_and_duplicate_packages_fail_closed()
     {

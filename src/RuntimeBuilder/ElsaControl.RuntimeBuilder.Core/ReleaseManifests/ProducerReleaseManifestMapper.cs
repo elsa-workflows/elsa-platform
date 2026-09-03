@@ -1059,7 +1059,7 @@ internal static class ProducerReleaseManifestMapper
         if (!TryParseReleaseLine(releaseLine, out var major, out var minor))
             return false;
 
-        range = $"[{major}.{minor}.0-0,{major}.{minor + 1}.0)";
+        range = FormattableString.Invariant($"[{major}.{minor}.0-0,{major}.{minor + 1}.0)");
         return true;
     }
 
@@ -1074,8 +1074,8 @@ internal static class ProducerReleaseManifestMapper
 
         var match = Regex.Match(
             releaseVersion,
-            "\\A(\\d+)\\.(\\d+)\\.\\d+(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?\\z",
-            RegexOptions.CultureInvariant,
+            "\\A(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-(?:0|[1-9]\\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?\\z",
+            RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
             TimeSpan.FromMilliseconds(100));
         if (!match.Success)
         {
@@ -1087,7 +1087,8 @@ internal static class ProducerReleaseManifestMapper
         }
 
         var expectedLine = $"{match.Groups[1].Value}.{match.Groups[2].Value}";
-        if (!string.Equals(releaseLine, expectedLine, StringComparison.Ordinal))
+        if (!string.IsNullOrWhiteSpace(releaseLine)
+            && !string.Equals(releaseLine, expectedLine, StringComparison.Ordinal))
         {
             var code = scope == "release.compatibility.engineVersion"
                 ? "release.compatibility.engineVersion.releaseLine.mismatch"
