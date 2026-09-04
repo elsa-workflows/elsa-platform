@@ -52,6 +52,7 @@ class CiWorkflowTests(unittest.TestCase):
 
     def test_parallel_jobs_keep_the_existing_full_paths(self) -> None:
         azure = job_block(self.source, "azure-proof")
+        api_image = job_block(self.source, "api-image")
         dotnet = job_block(self.source, "dotnet")
 
         self.assertIn("name: Azure proof and contract checks", azure)
@@ -63,6 +64,9 @@ class CiWorkflowTests(unittest.TestCase):
         for command in (
             "python3 scripts/tests/test_ci_workflow.py",
             "python3 scripts/tests/test_azure_api_deploy_workflow.py",
+            "python3 scripts/tests/test_azure_production_templates.py",
+            "python3 scripts/tests/test_api_provider_image.py",
+            "python3 scripts/tests/test_validate_api_provider_image.py",
             "python3 scripts/tests/test_azure_workload_proof.py",
             "python3 scripts/tests/test_azure_workload_restore_proof.py",
             "bash -n \\",
@@ -89,6 +93,22 @@ class CiWorkflowTests(unittest.TestCase):
                 rf"(?m)^\s+run:\s+{re.escape(command)}\s*$",
             )
         self.assertNotRegex(dotnet, r"(?m)^\s+if:")
+        self.assertIn("scripts/validate-api-provider-image.sh", azure)
+
+        self.assertIn("name: Build and smoke-test API provider image", api_image)
+        self.assertIn(
+            "uses: actions/checkout@v4\n        with:\n          ref: ${{ github.sha }}",
+            api_image,
+        )
+        self.assertIn(
+            "docker build --file src/Hosting/ElsaControl.Api/Dockerfile",
+            api_image,
+        )
+        self.assertIn(
+            "scripts/validate-api-provider-image.sh elsa-control-api-ci:${{ github.sha }}",
+            api_image,
+        )
+        self.assertNotRegex(api_image, r"(?m)^\s+if:")
 
     def test_required_build_and_test_check_aggregates_fail_closed(self) -> None:
         aggregator = job_block(self.source, "build")
@@ -100,12 +120,15 @@ class CiWorkflowTests(unittest.TestCase):
         )
         self.assertIn("needs:", aggregator)
         self.assertIn("- azure-proof", aggregator)
+        self.assertIn("- api-image", aggregator)
         self.assertIn("- dotnet", aggregator)
         self.assertNotIn("uses:", aggregator)
         for line in (
             "AZURE_PROOF_RESULT: ${{ needs['azure-proof'].result }}",
+            "API_IMAGE_RESULT: ${{ needs['api-image'].result }}",
             "DOTNET_RESULT: ${{ needs.dotnet.result }}",
             'if [ "$AZURE_PROOF_RESULT" != "success" ] \\',
+            '|| [ "$API_IMAGE_RESULT" != "success" ] \\',
             '|| [ "$DOTNET_RESULT" != "success" ]; then',
             "exit 1",
         ):
