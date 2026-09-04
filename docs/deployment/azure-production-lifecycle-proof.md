@@ -27,7 +27,7 @@ configuration file must contain the normal production settings plus these harnes
 | --- | --- |
 | `LiveProof:CatalogEntryPath` | Absolute or config-relative JSON file containing one trusted, previously admitted `GovernedReleaseCatalogEntry`; this bypasses producer admission by design. |
 | `LiveProof:EvidenceDirectory` | Writable directory for value-free evidence on success or failure. |
-| `LiveProof:InstanceId` | Fresh canonical GUID for this run; use a new isolated database for reruns. |
+| `LiveProof:InstanceId` | Required fresh canonical GUID for this run; use a new isolated database for reruns. |
 | `LiveProof:ActorIssuer` / `LiveProof:ActorSubject` | Fixture identity used to create the owner account. |
 | `LiveProof:ActorEmail` | Fixture account email; no credential. |
 | `LiveProof:InstanceName` / `LiveProof:InstanceSlug` | Fresh instance identity. |
@@ -35,7 +35,10 @@ configuration file must contain the normal production settings plus these harnes
 | `LiveProof:PollSeconds` | Optional bound, 1–30 seconds; default 5. |
 
 The normal production configuration must also provide `ControlPlane:Origin` as an HTTPS origin,
-`Database:Provider=Sqlite`, an isolated `ConnectionStrings:Catalog` database path, and
+`Database:Provider=Sqlite`, and an isolated absolute `ConnectionStrings:Catalog` SQLite path whose
+filename contains `live-proof`. The path must not exist before the run (the harness also rejects
+SQLite WAL/SHM sidecars), so an accidental rerun cannot attach to an existing catalog or instance.
+It also requires
 `DataProtection:KeysPath` on durable storage, all lifecycle and
 provider workers enabled, the v1 instance-provider scope, pinned CLI/sqlcmd/curl/template paths,
 and three versioned source Key Vault references. The database slot uses the provider-owned

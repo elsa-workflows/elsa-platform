@@ -9,6 +9,7 @@ using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using ElsaControl.RuntimeBuilder.Abstractions.ReleaseCatalog;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -66,8 +67,8 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
 
             stage = "reconcile-after-reload";
             state = await WaitForReadyAsync(application.Services, inputs, state, state.ReconcileOperationId!.Value, cancellationToken);
-            Ensure(state.AssignmentId is not null, "The reloaded reconcile did not retain the provider assignment.");
-            Ensure(state.AssignmentId == state.InitialAssignmentId, "The reloaded reconcile changed the provider assignment.");
+            Assert.NotNull(state.AssignmentId);
+            Assert.Equal(state.InitialAssignmentId, state.AssignmentId);
 
             stage = "delete";
             var deleted = await DeleteAsync(application.Services, inputs, state, cancellationToken);
@@ -84,7 +85,9 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
             if (state is not null)
             {
                 cleanupAttempted = true;
-                cleanupSucceeded = await TryCleanupAsync(application, inputs, state);
+                var cleanup = await TryCleanupAsync(application, inputs, state);
+                state = cleanup.State;
+                cleanupSucceeded = cleanup.Succeeded;
             }
 
             await WriteEvidenceAsync(inputs, state, "failed", cleanupAttempted, cleanupSucceeded, stage);
@@ -133,7 +136,9 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
         if (!File.Exists(fixturePath))
             throw new ProofConfigurationException();
 
-        var instanceId = ParseGuid(configuration["LiveProof:InstanceId"]) ?? Guid.NewGuid();
+        var instanceId = ParseGuid(configuration["LiveProof:InstanceId"])
+            ?? throw new ProofConfigurationException();
+        ValidateIsolatedSqliteDatabase(configuration, baseDirectory);
         var actorSubject = SafeToken(configuration["LiveProof:ActorSubject"]) ?? $"live-proof-{instanceId:N}";
         var slug = SafeToken(configuration["LiveProof:InstanceSlug"]) ?? $"live-proof-{instanceId:N}";
         var name = configuration["LiveProof:InstanceName"]?.Trim();
@@ -398,7 +403,7 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
                     var assignmentStore = scope.ServiceProvider.GetRequiredService<IAzureProviderResourceAssignmentStore>();
                     var assignment = await assignmentStore.GetAsync(state.WorkspaceId, assignmentId, cancellationToken);
                     if (assignment is null || assignment.State != AzureProviderAssignmentState.Deleted ||
-                        assignment.Resources != new AzureProviderResourceReferences())
+                        assignment.Resources != new AzureProviderResourceReferences(assignment.ResourceGroupName))
                         throw new ProofFailureException();
                     return;
                 }
@@ -410,7 +415,7 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
         throw new ProofFailureException();
     }
 
-    private static async Task<bool> TryCleanupAsync(
+    private static async Task<CleanupResult> TryCleanupAsync(
         ProductionAzureLifecycleProofApplication? existingApplication,
         LiveProofInputs inputs,
         ProofState state)
@@ -432,19 +437,35 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
             await using var scope = application.Services.CreateAsyncScope();
             var store = scope.ServiceProvider.GetRequiredService<IElsaInstanceLifecycleStore>();
             var instance = await store.GetInstanceAsync(state.WorkspaceId, state.InstanceId, cancellationToken);
+            if (instance?.PlacementAssignmentReference?.AssignmentId is { } assignmentReference &&
+                Guid.TryParseExact(assignmentReference, "D", out var assignmentId))
+            {
+                state = state with
+                {
+                    InitialAssignmentId = state.InitialAssignmentId ?? assignmentId,
+                    AssignmentId = state.AssignmentId ?? assignmentId
+                };
+
+                var assignmentStore = scope.ServiceProvider.GetRequiredService<IAzureProviderResourceAssignmentStore>();
+                var assignment = await assignmentStore.GetAsync(state.WorkspaceId, assignmentId, cancellationToken);
+                if (assignment?.LastOperationId is { } providerOperationId)
+                    state = state with { ProviderOperationId = state.ProviderOperationId ?? providerOperationId };
+            }
+
             if (instance is null || instance.ObservedLifecycle == ElsaObservedLifecycle.Deleted)
-                return true;
+                return new CleanupResult(state, true);
 
             var active = await store.GetActiveOperationAsync(state.WorkspaceId, state.InstanceId, cancellationToken);
             var deleteOperation = active?.Action == ElsaInstanceOperationAction.Delete
                 ? active.Id
                 : (await DeleteAsync(application.Services, inputs, state, cancellationToken)).Operation.Id;
+            state = state with { DeleteOperationId = deleteOperation };
             await WaitForDeletedAsync(application.Services, inputs, state, deleteOperation, cancellationToken);
-            return true;
+            return new CleanupResult(state, true);
         }
         catch (Exception)
         {
-            return false;
+            return new CleanupResult(state, false);
         }
         finally
         {
@@ -535,6 +556,48 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
     private static Guid? ParseGuid(string? value) =>
         Guid.TryParseExact(value, "D", out var parsed) ? parsed : null;
 
+    private static void ValidateIsolatedSqliteDatabase(IConfiguration configuration, string baseDirectory)
+    {
+        if (!string.Equals(configuration["Database:Provider"], "Sqlite", StringComparison.OrdinalIgnoreCase))
+            throw new ProofConfigurationException();
+
+        var connectionString = configuration.GetConnectionString("Catalog");
+        if (string.IsNullOrWhiteSpace(connectionString))
+            throw new ProofConfigurationException();
+
+        SqliteConnectionStringBuilder connection;
+        try
+        {
+            connection = new SqliteConnectionStringBuilder(connectionString);
+        }
+        catch (ArgumentException)
+        {
+            throw new ProofConfigurationException();
+        }
+
+        var dataSource = connection.DataSource?.Trim();
+        if (string.IsNullOrWhiteSpace(dataSource) ||
+            dataSource.Equals(":memory:", StringComparison.OrdinalIgnoreCase) ||
+            dataSource.StartsWith("file:", StringComparison.OrdinalIgnoreCase) ||
+            !Path.IsPathFullyQualified(dataSource))
+            throw new ProofConfigurationException();
+
+        string databasePath;
+        try
+        {
+            databasePath = Path.GetFullPath(dataSource, baseDirectory);
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            throw new ProofConfigurationException();
+        }
+
+        var fileName = Path.GetFileName(databasePath);
+        if (!fileName.Contains("live-proof", StringComparison.OrdinalIgnoreCase) ||
+            File.Exists(databasePath) || File.Exists(databasePath + "-wal") || File.Exists(databasePath + "-shm"))
+            throw new ProofConfigurationException();
+    }
+
     private static string? SafeToken(string? value)
     {
         value = value?.Trim();
@@ -550,12 +613,6 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
             : int.TryParse(value, out var parsed) && parsed >= minimum && parsed <= maximum
                 ? parsed
                 : throw new ProofConfigurationException();
-
-    private static void Ensure(bool condition, string _)
-    {
-        if (!condition)
-            throw new ProofFailureException();
-    }
 
     private sealed class ProductionAzureLifecycleProofApplication(string configPath) : WebApplicationFactory<Program>
     {
@@ -592,6 +649,8 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
         Guid? DeleteOperationId,
         Guid? AssignmentId,
         Guid? ProviderOperationId);
+
+    private sealed record CleanupResult(ProofState State, bool Succeeded);
 
     private sealed class ProofConfigurationException : Exception;
 
