@@ -319,7 +319,7 @@ function BillingMutationNotice({ error }: { error: unknown }) {
       <TriangleAlert aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
       <div>
         <p className="font-medium">{unavailable ? "Billing session is unavailable" : "Billing session could not be opened"}</p>
-        <p className="mt-1 text-muted-foreground">{unavailable ? "The billing provider is not available right now. No session link was retained." : "No billing session was opened. Try again when the service is available."}</p>
+        <p className="mt-1 text-muted-foreground">{unavailable ? "The billing provider is not available right now. No session link was retained." : "No trusted billing session was opened. Try again when the service is available."}</p>
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OrganizationBillingPage } from "@/features/billing/OrganizationBillingPage";
@@ -31,7 +32,7 @@ describe("OrganizationBillingPage", () => {
     expect(await screen.findByRole("heading", { name: "Billing & entitlements" })).toBeInTheDocument();
     expect(screen.getByText("Billing is active")).toBeInTheDocument();
     expect(screen.getAllByText("Active").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("2 used of 5")).toBeInTheDocument();
+    expect(screen.getByText("2 used of 2")).toBeInTheDocument();
     expect(screen.getByText("1 used of 3")).toBeInTheDocument();
     expect(screen.getByText("3 capabilities")).toBeInTheDocument();
     expect(requests).toContain("/api/organizations/00000000-0000-0000-0000-000000000001/billing/");
@@ -92,6 +93,27 @@ describe("OrganizationBillingPage", () => {
 
     expect(await screen.findByText("Past due since")).toBeInTheDocument();
     expect(screen.queryByText("Next deadline")).not.toBeInTheDocument();
+  });
+
+  it("renders an error when the server returns an unsafe billing session URL", async () => {
+    installFetch((input) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url.endsWith("/api/auth/session"))
+        return Response.json({ loginEnabled: true, authenticated: true, displayName: "Test User", email: "test@example.com", loginPath: "/api/auth/login", logoutPath: "/api/auth/logout" });
+      if (url.endsWith("/api/me/organizations"))
+        return Response.json(workspaceContextFixture("Owner"));
+      if (url.endsWith("/billing/portal"))
+        return Response.json({ url: "javascript:alert(1)" });
+      if (url.endsWith("/api/organizations/00000000-0000-0000-0000-000000000001/billing/"))
+        return Response.json(billingFixture());
+      return Response.json({ title: "Not found" }, { status: 404 });
+    });
+
+    renderPage();
+    await screen.findByRole("heading", { name: "Billing & entitlements" });
+    await userEvent.click(screen.getByRole("button", { name: /Open billing workspace/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("No trusted billing session was opened");
   });
 });
 
@@ -155,7 +177,7 @@ function billingFixture(state = "Active") {
     },
     capacity: {
       managedInstancesUsed: 2,
-      managedInstancesLimit: 5,
+      managedInstancesLimit: 2,
       workspacesUsed: 1,
       workspacesLimit: 3
     },
