@@ -349,10 +349,11 @@ public sealed class AzureElsaInstanceProviderTests
     }
 
     [Theory]
-    [InlineData(false, true)]
-    [InlineData(true, true)]
-    [InlineData(true, false)]
-    public async Task Cleanup_submits_or_reobserves_delete_and_confirms_only_verified_absence(bool alreadyDeleted, bool verified)
+    [InlineData(false, true, false)]
+    [InlineData(true, true, false)]
+    [InlineData(true, false, false)]
+    [InlineData(true, true, true)]
+    public async Task Cleanup_submits_or_reobserves_delete_and_confirms_only_verified_absence(bool alreadyDeleted, bool verified, bool retainedResource)
     {
         var workspaceId = Guid.NewGuid();
         var lifecycleOperationId = Guid.NewGuid();
@@ -388,7 +389,8 @@ public sealed class AzureElsaInstanceProviderTests
         var assignmentStore = new InMemoryAssignmentStore
         {
             State = alreadyDeleted ? AzureProviderAssignmentState.Deleted : AzureProviderAssignmentState.Reserved,
-            LastOperationId = alreadyDeleted ? delete.Id : null
+            LastOperationId = alreadyDeleted ? delete.Id : null,
+            Resources = retainedResource ? new(WorkloadResourceId: "/subscriptions/retained/resourceGroups/retained/providers/Microsoft.App/containerApps/retained") : new()
         };
         var assignment = await assignmentStore.CreateOrGetAsync(new(
             workspaceId,
@@ -416,8 +418,8 @@ public sealed class AzureElsaInstanceProviderTests
             workspaceId, TestInstanceId, lifecycleOperationId, 3, null,
             new ElsaPlacementAssignmentReference(assignment.Id.ToString("D")), null));
 
-        Assert.Equal(verified ? "deletion.provider-confirmed-absent" : "deletion.provider-cleanup-pending", result.DiagnosticCode);
-        Assert.Equal(verified ? ElsaInstanceCleanupObservationKind.ConfirmedAbsent : ElsaInstanceCleanupObservationKind.Unknown, result.Kind);
+        Assert.Equal(retainedResource ? "deletion.provider-evidence-unavailable" : verified ? "deletion.provider-confirmed-absent" : "deletion.provider-cleanup-pending", result.DiagnosticCode);
+        Assert.Equal(verified && !retainedResource ? ElsaInstanceCleanupObservationKind.ConfirmedAbsent : ElsaInstanceCleanupObservationKind.Unknown, result.Kind);
         Assert.Equal(lifecycleOperationId, result.OperationId);
         Assert.Equal(3, result.AttemptNumber);
         if (alreadyDeleted)
@@ -602,6 +604,7 @@ public sealed class AzureElsaInstanceProviderTests
         private AzureProviderResourceAssignment? _assignment;
         public AzureProviderAssignmentState State { get; init; } = AzureProviderAssignmentState.Reserved;
         public Guid? LastOperationId { get; init; }
+        public AzureProviderResourceReferences Resources { get; init; } = new();
 
         public Task<AzureProviderResourceAssignment> CreateOrGetAsync(
             AzureProviderResourceAssignmentRequest request,
@@ -621,7 +624,7 @@ public sealed class AzureElsaInstanceProviderTests
                 new string('f', 64),
                 request.Location,
                 State,
-                new(),
+                Resources with { ResourceGroupName = AzureProviderResourceAssignmentNaming.ResourceGroupName(request.ResourceGroupNamePrefix, request.InstanceId, request.NamingVersion) },
                 LastOperationId,
                 1,
                 now,

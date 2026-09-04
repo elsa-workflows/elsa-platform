@@ -194,7 +194,9 @@ public sealed class AzureElsaInstanceProvider(
             var completed = assignment.LastOperationId is { } operationId
                 ? await operationStore.GetAsync(request.WorkspaceId, operationId, cancellationToken)
                 : null;
-            return completed is not null && assignment.Resources == new AzureProviderResourceReferences()
+            // The assignment retains its immutable group name after deletion; only
+            // live resource inventory is cleared by the durable store.
+            return completed is not null && assignment.Resources == new AzureProviderResourceReferences(assignment.ResourceGroupName)
                 ? ObserveCleanup(completed)
                 : CleanupUnknown(request, "deletion.provider-evidence-unavailable");
         }
