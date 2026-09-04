@@ -101,6 +101,31 @@ public sealed class OrganizationBillingLifecycleTests
     }
 
     [Fact]
+    public async Task Repeated_deletion_request_after_tombstone_does_not_mutate_the_tombstone()
+    {
+        await using var fixture = await LifecycleFixture.CreateAsync();
+        await fixture.StartTrialAsync(fixture.OrganizationId, Start);
+        await fixture.Store.RequestDeletionAsync(fixture.OrganizationId, Start.AddDays(1));
+        var work = Assert.IsType<OrganizationBillingCleanupWorkItem>(
+            await fixture.Store.TryClaimCleanupAsync("worker", Start.AddDays(1)));
+        await fixture.Store.CompleteCleanupAsync(new(
+            work.Id,
+            work.OrganizationId,
+            work.SubscriptionId,
+            work.LeaseToken,
+            OrganizationBillingCleanupOutcome.ConfirmedAbsent,
+            Start.AddDays(1).AddMinutes(1)));
+
+        var tombstone = await fixture.SubscriptionAsync(fixture.OrganizationId);
+        Assert.Null(tombstone.EarlyDeletionRequestedAt);
+
+        await fixture.Store.RequestDeletionAsync(fixture.OrganizationId, Start.AddDays(2));
+
+        tombstone = await fixture.SubscriptionAsync(fixture.OrganizationId);
+        Assert.Null(tombstone.EarlyDeletionRequestedAt);
+    }
+
+    [Fact]
     public async Task Worker_uses_TimeProvider_and_retries_provider_cleanup_safely()
     {
         await using var fixture = await LifecycleFixture.CreateAsync();

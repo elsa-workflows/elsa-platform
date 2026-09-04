@@ -181,19 +181,18 @@ public sealed partial class OrganizationBillingStore
 
             var previous = subscription.State;
             var changed = false;
-            subscription.EarlyDeletionRequestedAt ??= requestedAt;
-            if (subscription.State is not OrganizationSubscriptionState.Suspended and
-                not OrganizationSubscriptionState.Retained and
-                not OrganizationSubscriptionState.Deleted)
-            {
-                OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.Suspended, requestedAt, advanceLifecycleVersion: true);
-                changed = true;
-            }
-
             if (subscription.State == OrganizationSubscriptionState.Deleted)
             {
                 await transaction.CommitAsync(cancellationToken);
                 return new(organizationId, subscription.Id, previous, subscription.State, subscription.DeletedAt ?? requestedAt, false, false);
+            }
+
+            subscription.EarlyDeletionRequestedAt ??= requestedAt;
+            if (subscription.State is not OrganizationSubscriptionState.Suspended and
+                not OrganizationSubscriptionState.Retained)
+            {
+                OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.Suspended, requestedAt, advanceLifecycleVersion: true);
+                changed = true;
             }
 
             subscription.UpdatedAt = requestedAt;
