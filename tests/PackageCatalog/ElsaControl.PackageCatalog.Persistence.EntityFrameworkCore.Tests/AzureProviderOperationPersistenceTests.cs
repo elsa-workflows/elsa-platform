@@ -87,6 +87,49 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Bound_safe_exit_supersedes_held_provider_operation_before_new_operation_executes()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var organizationId = Guid.NewGuid();
+        var instanceId = Guid.NewGuid();
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var held = await store.CreateOrGetAsync(Request() with
+        {
+            OrganizationId = organizationId,
+            InstanceId = instanceId,
+            LifecycleAction = ElsaInstanceOperationAction.Reconcile
+        }, now);
+        var claimedHeld = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId, held.Id, "worker-held", "lease-held", TimeSpan.FromMinutes(1), now));
+        var authorization = await store.AuthorizeAsync(
+            _workspaceId, held.Id, "lease-held", new DenyingCommercialGate(), now, claimedHeld.Version);
+        Assert.Equal(AzureProviderOperationStatus.EntitlementHeld, authorization?.Operation.Status);
+
+        var safeExit = await store.CreateOrGetAsync(Request() with
+        {
+            IdempotencyKey = "safe-stop",
+            OrganizationId = organizationId,
+            InstanceId = instanceId,
+            LifecycleAction = ElsaInstanceOperationAction.Stop
+        }, now.AddMinutes(1));
+
+        Assert.Equal(AzureProviderOperationStatus.Accepted, safeExit.Status);
+        var superseded = await store.GetAsync(_workspaceId, held.Id);
+        Assert.Equal(AzureProviderOperationStatus.Cancelled, superseded?.Status);
+        Assert.Contains(
+            await store.ListTransitionsAsync(_workspaceId, held.Id),
+            transition => transition.Code == ElsaInstanceCommercialOperation.EntitlementSafeExitSuperseded);
+
+        var claimedSafeExit = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId, safeExit.Id, "worker-safe-exit", "lease-safe-exit", TimeSpan.FromMinutes(1), now.AddMinutes(1), safeExit.Version));
+        var completedSafeExit = await store.FinalizeAsync(
+            _workspaceId, safeExit.Id, "lease-safe-exit", AzureProviderOperationStatus.Succeeded,
+            "azure.operation.succeeded", now.AddMinutes(1), claimedSafeExit.Version);
+        Assert.Equal(AzureProviderOperationStatus.Succeeded, completedSafeExit?.Status);
+    }
+
+    [Fact]
     public async Task Unknown_workspace_is_rejected_by_catalog_foreign_key()
     {
         using var db = CreateContext();

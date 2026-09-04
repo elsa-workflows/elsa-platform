@@ -660,6 +660,42 @@ public sealed class InMemoryElsaInstanceLifecycleStore(
 
             var active = _operations.Values.FirstOrDefault(x =>
                 x.InstanceId == instance.Id && ElsaInstanceOperationGuard.IsBlocking(x.State));
+            var supersedesEntitlementHeld = operation.Action is ElsaInstanceOperationAction.Stop or ElsaInstanceOperationAction.Delete &&
+                active is not null &&
+                active.State == ElsaInstanceOperationState.EntitlementHeld &&
+                active.Action != ElsaInstanceOperationAction.Delete;
+            if (supersedesEntitlementHeld)
+            {
+                var held = _operations[active!.Id];
+                if (held.State != ElsaInstanceOperationState.EntitlementHeld)
+                    throw new ElsaInstanceLifecycleConflictException(
+                        "The entitlement-held operation changed concurrently.",
+                        ElsaInstanceLifecycleConflictReason.OperationActive);
+                var cancelled = held.TransitionTo(ElsaInstanceOperationState.Cancelled);
+                _operations[held.Id] = cancelled;
+                _claims.Remove(held.Id);
+                _failures[held.Id] = new ElsaInstanceLifecycleRecordedFailure(
+                    held.Id,
+                    ElsaInstanceCommercialOperation.EntitlementSafeExitSuperseded,
+                    "The entitlement-held operation was superseded by a safe lifecycle exit.",
+                    outbox.CreatedAt);
+                if (_deploymentRuns.Values.SingleOrDefault(x => x.Operation.Id == held.Id) is { } priorRun)
+                {
+                    _deploymentRuns[priorRun.Run.Id] = priorRun with
+                    {
+                        Operation = cancelled,
+                        Run = priorRun.Run with
+                        {
+                            Status = WorkspaceDeploymentRunStatus.Cancelled,
+                            CompletedAt = outbox.CreatedAt,
+                            RecoveryReason = ElsaInstanceCommercialOperation.EntitlementSafeExitSuperseded,
+                            WorkerId = null,
+                            WorkerHeartbeatAt = null
+                        }
+                    };
+                }
+                active = null;
+            }
             if (active is not null)
             {
                 var isDeleteSuccessor = operation.Action == ElsaInstanceOperationAction.Delete &&

@@ -84,6 +84,28 @@ public sealed class AzureProviderExecutorTests
     }
 
     [Fact]
+    public async Task Entitlement_denial_cas_loss_returns_current_concurrent_winner_without_provider_call()
+    {
+        var store = new FakeOperationStore { ConcurrentWinnerStatus = AzureProviderOperationStatus.Succeeded };
+        var runner = new RecordingRunner();
+        var gate = new ToggleCommercialGate();
+        var executor = new AzureProviderExecutor(
+            store,
+            runner,
+            new StaticTimeProvider(Now),
+            TimeSpan.FromMinutes(5),
+            commercialGate: gate);
+
+        var result = await executor.ApplyAsync(CreateRequest(), CreatePlan());
+
+        Assert.Equal(AzureProviderOperationStatus.Succeeded, result.Operation.Status);
+        Assert.Equal(3, result.Operation.Version);
+        Assert.Equal(AzureProviderExecutionOutcome.NoOp, result.Outcome);
+        Assert.Equal("azure.operation.no-op", result.Code);
+        Assert.Empty(runner.Steps);
+    }
+
+    [Fact]
     public async Task Legacy_unbound_reconcile_is_held_before_any_provider_call()
     {
         var store = new FakeOperationStore();
@@ -97,6 +119,28 @@ public sealed class AzureProviderExecutorTests
         };
 
         var result = await executor.ApplyAsync(request, CreatePlan());
+
+        Assert.Equal(AzureProviderExecutionOutcome.InProgress, result.Outcome);
+        Assert.Equal(AzureProviderOperationStatus.EntitlementHeld, result.Operation.Status);
+        Assert.Equal(ElsaInstanceCommercialOperation.BindingRequired, result.Code);
+        Assert.Empty(runner.Steps);
+    }
+
+    [Fact]
+    public async Task Legacy_unbound_delete_is_held_before_any_provider_call()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner();
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now));
+        var request = CreateRequest() with
+        {
+            Action = AzureProviderOperationAction.Delete,
+            OrganizationId = null,
+            InstanceId = null,
+            LifecycleAction = null
+        };
+
+        var result = await executor.DeleteAsync(request, CreatePlan());
 
         Assert.Equal(AzureProviderExecutionOutcome.InProgress, result.Outcome);
         Assert.Equal(AzureProviderOperationStatus.EntitlementHeld, result.Operation.Status);
@@ -974,6 +1018,7 @@ public sealed class AzureProviderExecutorTests
         public AzureProviderOperationStatus? RejectCreateWithStatus { get; init; }
         public bool LoseLeaseOnHeartbeat { get; init; }
         public AzureProviderResourceReferences? LatestReconcileResources { get; init; }
+        public AzureProviderOperationStatus? ConcurrentWinnerStatus { get; init; }
 
         public async Task<AzureProviderOperationCreateResult> CreateOrGetWithResultAsync(
             AzureProviderOperationRequest request,
@@ -1132,6 +1177,19 @@ public sealed class AzureProviderExecutorTests
         {
             if (_operation is null || _operation.Status != AzureProviderOperationStatus.Running || expectedVersion.HasValue && _operation.Version != expectedVersion.Value)
                 return Task.FromResult<AzureProviderOperation?>(null);
+            if (ConcurrentWinnerStatus is { } concurrentStatus)
+            {
+                _operation = _operation with
+                {
+                    Status = concurrentStatus,
+                    Version = _operation.Version + 1,
+                    UpdatedAt = now,
+                    CompletedAt = concurrentStatus is AzureProviderOperationStatus.RecoveryRequired or AzureProviderOperationStatus.EntitlementHeld ? null : now,
+                    WorkerId = null,
+                    LeaseExpiresAt = null
+                };
+                return Task.FromResult<AzureProviderOperation?>(null);
+            }
             _operation = _operation with { Status = status, Version = _operation.Version + 1, UpdatedAt = now, CompletedAt = status is AzureProviderOperationStatus.RecoveryRequired or AzureProviderOperationStatus.EntitlementHeld ? null : now, WorkerId = null, LeaseExpiresAt = null };
             _transitions.Add(new(_operation.Id, _operation.Id, _transitions.Count + 1, status, _operation.Phase, code, code, now));
             return Task.FromResult<AzureProviderOperation?>(_operation);

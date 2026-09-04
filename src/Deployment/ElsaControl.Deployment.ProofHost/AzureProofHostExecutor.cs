@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Azure;
 using ElsaControl.Deployment.Proof;
 using ElsaControl.PackageCatalog.Core.Accounts;
@@ -13,6 +14,7 @@ public sealed class AzureProofHostExecutor(TextWriter output, TextWriter error) 
 {
     private const int ProofFailedExitCode = 5;
     private static readonly Guid ProofOrganizationId = Guid.Parse("19519519-5195-4195-8195-195195195195");
+    private static readonly Guid ProofInstanceId = Guid.Parse("29529529-5295-4295-8295-295295295295");
 
     public async Task<int> ExecuteAsync(ProofHostOptions options, CancellationToken cancellationToken = default)
     {
@@ -37,7 +39,8 @@ public sealed class AzureProofHostExecutor(TextWriter output, TextWriter error) 
             var templateFingerprint = runnerOptions.ComputeTemplateAuthorityFingerprint();
             var scopeFingerprint = runnerOptions.ComputeProviderScopeFingerprint(targetScope);
             var planFactory = new AdmittedAzureProofPlanFactory(
-                resolution, new(options.ProofName, options.Location), templateFingerprint, scopeFingerprint, options.Features);
+                resolution, new(options.ProofName, options.Location), templateFingerprint, scopeFingerprint, options.Features,
+                ProofOrganizationId, ProofInstanceId);
 
             return options.Mode switch
             {
@@ -98,11 +101,15 @@ public sealed class AzureProofHostExecutor(TextWriter output, TextWriter error) 
         var selector = new AzureProviderProofAdapter(
             options.WorkspaceId, templateFingerprint, service, executor, planFactory);
         var selection = await selector.SelectAsync(input, environment, cancellationToken);
-        var submission = planFactory.Create(selection, environment);
+        var submission = planFactory.Create(selection, environment) with
+        {
+            LifecycleAction = ElsaInstanceOperationAction.Delete
+        };
         var operation = await service.SubmitDeleteAsync(options.WorkspaceId, submission, cancellationToken);
         var request = AzureProviderOperationService.CreateOperationRequest(
             options.WorkspaceId, operation.IdempotencyKey, templateFingerprint, submission.Plan,
-            AzureProviderOperationAction.Delete, submission.ProviderScopeFingerprint);
+            AzureProviderOperationAction.Delete, submission.ProviderScopeFingerprint,
+            submission.OrganizationId, submission.InstanceId, submission.LifecycleAction);
         using var cleanupCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cleanupCts.CancelAfter(options.CleanupTimeout);
         var execution = await executor.DeleteAsync(request, submission.Plan, cleanupCts.Token);

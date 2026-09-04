@@ -480,13 +480,27 @@ public static class ElsaInstanceStateMachine
             ElsaInstanceOperationGuard.IsBlocking(activeOperation.State))
             throw new ElsaInstanceStateConflictException(ElsaInstanceStateConflictReason.OperationActive);
 
+        // Stop and confirmed Delete are safe exits from entitlement-held work. The
+        // acceptance store supersedes that held predecessor in the same transaction,
+        // so these exits must not be stranded behind a provider mutation that cannot
+        // currently be submitted.
+        var supersedesEntitlementHeld = activeOperation is { State: ElsaInstanceOperationState.EntitlementHeld } &&
+                                        activeOperation.Action != ElsaInstanceOperationAction.Delete &&
+                                        action is ElsaInstanceOperationAction.Stop or ElsaInstanceOperationAction.Delete;
         var waitForPriorOperation = action == ElsaInstanceOperationAction.Delete &&
                                     activeOperation is not null &&
-                                    ElsaInstanceOperationGuard.IsBlocking(activeOperation.State);
+                                    ElsaInstanceOperationGuard.IsBlocking(activeOperation.State) &&
+                                    !supersedesEntitlementHeld;
         if (waitForPriorOperation)
             ElsaInstanceOperationGuard.EnsureExpectedVersion(instance, expected);
         else
-            ElsaInstanceOperationGuard.EnsureCanAccept(instance, activeOperation, expected, operationScope, key, hash);
+            ElsaInstanceOperationGuard.EnsureCanAccept(
+                instance,
+                supersedesEntitlementHeld ? null : activeOperation,
+                expected,
+                operationScope,
+                key,
+                hash);
         var next = instance;
 
         switch (action)

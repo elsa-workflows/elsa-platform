@@ -126,6 +126,12 @@ public sealed class AzureProviderExecutor
                 "The Azure operation is owned by another worker or changed concurrently.");
         }
 
+        // Every provider mutation, including cleanup, must pass the durable
+        // identity-binding boundary before the first remote runner call.
+        var commercialResult = await RevalidateCommercialAsync(claimed, leaseToken, cancellationToken);
+        if (commercialResult is not null)
+            return commercialResult;
+
         if (claimed.Action == AzureProviderOperationAction.Delete)
         {
             // Delete is a separate idempotent operation from reconcile. Carry the latest
@@ -312,9 +318,6 @@ public sealed class AzureProviderExecutor
         string leaseToken,
         CancellationToken cancellationToken)
     {
-        if (operation.Action == AzureProviderOperationAction.Delete)
-            return null;
-
         if (operation.OrganizationId is not { } organizationId || organizationId == Guid.Empty ||
             operation.InstanceId is not { } instanceId || instanceId == Guid.Empty ||
             operation.LifecycleAction is not { } lifecycleAction)
@@ -328,12 +331,17 @@ public sealed class AzureProviderExecutor
                 _timeProvider.GetUtcNow(),
                 operation.Version,
                 cancellationToken);
+            if (bindingHeld is null)
+                return await GetConcurrentResultAsync(operation);
             return Result(
-                bindingHeld ?? operation,
+                bindingHeld,
                 AzureProviderExecutionOutcome.InProgress,
                 ElsaInstanceCommercialOperation.BindingRequired,
                 "The managed-instance provider operation is missing its durable identity binding.");
         }
+
+        if (operation.Action == AzureProviderOperationAction.Delete)
+            return null;
 
         if (_commercialGate is null)
             return null;
@@ -380,8 +388,10 @@ public sealed class AzureProviderExecutor
             _timeProvider.GetUtcNow(),
             operation.Version,
             cancellationToken);
+        if (fallbackHeld is null)
+            return await GetConcurrentResultAsync(operation);
         return Result(
-            fallbackHeld ?? operation,
+            fallbackHeld,
             AzureProviderExecutionOutcome.InProgress,
             decision.Code,
             decision.Summary);

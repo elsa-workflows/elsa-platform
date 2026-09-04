@@ -3,6 +3,7 @@ using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Azure;
 using ElsaControl.Deployment.Core.Instances;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models;
@@ -32,6 +33,11 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
         var normalized = AzureProviderOperationValidation.Normalize(request);
         var hash = AzureProviderOperationValidation.ComputeRequestHash(normalized);
         var identity = AzureProviderOperationValidation.ComputeOperationIdentity(normalized);
+        // Safe-exit supersession and successor reservation are one serializable
+        // decision. Two Stop/Delete requests must not both observe the same
+        // held predecessor and race to insert successors.
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable, cancellationToken);
         var existing = await FindByKeyAsync(normalized, cancellationToken);
         var identityEntity = await db.AzureProviderOperations.AsNoTracking()
             .Where(x => x.WorkspaceId == normalized.WorkspaceId && x.TargetKey == normalized.TargetKey &&
@@ -43,7 +49,32 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
         if (existing is not null)
             return new(EnsureSameRequest(existing, hash), Replayed: true);
 
-        var activeTargetEntity = await FindActiveTargetAsync(normalized, cancellationToken);
+        Guid? supersededHeldOperationId = null;
+        if (normalized.LifecycleAction is ElsaInstanceOperationAction.Stop or ElsaInstanceOperationAction.Delete)
+        {
+            var heldSafeExit = await FindBoundEntitlementHeldAsync(normalized, cancellationToken);
+            if (heldSafeExit is not null)
+            {
+                supersededHeldOperationId = heldSafeExit.Id;
+                heldSafeExit.Status = AzureProviderOperationStatus.Cancelled;
+                heldSafeExit.CompletedAt = now;
+                heldSafeExit.UpdatedAt = now;
+                heldSafeExit.Version++;
+                heldSafeExit.WorkerId = null;
+                heldSafeExit.LeaseTokenHash = null;
+                heldSafeExit.CompletionLeaseTokenHash = null;
+                heldSafeExit.CompletionFingerprint = null;
+                heldSafeExit.LeaseExpiresAt = null;
+                heldSafeExit.HeartbeatAt = null;
+                AddTransition(
+                    heldSafeExit,
+                    ElsaInstanceCommercialOperation.EntitlementSafeExitSuperseded,
+                    "The Azure provider operation was superseded by a safe lifecycle exit.",
+                    now);
+            }
+        }
+
+        var activeTargetEntity = await FindActiveTargetAsync(normalized, supersededHeldOperationId, cancellationToken);
         if (activeTargetEntity is not null)
             throw new AzureProviderOperationConflictException(ToModel(activeTargetEntity));
         var previousResources = await GetLatestReconcileAsync(
@@ -122,11 +153,17 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
         try
         {
             await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             return new(ToModel(entity), Replayed: false);
         }
         catch (DbUpdateException)
         {
+            await transaction.RollbackAsync(cancellationToken);
             db.ChangeTracker.Clear();
+            // The failed transaction may have staged the safe-exit transition,
+            // so reread the winner in a fresh serializable transaction.
+            await using var recoveryTransaction = await db.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable, cancellationToken);
             existing = await FindByKeyAsync(normalized, cancellationToken);
             identityEntity = await db.AzureProviderOperations.AsNoTracking()
                 .Where(x => x.WorkspaceId == normalized.WorkspaceId && x.TargetKey == normalized.TargetKey && x.OperationIdentity == identity &&
@@ -135,10 +172,17 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
                 .SingleOrDefaultAsync(cancellationToken);
             existing ??= identityEntity is null ? null : ToModel(identityEntity);
             if (existing is not null)
+            {
+                await recoveryTransaction.CommitAsync(cancellationToken);
                 return new(EnsureSameRequest(existing, hash), Replayed: true);
-            activeTargetEntity = await FindActiveTargetAsync(normalized, cancellationToken);
+            }
+            activeTargetEntity = await FindActiveTargetAsync(normalized, supersededHeldOperationId, cancellationToken);
             if (activeTargetEntity is not null)
+            {
+                await recoveryTransaction.RollbackAsync(cancellationToken);
                 throw new AzureProviderOperationConflictException(ToModel(activeTargetEntity));
+            }
+            await recoveryTransaction.RollbackAsync(cancellationToken);
             throw;
         }
     }
@@ -514,11 +558,28 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
 
     private async Task<AzureProviderOperationEntity?> FindActiveTargetAsync(
         AzureProviderOperationRequest request,
+        Guid? excludedOperationId,
         CancellationToken cancellationToken) =>
         await db.AzureProviderOperations.AsNoTracking()
             .Where(x => x.WorkspaceId == request.WorkspaceId && x.TargetKey == request.TargetKey &&
+                        (!excludedOperationId.HasValue || x.Id != excludedOperationId.Value) &&
                         (x.Status == AzureProviderOperationStatus.Accepted || x.Status == AzureProviderOperationStatus.Queued || x.Status == AzureProviderOperationStatus.EntitlementHeld ||
                          x.Status == AzureProviderOperationStatus.Running || x.Status == AzureProviderOperationStatus.RecoveryRequired))
+            .OrderBy(x => x.CreatedAt)
+            .ThenBy(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    private async Task<AzureProviderOperationEntity?> FindBoundEntitlementHeldAsync(
+        AzureProviderOperationRequest request,
+        CancellationToken cancellationToken) =>
+        await db.AzureProviderOperations
+            .Where(x => x.WorkspaceId == request.WorkspaceId &&
+                        x.TargetKey == request.TargetKey &&
+                        x.OrganizationId == request.OrganizationId &&
+                        x.InstanceId == request.InstanceId &&
+                        x.Action == AzureProviderOperationAction.Reconcile &&
+                        x.Status == AzureProviderOperationStatus.EntitlementHeld &&
+                        x.LifecycleAction != ElsaInstanceOperationAction.Delete)
             .OrderBy(x => x.CreatedAt)
             .ThenBy(x => x.Id)
             .FirstOrDefaultAsync(cancellationToken);

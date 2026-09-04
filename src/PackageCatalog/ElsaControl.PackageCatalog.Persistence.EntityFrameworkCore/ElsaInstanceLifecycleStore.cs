@@ -480,6 +480,22 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                     .OrderByDescending(x => x.AcceptedAt)
                     .ThenByDescending(x => x.CreatedAt)
                     .FirstOrDefaultAsync(cancellationToken);
+            var supersedesEntitlementHeld = operation.Action is ElsaInstanceOperationAction.Stop or ElsaInstanceOperationAction.Delete &&
+                activeOperation is not null &&
+                activeOperation.State == ElsaInstanceOperationState.EntitlementHeld &&
+                activeOperation.Action != ElsaInstanceOperationAction.Delete;
+            if (supersedesEntitlementHeld)
+            {
+                var heldOperation = await dbContext.ElsaInstanceOperations
+                    .SingleOrDefaultAsync(x => x.Id == activeOperation!.Id &&
+                                               x.WorkspaceId == instance.WorkspaceId &&
+                                               x.InstanceId == instance.Id,
+                        cancellationToken);
+                if (heldOperation is null || heldOperation.State != ElsaInstanceOperationState.EntitlementHeld)
+                    throw Conflict("The entitlement-held operation changed concurrently.", ElsaInstanceLifecycleConflictReason.OperationActive);
+                await SupersedeEntitlementHeldOperationAsync(heldOperation, storedInstance!, outbox.CreatedAt, cancellationToken);
+                activeOperation = null;
+            }
             if (activeOperation is not null)
             {
                 var isDeleteSuccessor = operation.Action == ElsaInstanceOperationAction.Delete &&
@@ -2890,6 +2906,61 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
 
     internal static ElsaInstanceOperation MapOperation(ElsaInstanceOperationEntity entity)
         => MapOperation(entity, null);
+
+    private async Task SupersedeEntitlementHeldOperationAsync(
+        ElsaInstanceOperationEntity operation,
+        ElsaInstanceEntity instance,
+        DateTimeOffset supersededAt,
+        CancellationToken cancellationToken)
+    {
+        var timestamp = supersededAt.ToUniversalTime();
+        operation.State = ElsaInstanceOperationState.Cancelled;
+        operation.FailureCode = ElsaInstanceCommercialOperation.EntitlementSafeExitSuperseded;
+        operation.FailureSummary = null;
+        operation.CompletedAt = timestamp;
+        operation.WorkerId = null;
+        operation.LeaseTokenHash = null;
+        operation.LeaseExpiresAt = null;
+        operation.HeartbeatAt = null;
+        operation.UpdatedAt = timestamp;
+
+        if (operation.DeploymentRunId is not { } runId)
+            return;
+
+        var run = await dbContext.DeploymentRuns
+            .Include(x => x.Environment)
+            .SingleOrDefaultAsync(x => x.Id == runId &&
+                                       x.WorkspaceId == operation.WorkspaceId &&
+                                       x.ElsaInstanceId == instance.Id,
+                cancellationToken);
+        if (run is null)
+            return;
+        if (run.Status is WorkspaceDeploymentRunStatus.Queued or
+            WorkspaceDeploymentRunStatus.Running or
+            WorkspaceDeploymentRunStatus.RecoveryRequired)
+        {
+            run.Status = WorkspaceDeploymentRunStatus.Cancelled;
+            run.CompletedAt = timestamp;
+            run.RecoveryReason = ElsaInstanceCommercialOperation.EntitlementSafeExitSuperseded;
+            run.FailureMessage = null;
+            run.WorkerId = null;
+            run.WorkerHeartbeatAt = null;
+            if (run.Environment is not null)
+            {
+                run.Environment.UpdatedAt = timestamp;
+                run.Environment.DeploymentStatus = DeploymentStatus.Blocked;
+            }
+            await dbContext.DeploymentRunHistoryEvents.AddAsync(new()
+            {
+                Id = Guid.NewGuid(),
+                WorkspaceId = run.WorkspaceId,
+                RunId = run.Id,
+                Status = WorkspaceDeploymentRunStatus.Cancelled,
+                Message = "Deployment run was cancelled by a safe lifecycle exit.",
+                CreatedAt = timestamp
+            }, cancellationToken);
+        }
+    }
 
     private static ElsaInstanceOperation MapOperation(
         ElsaInstanceOperationEntity entity,

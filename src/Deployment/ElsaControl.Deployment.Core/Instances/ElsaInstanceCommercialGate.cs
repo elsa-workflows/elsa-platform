@@ -28,4 +28,5 @@ public static class ElsaInstanceCommercialOperation
     public const string LifecycleConstrained = "instance.lifecycle-constrained";
     public const string InstanceLimitReached = "instance.instance-limit-reached";
     public const string BindingRequired = "instance.binding-required";
+    public const string EntitlementSafeExitSuperseded = "instance.entitlement-safe-exit-superseded";
 }
