@@ -1830,8 +1830,12 @@ public sealed class ElsaInstanceLifecycleStoreTests
             submission.CorrelationId,
             Now));
 
-        const string subscriptionId = "11111111-1111-1111-1111-111111111111";
-        const string resourceGroupName = "elsa-managed";
+        var assignment = Assert.IsType<AzureProviderResourceAssignment>(await
+            ((IAzureProviderResourceAssignmentStore)operationStore).GetAsync(
+                workspace.Id,
+                providerOperation.ProviderAssignmentId!.Value));
+        var subscriptionId = assignment.SubscriptionId;
+        var resourceGroupName = assignment.ResourceGroupName;
         var foundationDeploymentId =
             $"/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Resources/deployments/foundation";
         var workloadDeploymentId =
