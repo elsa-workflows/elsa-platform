@@ -114,10 +114,17 @@ public sealed class CommercialLifecycleAcceptanceProofTests
         Assert.False((await gate.EvaluateAsync(organization.Id, ElsaInstanceOperationAction.Create, 0)).Allowed);
         Assert.True((await gate.EvaluateAsync(organization.Id, ElsaInstanceOperationAction.Delete)).Allowed);
 
-        Assert.Equal(3, await db.BillingProviderEvents.CountAsync());
-        Assert.All(await db.OrganizationAuditRecords.AsNoTracking().ToListAsync(),
+        var providerEvents = await db.BillingProviderEvents.AsNoTracking().ToListAsync();
+        Assert.Equal(3, providerEvents.Count);
+        var audits = await db.OrganizationAuditRecords.AsNoTracking().ToListAsync();
+        Assert.All(audits,
             audit => Assert.Equal(organization.Id, audit.OrganizationId));
-        var persistedEvidence = string.Join(' ', notices.Select(x => $"{x.Kind} {x.State} {x.DeliveryStatus}"));
+        var cleanups = await db.OrganizationBillingCleanups.AsNoTracking().ToListAsync();
+        var persistedEvidence = string.Join(' ',
+            audits.Select(x => $"{x.TargetType} {x.TargetId} {x.Summary}")
+                .Concat(providerEvents.Select(x => $"{x.EventType} {x.RejectionCode} {x.ProviderCustomerReference} {x.ProviderSubscriptionReference}"))
+                .Concat(notices.Select(x => $"{x.Kind} {x.State} {x.DeliveryStatus} {x.LastFailureCode}"))
+                .Concat(cleanups.Select(x => $"{x.CleanupKey} {x.LastFailureCode} {x.ProviderCustomerReference} {x.ProviderSubscriptionReference}")));
         Assert.DoesNotContain("price_", persistedEvidence, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("secret", persistedEvidence, StringComparison.OrdinalIgnoreCase);
     }
