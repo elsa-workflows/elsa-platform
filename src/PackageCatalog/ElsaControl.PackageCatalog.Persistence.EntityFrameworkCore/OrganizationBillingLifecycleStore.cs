@@ -72,94 +72,111 @@ public sealed partial class OrganizationBillingStore
         Guid organizationId,
         Guid subscriptionId,
         DateTimeOffset now,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        await AdvanceOneCoreAsync(organizationId, subscriptionId, now, cancellationToken, attempt: 0);
+
+    private async Task<OrganizationBillingLifecycleAdvance?> AdvanceOneCoreAsync(
+        Guid organizationId,
+        Guid subscriptionId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken,
+        int attempt)
     {
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
-        var subscription = await dbContext.OrganizationSubscriptions
-            .SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == subscriptionId, cancellationToken);
-        if (subscription is null || subscription.State == OrganizationSubscriptionState.Deleted)
+        try
         {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+            var subscription = await dbContext.OrganizationSubscriptions
+                .SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.Id == subscriptionId, cancellationToken);
+            if (subscription is null || subscription.State == OrganizationSubscriptionState.Deleted)
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return null;
+            }
+
+            var previous = subscription.State;
+            var transitionAt = now;
+            var changed = false;
+            switch (subscription.State)
+            {
+                case OrganizationSubscriptionState.Trial when subscription.TrialEndsAt <= now:
+                    transitionAt = subscription.TrialEndsAt.ToUniversalTime();
+                    OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.PastDue, transitionAt, advanceLifecycleVersion: true);
+                    changed = true;
+                    break;
+                case OrganizationSubscriptionState.PastDue:
+                {
+                    var graceEndsAt = subscription.GraceEndsAt ?? subscription.PastDueAt?.ToUniversalTime().Add(OrganizationSubscriptionLifecycle.PaymentGracePeriod);
+                    if (graceEndsAt is null || graceEndsAt > now)
+                        break;
+                    transitionAt = graceEndsAt.Value;
+                    subscription.GraceEndsAt ??= transitionAt;
+                    OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.Constrained, transitionAt, advanceLifecycleVersion: true);
+                    changed = true;
+                    break;
+                }
+                case OrganizationSubscriptionState.Constrained:
+                {
+                    var suspensionAt = subscription.ConstrainedAt?.ToUniversalTime().Add(OrganizationSubscriptionLifecycle.ConstraintPeriod);
+                    if (suspensionAt is null || suspensionAt > now)
+                        break;
+                    transitionAt = suspensionAt.Value;
+                    OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.Suspended, transitionAt, advanceLifecycleVersion: true);
+                    changed = true;
+                    break;
+                }
+                case OrganizationSubscriptionState.Suspended:
+                {
+                    var retentionEndsAt = subscription.RetentionEndsAt ?? subscription.SuspendedAt?.ToUniversalTime().Add(OrganizationSubscriptionLifecycle.FinalRetentionPeriod);
+                    if (retentionEndsAt is null || retentionEndsAt > now)
+                        break;
+                    transitionAt = retentionEndsAt.Value;
+                    subscription.RetentionEndsAt ??= transitionAt;
+                    OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.Retained, transitionAt, advanceLifecycleVersion: true);
+                    changed = true;
+                    break;
+                }
+            }
+
+            var noticeCreated = false;
+            var cleanupQueued = false;
+            if (changed)
+            {
+                subscription.UpdatedAt = now;
+                if (NoticeFor(subscription.State) is { } noticeKind)
+                {
+                    noticeCreated |= await AddNoticeAsync(subscription, noticeKind, now, cancellationToken);
+                }
+                if (subscription.State == OrganizationSubscriptionState.Suspended)
+                    noticeCreated |= await AddNoticeAsync(subscription, OrganizationBillingLifecycleNoticeKind.ExportAvailable, now, cancellationToken);
+                AddLifecycleAudit(
+                    subscription,
+                    OrganizationAuditAction.SubscriptionChanged,
+                    $"Organization subscription lifecycle advanced from {previous} to {subscription.State}.",
+                    now);
+            }
+
+            if (subscription.State == OrganizationSubscriptionState.Retained)
+            {
+                noticeCreated |= await AddNoticeAsync(subscription, OrganizationBillingLifecycleNoticeKind.DeletionScheduled, now, cancellationToken);
+                cleanupQueued = await EnsureCleanupAsync(subscription, now, early: false, cancellationToken);
+            }
+
+            if (!changed && !noticeCreated && !cleanupQueued)
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return null;
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return null;
+            return new(organizationId, subscription.Id, previous, subscription.State, transitionAt, noticeCreated, cleanupQueued);
         }
-
-        var previous = subscription.State;
-        var transitionAt = now;
-        var changed = false;
-        switch (subscription.State)
+        catch (Exception exception) when (attempt < 2 && IsRetryableLifecycleConflict(exception))
         {
-            case OrganizationSubscriptionState.Trial when subscription.TrialEndsAt <= now:
-                transitionAt = subscription.TrialEndsAt.ToUniversalTime();
-                OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.PastDue, transitionAt, advanceLifecycleVersion: true);
-                changed = true;
-                break;
-            case OrganizationSubscriptionState.PastDue:
-            {
-                var graceEndsAt = subscription.GraceEndsAt ?? subscription.PastDueAt?.ToUniversalTime().Add(OrganizationSubscriptionLifecycle.PaymentGracePeriod);
-                if (graceEndsAt is null || graceEndsAt > now)
-                    break;
-                transitionAt = graceEndsAt.Value;
-                subscription.GraceEndsAt ??= transitionAt;
-                OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.Constrained, transitionAt, advanceLifecycleVersion: true);
-                changed = true;
-                break;
-            }
-            case OrganizationSubscriptionState.Constrained:
-            {
-                var suspensionAt = subscription.ConstrainedAt?.ToUniversalTime().Add(OrganizationSubscriptionLifecycle.ConstraintPeriod);
-                if (suspensionAt is null || suspensionAt > now)
-                    break;
-                transitionAt = suspensionAt.Value;
-                OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.Suspended, transitionAt, advanceLifecycleVersion: true);
-                changed = true;
-                break;
-            }
-            case OrganizationSubscriptionState.Suspended:
-            {
-                var retentionEndsAt = subscription.RetentionEndsAt ?? subscription.SuspendedAt?.ToUniversalTime().Add(OrganizationSubscriptionLifecycle.FinalRetentionPeriod);
-                if (retentionEndsAt is null || retentionEndsAt > now)
-                    break;
-                transitionAt = retentionEndsAt.Value;
-                subscription.RetentionEndsAt ??= transitionAt;
-                OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.Retained, transitionAt, advanceLifecycleVersion: true);
-                changed = true;
-                break;
-            }
+            dbContext.ChangeTracker.Clear();
+            await Task.Delay(TimeSpan.FromMilliseconds(20 * (attempt + 1)), cancellationToken);
+            return await AdvanceOneCoreAsync(organizationId, subscriptionId, now, cancellationToken, attempt + 1);
         }
-
-        var noticeCreated = false;
-        var cleanupQueued = false;
-        if (changed)
-        {
-            subscription.UpdatedAt = now;
-            if (NoticeFor(subscription.State) is { } noticeKind)
-            {
-                noticeCreated |= await AddNoticeAsync(subscription, noticeKind, now, cancellationToken);
-            }
-            if (subscription.State == OrganizationSubscriptionState.Suspended)
-                noticeCreated |= await AddNoticeAsync(subscription, OrganizationBillingLifecycleNoticeKind.ExportAvailable, now, cancellationToken);
-            AddLifecycleAudit(
-                subscription,
-                OrganizationAuditAction.SubscriptionChanged,
-                $"Organization subscription lifecycle advanced from {previous} to {subscription.State}.",
-                now);
-        }
-
-        if (subscription.State == OrganizationSubscriptionState.Retained)
-        {
-            noticeCreated |= await AddNoticeAsync(subscription, OrganizationBillingLifecycleNoticeKind.DeletionScheduled, now, cancellationToken);
-            cleanupQueued = await EnsureCleanupAsync(subscription, now, early: false, cancellationToken);
-        }
-
-        if (!changed && !noticeCreated && !cleanupQueued)
-        {
-            await transaction.CommitAsync(cancellationToken);
-            return null;
-        }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        return new(organizationId, subscription.Id, previous, subscription.State, transitionAt, noticeCreated, cleanupQueued);
     }
 
     private async Task<OrganizationBillingLifecycleAdvance?> RequestDeletionCoreAsync(
