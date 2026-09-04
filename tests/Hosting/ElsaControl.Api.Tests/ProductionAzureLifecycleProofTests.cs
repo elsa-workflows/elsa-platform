@@ -132,6 +132,53 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
             Path.Combine(contentRoot, "staged-appsettings.Production.json")));
     }
 
+    [Fact]
+    public void Cleanup_scope_requires_correlated_local_or_provider_proof()
+    {
+        var assignmentId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+
+        Assert.Equal(
+            CleanupScope.Local,
+            ClassifyCleanupScope(
+                instanceDeleted: true,
+                operationSucceeded: true,
+                assignmentId: null,
+                localDeletionAuditCorrelated: true,
+                providerCleanupVerified: false));
+        Assert.Equal(
+            CleanupScope.Provider,
+            ClassifyCleanupScope(
+                instanceDeleted: true,
+                operationSucceeded: true,
+                assignmentId,
+                localDeletionAuditCorrelated: false,
+                providerCleanupVerified: true));
+        Assert.Equal(
+            CleanupScope.None,
+            ClassifyCleanupScope(
+                instanceDeleted: true,
+                operationSucceeded: true,
+                assignmentId: null,
+                localDeletionAuditCorrelated: false,
+                providerCleanupVerified: false));
+        Assert.Equal(
+            CleanupScope.None,
+            ClassifyCleanupScope(
+                instanceDeleted: false,
+                operationSucceeded: true,
+                assignmentId: null,
+                localDeletionAuditCorrelated: true,
+                providerCleanupVerified: false));
+        Assert.Equal(
+            CleanupScope.None,
+            ClassifyCleanupScope(
+                instanceDeleted: true,
+                operationSucceeded: false,
+                assignmentId,
+                localDeletionAuditCorrelated: false,
+                providerCleanupVerified: true));
+    }
+
     [ProductionAzureFact]
     public async Task Production_composition_applies_reconciles_reloads_and_deletes_one_instance()
     {
@@ -140,6 +187,7 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
         ProofState? state = null;
         var cleanupAttempted = false;
         var cleanupSucceeded = false;
+        var cleanupScope = CleanupScope.None;
         var stage = "startup";
         using var runTimeout = new CancellationTokenSource(inputs.Timeout);
         var cancellationToken = runTimeout.Token;
@@ -176,9 +224,9 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
 
             stage = "cleanup";
             cleanupAttempted = true;
-            await WaitForDeletedAsync(application.Services, inputs, state, deleted.Operation.Id, cancellationToken);
+            cleanupScope = await WaitForDeletedAsync(application.Services, inputs, state, deleted.Operation.Id, cancellationToken);
             cleanupSucceeded = true;
-            await WriteEvidenceAsync(inputs, state, "succeeded", cleanupAttempted, cleanupSucceeded, stage, null);
+            await WriteEvidenceAsync(inputs, state, "succeeded", cleanupAttempted, cleanupSucceeded, cleanupScope, stage, null);
         }
         catch (Exception exception)
         {
@@ -188,9 +236,10 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
                 var cleanup = await TryCleanupAsync(application, inputs, state);
                 state = cleanup.State;
                 cleanupSucceeded = cleanup.Succeeded;
+                cleanupScope = cleanup.Scope;
             }
 
-            await WriteEvidenceAsync(inputs, state, "failed", cleanupAttempted, cleanupSucceeded, stage, exception);
+            await WriteEvidenceAsync(inputs, state, "failed", cleanupAttempted, cleanupSucceeded, cleanupScope, stage, exception);
             throw new XunitException(
                 "The opt-in production Azure lifecycle proof failed. Safe proof identifiers were preserved for investigation.");
         }
@@ -479,7 +528,7 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
         throw new ProofFailureException();
     }
 
-    private static async Task WaitForDeletedAsync(
+    private static async Task<CleanupScope> WaitForDeletedAsync(
         IServiceProvider services,
         LiveProofInputs inputs,
         ProofState state,
@@ -501,14 +550,29 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
                 if (operation.State == ElsaInstanceOperationState.Succeeded &&
                     instance.ObservedLifecycle == ElsaObservedLifecycle.Deleted)
                 {
-                    if (state.AssignmentId is not { } assignmentId)
+                    var providerCleanupVerified = false;
+                    if (state.AssignmentId is { } assignmentId)
+                    {
+                        var assignmentStore = scope.ServiceProvider.GetRequiredService<IAzureProviderResourceAssignmentStore>();
+                        var assignment = await assignmentStore.GetAsync(state.WorkspaceId, assignmentId, cancellationToken);
+                        providerCleanupVerified = assignment is not null &&
+                            assignment.State == AzureProviderAssignmentState.Deleted &&
+                            assignment.Resources == new AzureProviderResourceReferences(assignment.ResourceGroupName);
+                    }
+
+                    var localDeletionAuditCorrelated = state.AssignmentId is null &&
+                        await HasCorrelatedLocalDeletionAuditAsync(
+                            apiStore, state.WorkspaceId, state.InstanceId, operationId, cancellationToken);
+                    var cleanupScope = ClassifyCleanupScope(
+                        instanceDeleted: instance.ObservedLifecycle == ElsaObservedLifecycle.Deleted,
+                        operationSucceeded: operation.State == ElsaInstanceOperationState.Succeeded &&
+                            operation.Action == ElsaInstanceOperationAction.Delete,
+                        state.AssignmentId,
+                        localDeletionAuditCorrelated,
+                        providerCleanupVerified);
+                    if (cleanupScope == CleanupScope.None)
                         throw new ProofFailureException();
-                    var assignmentStore = scope.ServiceProvider.GetRequiredService<IAzureProviderResourceAssignmentStore>();
-                    var assignment = await assignmentStore.GetAsync(state.WorkspaceId, assignmentId, cancellationToken);
-                    if (assignment is null || assignment.State != AzureProviderAssignmentState.Deleted ||
-                        assignment.Resources != new AzureProviderResourceReferences(assignment.ResourceGroupName))
-                        throw new ProofFailureException();
-                    return;
+                    return cleanupScope;
                 }
             }
 
@@ -517,6 +581,32 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
 
         throw new ProofFailureException();
     }
+
+    private static async Task<bool> HasCorrelatedLocalDeletionAuditAsync(
+        IManagedElsaInstanceApiStore apiStore,
+        Guid workspaceId,
+        Guid instanceId,
+        Guid operationId,
+        CancellationToken cancellationToken)
+    {
+        var audit = await apiStore.ListAuditAsync(workspaceId, instanceId, cancellationToken);
+        return audit.Any(x =>
+            x.EventType == "lifecycle.deleted" &&
+            x.OperationId == operationId &&
+            x.DiagnosticCode == "deletion.local.absent");
+    }
+
+    private static CleanupScope ClassifyCleanupScope(
+        bool instanceDeleted,
+        bool operationSucceeded,
+        Guid? assignmentId,
+        bool localDeletionAuditCorrelated,
+        bool providerCleanupVerified) =>
+        !instanceDeleted || !operationSucceeded
+            ? CleanupScope.None
+            : assignmentId is null
+                ? localDeletionAuditCorrelated ? CleanupScope.Local : CleanupScope.None
+                : providerCleanupVerified ? CleanupScope.Provider : CleanupScope.None;
 
     private static async Task<CleanupResult> TryCleanupAsync(
         ProductionAzureLifecycleProofApplication? existingApplication,
@@ -555,20 +645,30 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
                     state = state with { ProviderOperationId = state.ProviderOperationId ?? providerOperationId };
             }
 
-            if (instance is null || instance.ObservedLifecycle == ElsaObservedLifecycle.Deleted)
-                return new CleanupResult(state, true);
+            if (instance is null)
+                return new CleanupResult(state, false, CleanupScope.None);
+
+            if (instance.ObservedLifecycle == ElsaObservedLifecycle.Deleted)
+            {
+                if (state.DeleteOperationId is not { } completedDeleteOperationId)
+                    return new CleanupResult(state, false, CleanupScope.None);
+
+                var completedScope = await WaitForDeletedAsync(
+                    application.Services, inputs, state, completedDeleteOperationId, cancellationToken);
+                return new CleanupResult(state, true, completedScope);
+            }
 
             var active = await store.GetActiveOperationAsync(state.WorkspaceId, state.InstanceId, cancellationToken);
             var deleteOperation = active?.Action == ElsaInstanceOperationAction.Delete
                 ? active.Id
                 : (await DeleteAsync(application.Services, inputs, state, cancellationToken)).Operation.Id;
             state = state with { DeleteOperationId = deleteOperation };
-            await WaitForDeletedAsync(application.Services, inputs, state, deleteOperation, cancellationToken);
-            return new CleanupResult(state, true);
+            var cleanupScope = await WaitForDeletedAsync(application.Services, inputs, state, deleteOperation, cancellationToken);
+            return new CleanupResult(state, true, cleanupScope);
         }
         catch (Exception)
         {
-            return new CleanupResult(state, false);
+            return new CleanupResult(state, false, CleanupScope.None);
         }
         finally
         {
@@ -592,6 +692,7 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
         string outcome,
         bool cleanupAttempted,
         bool cleanupSucceeded,
+        CleanupScope cleanupScope,
         string stage,
         Exception? failure)
     {
@@ -607,6 +708,7 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
                 stage,
                 cleanupAttempted,
                 cleanupSucceeded,
+                cleanupScope = cleanupScope.ToString().ToLowerInvariant(),
                 organizationId = state?.OrganizationId,
                 workspaceId = state?.WorkspaceId,
                 accountId = state?.AccountId,
@@ -802,7 +904,14 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
         Guid? AssignmentId,
         Guid? ProviderOperationId);
 
-    private sealed record CleanupResult(ProofState State, bool Succeeded);
+    private sealed record CleanupResult(ProofState State, bool Succeeded, CleanupScope Scope);
+
+    private enum CleanupScope
+    {
+        None,
+        Local,
+        Provider
+    }
 
     private sealed record SafeExceptionEvidence(
         string? Type,
