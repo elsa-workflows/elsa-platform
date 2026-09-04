@@ -281,12 +281,11 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
         var operations = await db.AzureProviderOperations.AsNoTracking()
             .Where(x => (x.Status == AzureProviderOperationStatus.Accepted ||
                          x.Status == AzureProviderOperationStatus.Queued ||
-                         x.Status == AzureProviderOperationStatus.EntitlementHeld ||
-                         x.Status == AzureProviderOperationStatus.RecoveryRequired) &&
-                        // A persisted plan that has already failed the safe
-                        // restoration boundary remains reserved for explicit
-                        // operator handling. Do not let it starve valid
-                        // recovery work in the automatic provider poller.
+                         x.Status == AzureProviderOperationStatus.EntitlementHeld) &&
+                        // RecoveryRequired is an explicit operator-recovery
+                        // state, not automatic queue work. Exclude it before
+                        // applying the batch limit so recovery rows cannot
+                        // starve accepted provider operations.
                         !db.AzureProviderOperationTransitions.Any(transition =>
                             transition.OperationId == x.Id &&
                             transition.Code == "azure.plan.unrestorable") &&

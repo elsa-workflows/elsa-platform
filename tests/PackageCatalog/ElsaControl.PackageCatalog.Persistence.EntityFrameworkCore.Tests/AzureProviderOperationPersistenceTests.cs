@@ -467,7 +467,7 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     }
 
     [Fact]
-    public async Task Recovery_required_finalization_remains_reserved_and_is_returned_for_resume()
+    public async Task Recovery_required_finalization_remains_reserved_and_requires_explicit_recovery()
     {
         var now = DateTimeOffset.UtcNow;
         using var db = CreateContext();
@@ -492,8 +492,7 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
 
         Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, finalized?.Status);
         Assert.Null(finalized?.CompletedAt);
-        var runnable = Assert.Single(await store.ListRunnableAsync(now.AddMinutes(2), 10));
-        Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, runnable.Status);
+        Assert.Empty(await store.ListRunnableAsync(now.AddMinutes(2), 10));
         Assert.NotNull(await store.ClaimRecoveryAsync(
             _workspaceId,
             operation.Id,
@@ -505,30 +504,39 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     }
 
     [Fact]
-    public async Task Recovery_required_operation_is_returned_for_automatic_polling()
+    public async Task Recovery_required_rows_cannot_fill_the_batch_before_runnable_work()
     {
         var now = DateTimeOffset.UtcNow;
         using var db = CreateContext();
         var store = new AzureProviderOperationStore(db);
-        var operation = await store.CreateOrGetAsync(Request(), now);
-        var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
-            _workspaceId,
-            operation.Id,
-            "worker",
-            "lease",
-            TimeSpan.FromMinutes(1),
-            now));
-        Assert.NotNull(await store.FinalizeAsync(
-            _workspaceId,
-            operation.Id,
-            "lease",
-            AzureProviderOperationStatus.RecoveryRequired,
-            "azure.operation.recovery-required",
-            now,
-            claimed.Version));
+        foreach (var targetKey in new[] { "recovery-a", "recovery-b" })
+        {
+            var recovery = await store.CreateOrGetAsync(Request() with
+            {
+                TargetKey = targetKey,
+                IdempotencyKey = targetKey
+            }, now);
+            var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+                _workspaceId, recovery.Id, "worker", "lease", TimeSpan.FromMinutes(1), now));
+            Assert.NotNull(await store.FinalizeAsync(
+                _workspaceId, recovery.Id, "lease",
+                AzureProviderOperationStatus.RecoveryRequired,
+                "azure.operation.recovery-required",
+                now,
+                claimed.Version));
+        }
 
-        var runnable = Assert.Single(await store.ListRunnableAsync(now.AddMinutes(2), 10));
-        Assert.Equal(operation.Id, runnable.Id);
+        var runnableOperation = await store.CreateOrGetAsync(Request() with
+        {
+            TargetKey = "runnable",
+            IdempotencyKey = "runnable"
+        }, now.AddSeconds(1));
+
+        var runnable = await store.ListRunnableAsync(now.AddMinutes(2), 2);
+
+        var onlyRunnable = Assert.Single(runnable);
+        Assert.Equal(runnableOperation.Id, onlyRunnable.Id);
+        Assert.DoesNotContain(runnable, operation => operation.Status == AzureProviderOperationStatus.RecoveryRequired);
     }
 
     [Fact]
