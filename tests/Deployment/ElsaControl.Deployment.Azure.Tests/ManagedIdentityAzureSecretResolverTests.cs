@@ -11,6 +11,7 @@ public sealed class ManagedIdentityAzureSecretResolverTests
     private static readonly Guid OperationId = Guid.Parse("55555555-5555-5555-5555-555555555555");
     private const string Version = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     private const string SecretReference = $"https://source.vault.azure.net/secrets/sql-connection/{Version}";
+    private const string ManagedSqlReference = AzureManagedSecretReferences.SqlConnection;
 
     [Fact]
     public async Task Resolves_an_exact_durable_secret_reference_without_network_in_the_unit()
@@ -96,8 +97,179 @@ public sealed class ManagedIdentityAzureSecretResolverTests
         Assert.Equal(0, reader.Calls);
     }
 
+    [Fact]
+    public async Task Materializes_the_provider_owned_sql_connection_from_the_assignment_without_key_vault()
+    {
+        var reader = new FakeReader();
+        var resolver = new ManagedIdentityAzureSecretResolver(
+            new FakeAuthorizationStore(InternalAuthorization()), reader);
+
+        await using var lease = await resolver.ResolveAsync(Request() with
+        {
+            Reference = ManagedSqlReference,
+            // A caller-supplied snapshot must not influence provider-owned materialization.
+            Resources = new AzureProviderResourceReferences(
+                SqlServerFqdn: "caller-controlled.database.windows.net",
+                WorkloadIdentityClientId: "77777777-7777-7777-7777-777777777777")
+        });
+
+        Assert.Equal(
+            "Server=tcp:workload-sql.database.windows.net,1433;Initial Catalog=Elsa;Encrypt=True;Authentication=\"Active Directory Managed Identity\";User Id=77777777-7777-7777-7777-777777777777;TrustServerCertificate=False;Connection Timeout=30;",
+            lease.Value.ToString());
+        Assert.Equal(0, reader.Calls);
+    }
+
+    [Theory]
+    [InlineData("identity:signingkey", ManagedSqlReference)]
+    [InlineData("database:connectionstring", "secret://azure-managed/other")]
+    [InlineData("database:connectionstring", "secret://vault/sql-connection")]
+    public async Task Rejects_provider_owned_or_opaque_references_outside_the_exact_slot(string name, string reference)
+    {
+        var reader = new FakeReader();
+        var resolver = new ManagedIdentityAzureSecretResolver(
+            new FakeAuthorizationStore(InternalAuthorization()), reader);
+
+        await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await resolver.ResolveAsync(Request() with { Name = name, Reference = reference }));
+
+        Assert.Equal(0, reader.Calls);
+    }
+
+    [Theory]
+    [InlineData("MissingSqlServerResourceId")]
+    [InlineData("WrongSqlServerResourceId")]
+    [InlineData("MissingSqlServerFqdn")]
+    [InlineData("WrongSqlServerFqdn")]
+    [InlineData("MissingWorkloadIdentityResourceId")]
+    [InlineData("WrongWorkloadIdentityResourceId")]
+    [InlineData("MissingWorkloadIdentityClientId")]
+    [InlineData("WrongWorkloadIdentityClientId")]
+    [InlineData("WrongResourceGroup")]
+    [InlineData("WrongAssignmentWorkspace")]
+    [InlineData("WrongAssignmentOrganization")]
+    [InlineData("WrongAssignmentInstance")]
+    [InlineData("WrongAssignmentState")]
+    [InlineData("MissingLastOperationId")]
+    [InlineData("WrongOperationId")]
+    [InlineData("WrongOperationWorkspace")]
+    [InlineData("WrongOperationOrganization")]
+    [InlineData("WrongOperationInstance")]
+    [InlineData("WrongOperationAssignment")]
+    [InlineData("WrongOperationTarget")]
+    [InlineData("WrongOperationScope")]
+    [InlineData("WrongOperationStatus")]
+    [InlineData("DeleteOperation")]
+    [InlineData("BeforeFoundation")]
+    public async Task Rejects_missing_or_mismatched_provider_authority_evidence(string changed)
+    {
+        var reader = new FakeReader();
+        var authorization = InternalAuthorization();
+        var request = Request() with { Reference = ManagedSqlReference };
+        switch (changed)
+        {
+            case "MissingSqlServerResourceId":
+                authorization = authorization with { Assignment = authorization.Assignment with { Resources = SqlResources() with { SqlServerResourceId = null } } };
+                break;
+            case "WrongSqlServerResourceId":
+                authorization = authorization with { Assignment = authorization.Assignment with { Resources = SqlResources() with { SqlServerResourceId = "sql-server-resource" } } };
+                break;
+            case "MissingSqlServerFqdn":
+                authorization = authorization with { Assignment = authorization.Assignment with { Resources = SqlResources() with { SqlServerFqdn = null } } };
+                break;
+            case "WrongSqlServerFqdn":
+                authorization = authorization with { Assignment = authorization.Assignment with { Resources = SqlResources() with { SqlServerFqdn = "other-sql.database.windows.net" } } };
+                break;
+            case "MissingWorkloadIdentityResourceId":
+                authorization = authorization with { Assignment = authorization.Assignment with { Resources = SqlResources() with { WorkloadIdentityResourceId = null } } };
+                break;
+            case "WrongWorkloadIdentityResourceId":
+                authorization = authorization with { Assignment = authorization.Assignment with { Resources = SqlResources() with { WorkloadIdentityResourceId = "identity-resource" } } };
+                break;
+            case "MissingWorkloadIdentityClientId":
+                authorization = authorization with { Assignment = authorization.Assignment with { Resources = SqlResources() with { WorkloadIdentityClientId = null } } };
+                break;
+            case "WrongWorkloadIdentityClientId":
+                authorization = authorization with { Assignment = authorization.Assignment with { Resources = SqlResources() with { WorkloadIdentityClientId = "not-a-guid" } } };
+                break;
+            case "WrongResourceGroup":
+                authorization = authorization with { Assignment = authorization.Assignment with { Resources = SqlResources() with { ResourceGroupName = "other-rg" } } };
+                break;
+            case "WrongAssignmentWorkspace":
+                authorization = authorization with { Assignment = authorization.Assignment with { WorkspaceId = Guid.NewGuid() } };
+                break;
+            case "WrongAssignmentOrganization":
+                authorization = authorization with { Assignment = authorization.Assignment with { OrganizationId = Guid.NewGuid() } };
+                break;
+            case "WrongAssignmentInstance":
+                authorization = authorization with { Assignment = authorization.Assignment with { InstanceId = Guid.NewGuid() } };
+                break;
+            case "WrongAssignmentState":
+                authorization = authorization with { Assignment = authorization.Assignment with { State = AzureProviderAssignmentState.Active } };
+                break;
+            case "MissingLastOperationId":
+                authorization = authorization with { Assignment = authorization.Assignment with { LastOperationId = null } };
+                break;
+            case "WrongOperationId":
+                authorization = authorization with { Operation = authorization.Operation with { Id = Guid.NewGuid() } };
+                break;
+            case "WrongOperationWorkspace":
+                authorization = authorization with { Operation = authorization.Operation with { WorkspaceId = Guid.NewGuid() } };
+                break;
+            case "WrongOperationOrganization":
+                authorization = authorization with { Operation = authorization.Operation with { OrganizationId = Guid.NewGuid() } };
+                break;
+            case "WrongOperationInstance":
+                authorization = authorization with { Operation = authorization.Operation with { InstanceId = Guid.NewGuid() } };
+                break;
+            case "WrongOperationAssignment":
+                authorization = authorization with { Operation = authorization.Operation with { ProviderAssignmentId = Guid.NewGuid() } };
+                break;
+            case "WrongOperationTarget":
+                authorization = authorization with { Operation = authorization.Operation with { TargetKey = "other-workload" } };
+                break;
+            case "WrongOperationScope":
+                authorization = authorization with { Operation = authorization.Operation with { ProviderScopeFingerprint = new string('z', 64) } };
+                break;
+            case "WrongOperationStatus":
+                authorization = authorization with { Operation = authorization.Operation with { Status = AzureProviderOperationStatus.Accepted } };
+                break;
+            case "DeleteOperation":
+                authorization = authorization with { Operation = authorization.Operation with { Action = AzureProviderOperationAction.Delete } };
+                break;
+            case "BeforeFoundation":
+                authorization = authorization with { Operation = authorization.Operation with { Phase = AzureProviderOperationPhase.Planned } };
+                break;
+        }
+
+        var resolver = new ManagedIdentityAzureSecretResolver(new FakeAuthorizationStore(authorization), reader);
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await resolver.ResolveAsync(request));
+
+        Assert.Equal("The requested Azure secret is not authorized.", exception.Message);
+        Assert.Equal(0, reader.Calls);
+    }
+
     private static ManagedIdentityAzureSecretResolver CreateResolver(FakeReader reader) =>
         new(new FakeAuthorizationStore(Authorization()), reader);
+
+    private static AzureSecretAuthorization InternalAuthorization() => Authorization() with
+    {
+        Assignment = Authorization().Assignment with { Resources = SqlResources() },
+        Operation = Operation() with
+        {
+            SecretReferences = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [AzureManagedSecretReferences.DatabaseConnectionStringName] = ManagedSqlReference
+            }
+        }
+    };
+
+    private static AzureProviderResourceReferences SqlResources() => new(
+        ResourceGroupName: "workload-rg",
+        WorkloadIdentityResourceId: "/subscriptions/66666666-6666-6666-6666-666666666666/resourceGroups/workload-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/workload-identity",
+        WorkloadIdentityClientId: "77777777-7777-7777-7777-777777777777",
+        SqlServerResourceId: "/subscriptions/66666666-6666-6666-6666-666666666666/resourceGroups/workload-rg/providers/Microsoft.Sql/servers/workload-sql",
+        SqlServerFqdn: "workload-sql.database.windows.net");
 
     private static AzureSecretResolutionRequest Request() => new(
         WorkspaceId,

@@ -7,6 +7,20 @@ using Azure.Security.KeyVault.Secrets;
 
 namespace ElsaControl.Deployment.Azure;
 
+/// <summary>
+/// Fixed provider-owned references used by production composition. These references are
+/// instructions to the managed provider resolver, not dereferenceable external locators.
+/// </summary>
+public static class AzureManagedSecretReferences
+{
+    public const string DatabaseConnectionStringName = "database:connectionstring";
+    public const string SqlConnection = "secret://azure-managed/sql-connection";
+
+    public static bool IsSqlConnection(string? name, string? reference) =>
+        string.Equals(name, DatabaseConnectionStringName, StringComparison.Ordinal) &&
+        string.Equals(reference, SqlConnection, StringComparison.Ordinal);
+}
+
 public sealed record AzureSecretResolutionRequest(
     Guid WorkspaceId,
     Guid OrganizationId,
@@ -32,6 +46,9 @@ public sealed record AzureSecretResolutionRequest(
             throw new ArgumentException("The secret name is unsafe.", nameof(Name));
         if (!AzureProviderOperationValidation.IsSafeSecretReference(Reference))
             throw new ArgumentException("The secret reference is unsafe.", nameof(Reference));
+        if (Reference.Equals(AzureManagedSecretReferences.SqlConnection, StringComparison.Ordinal) &&
+            !Name.Equals(AzureManagedSecretReferences.DatabaseConnectionStringName, StringComparison.Ordinal))
+            throw new ArgumentException("The provider-owned secret reference is not valid for this name.", nameof(Reference));
         if (Resources is not null)
             AzureProviderOperationValidation.ValidateReferences(Resources);
     }
@@ -286,13 +303,20 @@ public sealed class ManagedIdentityAzureSecretResolver : IAzureSecretResolver
         request.Validate();
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!Guid.TryParseExact(request.ProviderAssignmentId, "D", out var assignmentId) ||
-            !AzureKeyVaultSecretLocator.TryParse(request.Reference, out var locator))
+        if (!Guid.TryParseExact(request.ProviderAssignmentId, "D", out var assignmentId))
+            throw new ArgumentException("The Key Vault secret locator is unsafe.", nameof(request));
+
+        var providerOwnedSqlConnection = AzureManagedSecretReferences.IsSqlConnection(request.Name, request.Reference);
+        AzureKeyVaultSecretLocator? locator = null;
+        if (!providerOwnedSqlConnection && !AzureKeyVaultSecretLocator.TryParse(request.Reference, out locator))
             throw new ArgumentException("The Key Vault secret locator is unsafe.", nameof(request));
 
         var authorization = await _authorizationStore.GetAsync(request.WorkspaceId, assignmentId, cancellationToken);
-        if (!IsAuthorized(request, assignmentId, locator!, authorization))
+        if (!IsAuthorized(request, assignmentId, locator, authorization))
             throw new InvalidOperationException("The requested Azure secret is not authorized.");
+
+        if (providerOwnedSqlConnection)
+            return MaterializeSqlConnection(authorization!.Assignment);
 
         return await _reader.GetAsync(locator!.VaultUri, locator.Name, locator.Version, cancellationToken);
     }
@@ -300,7 +324,7 @@ public sealed class ManagedIdentityAzureSecretResolver : IAzureSecretResolver
     private static bool IsAuthorized(
         AzureSecretResolutionRequest request,
         Guid assignmentId,
-        AzureKeyVaultSecretLocator locator,
+        AzureKeyVaultSecretLocator? locator,
         AzureSecretAuthorization? authorization)
     {
         if (authorization is null)
@@ -308,16 +332,32 @@ public sealed class ManagedIdentityAzureSecretResolver : IAzureSecretResolver
 
         var assignment = authorization.Assignment;
         var operation = authorization.Operation;
+        var providerOwnedSqlConnection = AzureManagedSecretReferences.IsSqlConnection(request.Name, request.Reference);
         if (assignment.Id != assignmentId || assignment.WorkspaceId != request.WorkspaceId ||
             assignment.OrganizationId != request.OrganizationId || assignment.InstanceId != request.InstanceId ||
             assignment.State is AzureProviderAssignmentState.Deleted or AzureProviderAssignmentState.Unknown ||
+            assignment.LastOperationId != operation.Id ||
             operation.WorkspaceId != request.WorkspaceId || operation.OrganizationId != request.OrganizationId ||
             operation.InstanceId != request.InstanceId || operation.ProviderAssignmentId != assignmentId ||
+            !string.Equals(operation.TargetKey, assignment.WorkloadName, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(operation.ProviderScopeFingerprint, assignment.ProviderScopeFingerprint, StringComparison.Ordinal) ||
+            operation.Status != AzureProviderOperationStatus.Running ||
+            operation.Action == AzureProviderOperationAction.Delete ||
+            operation.Phase != AzureProviderOperationPhase.FoundationSubmitted ||
             operation.PersistedMetadataInvalid ||
             !AzureProviderOperationValidation.IsSafeSecretReferences(operation.SecretReferences) ||
             !operation.SafeSecretReferences.TryGetValue(request.Name, out var persistedReference) ||
-            !string.Equals(persistedReference, request.Reference, StringComparison.OrdinalIgnoreCase))
+            !string.Equals(
+                persistedReference,
+                request.Reference,
+                providerOwnedSqlConnection ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase))
             return false;
+
+        if (assignment.State != AzureProviderAssignmentState.Provisioning)
+            return false;
+
+        if (providerOwnedSqlConnection)
+            return HasAuthorizedSqlResources(assignment);
 
         string expectedName;
         try
@@ -329,8 +369,64 @@ public sealed class ManagedIdentityAzureSecretResolver : IAzureSecretResolver
             return false;
         }
 
-        return string.Equals(locator.Name, expectedName, StringComparison.OrdinalIgnoreCase);
+        return locator is not null && string.Equals(locator.Name, expectedName, StringComparison.OrdinalIgnoreCase);
     }
+
+    private static bool HasAuthorizedSqlResources(AzureProviderResourceAssignment assignment)
+    {
+        if (assignment.Resources is null)
+            return false;
+
+        var resources = assignment.Resources;
+        var clientId = resources.WorkloadIdentityClientId;
+        if (string.IsNullOrWhiteSpace(assignment.SubscriptionId) ||
+            string.IsNullOrWhiteSpace(assignment.ResourceGroupName) ||
+            string.IsNullOrWhiteSpace(assignment.WorkloadName) ||
+            !Guid.TryParseExact(assignment.SubscriptionId, "D", out _) ||
+            !IsSafeWorkloadName(assignment.WorkloadName) ||
+            string.IsNullOrWhiteSpace(resources.ResourceGroupName) ||
+            string.IsNullOrWhiteSpace(resources.SqlServerResourceId) ||
+            string.IsNullOrWhiteSpace(resources.SqlServerFqdn) ||
+            string.IsNullOrWhiteSpace(resources.WorkloadIdentityResourceId) ||
+            string.IsNullOrWhiteSpace(clientId) ||
+            !Guid.TryParseExact(clientId, "D", out _) ||
+            !string.Equals(clientId, clientId.ToLowerInvariant(), StringComparison.Ordinal))
+            return false;
+
+        try
+        {
+            AzureProviderOperationValidation.ValidateReferences(resources);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+
+        var sqlResourceId = $"/subscriptions/{assignment.SubscriptionId}/resourceGroups/{assignment.ResourceGroupName}/providers/Microsoft.Sql/servers/{assignment.WorkloadName}-sql";
+        var identityResourceId = $"/subscriptions/{assignment.SubscriptionId}/resourceGroups/{assignment.ResourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{assignment.WorkloadName}-identity";
+        var sqlFqdn = $"{assignment.WorkloadName}-sql.database.windows.net";
+        return string.Equals(resources.ResourceGroupName, assignment.ResourceGroupName, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(resources.SqlServerResourceId, sqlResourceId, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(resources.SqlServerFqdn, sqlFqdn, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(resources.WorkloadIdentityResourceId, identityResourceId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static AzureSecretLease MaterializeSqlConnection(AzureProviderResourceAssignment assignment)
+    {
+        // The caller's request resources and the operation snapshot are intentionally not
+        // consulted here. The assignment is the provider-owned durable resource authority.
+        if (!HasAuthorizedSqlResources(assignment))
+            throw new InvalidOperationException("The requested Azure secret is not authorized.");
+
+        var resources = assignment.Resources;
+        var value = $"Server=tcp:{resources.SqlServerFqdn},1433;Initial Catalog=Elsa;Encrypt=True;Authentication=\"Active Directory Managed Identity\";User Id={resources.WorkloadIdentityClientId};TrustServerCertificate=False;Connection Timeout=30;";
+        return new AzureSecretLease(value);
+    }
+
+    private static bool IsSafeWorkloadName(string value) =>
+        value.Length is >= 3 and <= 16 &&
+        char.IsAsciiLetterOrDigit(value[0]) && char.IsAsciiLetterOrDigit(value[^1]) &&
+        value.All(character => char.IsAsciiLetterOrDigit(character) || character == '-');
 }
 
 public sealed class UnconfiguredAzureSecretResolver : IAzureSecretResolver

@@ -538,7 +538,8 @@ public static class AzureProviderOperationValidation
                     errors.Add("secretReferences.key.invalid");
                 }
             }
-            if (!IsSafeSecretReference(pair.Value))
+            if (!IsSafeSecretReference(pair.Value) ||
+                IsAzureManagedSqlReferenceForWrongName(pair.Key, pair.Value))
                 errors.Add("secretReferences.value.invalid");
         }
     }
@@ -554,7 +555,8 @@ public static class AzureProviderOperationValidation
         {
             if (string.IsNullOrWhiteSpace(pair.Key) || pair.Key.Length > 256 || pair.Key.Any(char.IsControl) ||
                 !string.Equals(pair.Key, pair.Key.Trim().ToLowerInvariant(), StringComparison.Ordinal) ||
-                !keys.Add(pair.Key) || !IsSafeSecretReference(pair.Value))
+                !keys.Add(pair.Key) || !IsSafeSecretReference(pair.Value) ||
+                IsAzureManagedSqlReferenceForWrongName(pair.Key, pair.Value))
                 return false;
             try
             {
@@ -568,6 +570,10 @@ public static class AzureProviderOperationValidation
         }
         return true;
     }
+
+    private static bool IsAzureManagedSqlReferenceForWrongName(string name, string reference) =>
+        string.Equals(reference, AzureManagedSecretReferences.SqlConnection, StringComparison.Ordinal) &&
+        !string.Equals(name, AzureManagedSecretReferences.DatabaseConnectionStringName, StringComparison.Ordinal);
 
     public static bool IsSafePackageVersion(string? value) =>
         value is { Length: > 0 and <= 128 } &&

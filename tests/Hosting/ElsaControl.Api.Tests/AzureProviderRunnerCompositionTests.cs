@@ -94,6 +94,41 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
     }
 
     [Fact]
+    public void Named_secret_references_allow_the_fixed_provider_owned_sql_reference_only_for_the_database_slot()
+    {
+        var references = ConfiguredAzureSecretResolver.ReadNamedReferences(
+            Configuration(new Dictionary<string, string?>
+            {
+                ["Deployment:AzureProvider:Secrets:0:Name"] = "database:connectionstring",
+                ["Deployment:AzureProvider:Secrets:0:Reference"] = AzureManagedSecretReferences.SqlConnection,
+                ["Deployment:AzureProvider:Secrets:1:Name"] = "identity:signingkey",
+                ["Deployment:AzureProvider:Secrets:1:Reference"] = KeyVaultReference("identity-signing-key"),
+                ["Deployment:AzureProvider:Secrets:2:Name"] = "admin:password",
+                ["Deployment:AzureProvider:Secrets:2:Reference"] = KeyVaultReference("admin-password")
+            }));
+
+        Assert.Equal(AzureManagedSecretReferences.SqlConnection, references["database:connectionstring"]);
+    }
+
+    [Fact]
+    public void Named_secret_references_reject_the_provider_owned_sql_reference_for_another_slot()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() => ConfiguredAzureSecretResolver.ReadNamedReferences(
+            Configuration(new Dictionary<string, string?>
+            {
+                ["Deployment:AzureProvider:Secrets:0:Name"] = "identity:signingkey",
+                ["Deployment:AzureProvider:Secrets:0:Reference"] = AzureManagedSecretReferences.SqlConnection,
+                ["Deployment:AzureProvider:Secrets:1:Name"] = "database:connectionstring",
+                ["Deployment:AzureProvider:Secrets:1:Reference"] = KeyVaultReference("sql-connection"),
+                ["Deployment:AzureProvider:Secrets:2:Name"] = "admin:password",
+                ["Deployment:AzureProvider:Secrets:2:Reference"] = KeyVaultReference("admin-password")
+            })));
+
+        Assert.Equal("Azure provider named secret references are invalid, duplicated, or unsupported.", exception.Message);
+        Assert.DoesNotContain(AzureManagedSecretReferences.SqlConnection, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Named_secret_references_fail_closed_when_required_binding_is_missing()
     {
         Assert.Throws<InvalidOperationException>(() => ConfiguredAzureSecretResolver.ReadNamedReferences(

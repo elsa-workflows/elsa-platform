@@ -42,7 +42,8 @@ internal sealed class ConfiguredAzureSecretResolver : IAzureSecretResolver
             var name = child["Name"]?.Trim();
             var reference = child["Reference"]?.Trim();
             if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(reference) ||
-                !AzureKeyVaultSecretLocator.TryParse(reference, out _) ||
+                (!AzureManagedSecretReferences.IsSqlConnection(name, reference) &&
+                 !AzureKeyVaultSecretLocator.TryParse(reference, out _)) ||
                 !references.TryAdd(name, reference) ||
                 !referencesByLocator.Add(reference))
                 throw new InvalidOperationException("Azure provider named secret references are invalid, duplicated, or unsupported.");
