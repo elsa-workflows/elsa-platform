@@ -79,18 +79,18 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
             Configuration(new Dictionary<string, string?>
             {
                 ["Deployment:AzureProvider:Secrets:0:Name"] = "database:connectionstring",
-                ["Deployment:AzureProvider:Secrets:0:Reference"] = "secret://vault/database",
+                ["Deployment:AzureProvider:Secrets:0:Reference"] = KeyVaultReference("sql-connection"),
                 ["Deployment:AzureProvider:Secrets:1:Name"] = "identity:signingkey",
-                ["Deployment:AzureProvider:Secrets:1:Reference"] = "secret://vault/identity-signing-key",
+                ["Deployment:AzureProvider:Secrets:1:Reference"] = KeyVaultReference("identity-signing-key"),
                 ["Deployment:AzureProvider:Secrets:2:Name"] = "admin:password",
-                ["Deployment:AzureProvider:Secrets:2:Reference"] = "secret://vault/admin-password",
+                ["Deployment:AzureProvider:Secrets:2:Reference"] = KeyVaultReference("admin-password"),
                 ["Deployment:AzureProvider:Secrets:2:Value"] = "runtime-only-admin-password"
             }));
 
         Assert.Equal(3, references.Count);
-        Assert.Equal("secret://vault/database", references["database:connectionstring"]);
+        Assert.Equal(KeyVaultReference("sql-connection"), references["database:connectionstring"]);
         Assert.DoesNotContain(references.Values, value => value.Contains("runtime-only", StringComparison.Ordinal));
-        Assert.Throws<NotSupportedException>(() => ((IDictionary<string, string>)references).Add("extra", "secret://vault/extra"));
+        Assert.Throws<NotSupportedException>(() => ((IDictionary<string, string>)references).Add("extra", KeyVaultReference("extra")));
     }
 
     [Fact]
@@ -100,7 +100,7 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
             Configuration(new Dictionary<string, string?>
             {
                 ["Deployment:AzureProvider:Secrets:0:Name"] = "database:connectionstring",
-                ["Deployment:AzureProvider:Secrets:0:Reference"] = "secret://vault/database"
+                ["Deployment:AzureProvider:Secrets:0:Reference"] = KeyVaultReference("sql-connection")
             })));
     }
 
@@ -111,13 +111,13 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
             Configuration(new Dictionary<string, string?>
             {
                 ["Deployment:AzureProvider:Secrets:0:Name"] = "database:connectionstring",
-                ["Deployment:AzureProvider:Secrets:0:Reference"] = "secret://vault/database",
+                ["Deployment:AzureProvider:Secrets:0:Reference"] = KeyVaultReference("sql-connection"),
                 ["Deployment:AzureProvider:Secrets:0:Value"] = "runtime-only-secret",
                 ["Deployment:AzureProvider:Secrets:1:Name"] = "identity:signingkey",
-                ["Deployment:AzureProvider:Secrets:1:Reference"] = "secret://vault/identity-signing-key",
+                ["Deployment:AzureProvider:Secrets:1:Reference"] = KeyVaultReference("identity-signing-key"),
                 ["Deployment:AzureProvider:Secrets:1:Value"] = "runtime-only-signing-key",
                 ["Deployment:AzureProvider:Secrets:2:Name"] = "admin:password",
-                ["Deployment:AzureProvider:Secrets:2:Reference"] = "secret://vault/admin-password"
+                ["Deployment:AzureProvider:Secrets:2:Reference"] = KeyVaultReference("admin-password")
             }));
 
         Assert.Equal(3, references.Count);
@@ -130,15 +130,51 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
             Configuration(new Dictionary<string, string?>
             {
                 ["Deployment:AzureProvider:Secrets:0:Name"] = "database:connectionstring",
-                ["Deployment:AzureProvider:Secrets:0:Reference"] = "secret://vault/shared",
+                ["Deployment:AzureProvider:Secrets:0:Reference"] = KeyVaultReference("shared"),
                 ["Deployment:AzureProvider:Secrets:0:Value"] = "runtime-only-database",
                 ["Deployment:AzureProvider:Secrets:1:Name"] = "identity:signingkey",
-                ["Deployment:AzureProvider:Secrets:1:Reference"] = "secret://vault/shared",
+                ["Deployment:AzureProvider:Secrets:1:Reference"] = KeyVaultReference("shared"),
                 ["Deployment:AzureProvider:Secrets:1:Value"] = "runtime-only-identity",
                 ["Deployment:AzureProvider:Secrets:2:Name"] = "admin:password",
-                ["Deployment:AzureProvider:Secrets:2:Reference"] = "secret://vault/admin-password",
+                ["Deployment:AzureProvider:Secrets:2:Reference"] = KeyVaultReference("admin-password"),
                 ["Deployment:AzureProvider:Secrets:2:Value"] = "runtime-only-admin-password"
             })));
+    }
+
+    [Fact]
+    public void Named_secret_references_reject_provider_neutral_locators_with_a_safe_error()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() => ConfiguredAzureSecretResolver.ReadNamedReferences(
+            Configuration(new Dictionary<string, string?>
+            {
+                ["Deployment:AzureProvider:Secrets:0:Name"] = "database:connectionstring",
+                ["Deployment:AzureProvider:Secrets:0:Reference"] = "secret://vault/sql-connection",
+                ["Deployment:AzureProvider:Secrets:1:Name"] = "identity:signingkey",
+                ["Deployment:AzureProvider:Secrets:1:Reference"] = KeyVaultReference("identity-signing-key"),
+                ["Deployment:AzureProvider:Secrets:2:Name"] = "admin:password",
+                ["Deployment:AzureProvider:Secrets:2:Reference"] = KeyVaultReference("admin-password")
+            })));
+
+        Assert.Equal("Azure provider named secret references are invalid, duplicated, or unsupported.", exception.Message);
+        Assert.DoesNotContain("secret://", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("vault", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Enabled_worker_rejects_unsupported_named_secret_locators_before_runner_composition()
+    {
+        var services = new ServiceCollection();
+
+        var exception = Assert.Throws<InvalidOperationException>(() => AzureProviderRunnerComposition.AddRunner(services,
+            Configuration(new Dictionary<string, string?>
+            {
+                ["Deployment:AzureProvider:WorkerEnabled"] = "true",
+                ["Deployment:AzureProvider:Secrets:0:Name"] = "database:connectionstring",
+                ["Deployment:AzureProvider:Secrets:0:Reference"] = "secret://vault/sql-connection"
+            })));
+
+        Assert.Equal("Azure provider named secret references are invalid, duplicated, or unsupported.", exception.Message);
+        Assert.DoesNotContain("secret://", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -200,6 +236,24 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
                 ["Deployment:AzureProvider:Runner:Enabled"] = "false"
             })));
     }
+
+    [Fact]
+    public void Enabled_worker_rejects_disposable_proof_mode_before_composing_production_runner()
+    {
+        var services = new ServiceCollection();
+
+        var exception = Assert.Throws<InvalidOperationException>(() => AzureProviderRunnerComposition.AddRunner(services,
+            Configuration(new Dictionary<string, string?>
+            {
+                ["Deployment:AzureProvider:WorkerEnabled"] = "true",
+                ["Deployment:AzureProvider:Runner:DisposableProofMode"] = "true"
+            })));
+
+        Assert.Equal("The production Azure provider worker must not use disposable proof mode.", exception.Message);
+    }
+
+    private static string KeyVaultReference(string name) =>
+        $"https://source.vault.azure.net/secrets/{name}/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     private static IConfiguration Configuration(IReadOnlyDictionary<string, string?> values) =>
         new ConfigurationBuilder().AddInMemoryCollection(values).Build();

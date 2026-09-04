@@ -36,6 +36,24 @@ internal static class AzureProviderRunnerComposition
             return null;
         }
 
+        if (configuration.GetSection("Deployment:AzureProvider:Secrets").GetChildren()
+            .Any(child => child["Value"] is not null))
+            throw new InvalidOperationException(
+                "Azure provider worker configuration must not contain raw secret values.");
+
+        if (runnerSection.GetValue<bool>("DisposableProofMode"))
+            throw new InvalidOperationException(
+                "The production Azure provider worker must not use disposable proof mode.");
+
+        var secretSection = configuration.GetSection("Deployment:AzureProvider:Secrets");
+        if (secretSection.GetChildren().Any())
+        {
+            // Production composition uses a managed identity resolver, which only supports
+            // immutable, versioned Key Vault locators. Keep the validation at startup so a
+            // generic provider-neutral secret:// locator cannot survive until seeding.
+            _ = ConfiguredAzureSecretResolver.ReadNamedReferences(configuration);
+        }
+
         var options = runnerSection.Get<AzureProviderRunnerOptions>() ?? new();
         if (string.IsNullOrWhiteSpace(options.AzureCliClientId))
             options = options with { AzureCliClientId = configuration["AZURE_CLIENT_ID"] };
@@ -52,10 +70,6 @@ internal static class AzureProviderRunnerComposition
             scopeSection[nameof(AzureProviderTargetScope.RegistryName)] ?? "",
             scopeSection[nameof(AzureProviderTargetScope.Location)] ?? "");
         scope.Validate();
-        if (configuration.GetSection("Deployment:AzureProvider:Secrets").GetChildren()
-            .Any(child => child["Value"] is not null))
-            throw new InvalidOperationException(
-                "Azure provider worker configuration must not contain raw secret values.");
         var managedIdentity = new Azure.Identity.ManagedIdentityCredential(
             Azure.Identity.ManagedIdentityId.FromUserAssignedClientId(options.AzureCliClientId!));
         services.AddSingleton<IAzureKeyVaultSecretReader>(_ => new AzureKeyVaultSecretReader(managedIdentity));
