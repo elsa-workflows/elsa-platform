@@ -238,6 +238,66 @@ public sealed class OrganizationBillingPersistenceTests
     }
 
     [Fact]
+    public async Task Ignored_event_cannot_bind_provider_references_before_a_valid_event()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateDb(connection);
+        await db.Database.EnsureCreatedAsync();
+        db.Organizations.Add(new Organization { Id = OrganizationId, Name = "Acme" });
+        await db.SaveChangesAsync();
+        var store = new OrganizationBillingStore(db);
+        await store.StartTrialAsync(OrganizationId, "stripe", Now);
+
+        var ignored = await store.ConsumeAsync(
+            Event(OrganizationId, "evt-old", OrganizationSubscriptionState.Active, Now.AddMinutes(-1), "cus-ignored", "sub-ignored"),
+            Now.AddMinutes(1));
+
+        Assert.Equal(BillingEventConsumptionOutcome.IgnoredOutOfOrder, ignored.Outcome);
+        var subscription = await db.OrganizationSubscriptions.SingleAsync();
+        Assert.Null(subscription.ProviderCustomerReference);
+        Assert.Null(subscription.ProviderSubscriptionReference);
+
+        await store.ConsumeAsync(
+            Event(OrganizationId, "evt-valid", OrganizationSubscriptionState.Active, Now.AddMinutes(1), "cus-valid", "sub-valid"),
+            Now.AddMinutes(2));
+
+        subscription = await db.OrganizationSubscriptions.SingleAsync();
+        Assert.Equal("cus-valid", subscription.ProviderCustomerReference);
+        Assert.Equal("sub-valid", subscription.ProviderSubscriptionReference);
+    }
+
+    [Fact]
+    public async Task Rejected_event_cannot_bind_provider_references_before_a_valid_event()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateDb(connection);
+        await db.Database.EnsureCreatedAsync();
+        db.Organizations.Add(new Organization { Id = OrganizationId, Name = "Acme" });
+        await db.SaveChangesAsync();
+        var store = new OrganizationBillingStore(db);
+        await store.StartTrialAsync(OrganizationId, "stripe", Now);
+
+        var rejected = await store.ConsumeAsync(
+            Event(OrganizationId, "evt-rejected", OrganizationSubscriptionState.Deleted, Now.AddMinutes(1), "cus-rejected", "sub-rejected"),
+            Now.AddMinutes(2));
+
+        Assert.Equal(BillingEventConsumptionOutcome.Rejected, rejected.Outcome);
+        var subscription = await db.OrganizationSubscriptions.SingleAsync();
+        Assert.Null(subscription.ProviderCustomerReference);
+        Assert.Null(subscription.ProviderSubscriptionReference);
+
+        await store.ConsumeAsync(
+            Event(OrganizationId, "evt-valid", OrganizationSubscriptionState.Active, Now.AddMinutes(2), "cus-valid", "sub-valid"),
+            Now.AddMinutes(3));
+
+        subscription = await db.OrganizationSubscriptions.SingleAsync();
+        Assert.Equal("cus-valid", subscription.ProviderCustomerReference);
+        Assert.Equal("sub-valid", subscription.ProviderSubscriptionReference);
+    }
+
+    [Fact]
     public async Task Invalid_transition_is_stored_as_rejected_without_projecting_entitlements()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

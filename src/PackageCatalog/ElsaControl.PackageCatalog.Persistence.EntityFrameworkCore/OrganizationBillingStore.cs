@@ -85,12 +85,18 @@ public sealed class OrganizationBillingStore(CatalogDbContext dbContext) : IOrga
         var occurrence = providerEvent.OccurredAt.ToUniversalTime();
         var subscription = await dbContext.OrganizationSubscriptions
             .SingleOrDefaultAsync(x => x.OrganizationId == providerEvent.OrganizationId, cancellationToken);
+        var existingSubscription = subscription;
         if (subscription is not null)
         {
             EnsureSameProvider(subscription, providerEvent.Provider);
             EnsureReferenceMatches(subscription.ProviderCustomerReference, providerEvent.ProviderCustomerReference, "customer");
             EnsureReferenceMatches(subscription.ProviderSubscriptionReference, providerEvent.ProviderSubscriptionReference, "subscription");
         }
+        var isNewSubscription = subscription is null;
+        subscription ??= OrganizationSubscriptionLifecycle.CreateTrial(
+            providerEvent.OrganizationId,
+            providerEvent.Provider,
+            occurrence);
 
         var inbox = new BillingProviderEventInboxEntry
         {
@@ -107,22 +113,6 @@ public sealed class OrganizationBillingStore(CatalogDbContext dbContext) : IOrga
             ProcessingStatus = BillingProviderEventProcessingStatus.Accepted
         };
         dbContext.BillingProviderEvents.Add(inbox);
-
-        if (subscription is null)
-        {
-            subscription = OrganizationSubscriptionLifecycle.CreateTrial(
-                providerEvent.OrganizationId,
-                providerEvent.Provider,
-                occurrence);
-            subscription.ProviderCustomerReference = providerEvent.ProviderCustomerReference;
-            subscription.ProviderSubscriptionReference = providerEvent.ProviderSubscriptionReference;
-            dbContext.OrganizationSubscriptions.Add(subscription);
-        }
-        else
-        {
-            subscription.ProviderCustomerReference ??= providerEvent.ProviderCustomerReference;
-            subscription.ProviderSubscriptionReference ??= providerEvent.ProviderSubscriptionReference;
-        }
 
         var isOlderEvent = occurrence < subscription.LastProviderEventOccurredAt ||
                            (occurrence == subscription.LastProviderEventOccurredAt &&
@@ -146,10 +136,14 @@ public sealed class OrganizationBillingStore(CatalogDbContext dbContext) : IOrga
             AddBillingAudit(providerEvent.OrganizationId, inbox.Id, "A normalized billing provider event was rejected.", now);
             await dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return new(BillingEventConsumptionOutcome.Rejected, subscription, null, inbox, inbox.RejectionCode);
+            return new(BillingEventConsumptionOutcome.Rejected, existingSubscription, null, inbox, inbox.RejectionCode);
         }
 
         OrganizationSubscriptionLifecycle.ApplyState(subscription, providerEvent.State, occurrence);
+        subscription.ProviderCustomerReference ??= providerEvent.ProviderCustomerReference;
+        subscription.ProviderSubscriptionReference ??= providerEvent.ProviderSubscriptionReference;
+        if (isNewSubscription)
+            dbContext.OrganizationSubscriptions.Add(subscription);
         subscription.LastProviderEventOccurredAt = occurrence;
         subscription.LastProviderEventId = providerEvent.ProviderEventId;
         subscription.UpdatedAt = now;
