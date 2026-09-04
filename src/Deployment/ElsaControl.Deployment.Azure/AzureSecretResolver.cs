@@ -278,20 +278,24 @@ public sealed class ManagedIdentityAzureSecretResolver : IAzureSecretResolver
 {
     private readonly IAzureSecretAuthorizationStore _authorizationStore;
     private readonly IAzureKeyVaultSecretReader _reader;
+    private readonly TimeProvider _timeProvider;
 
     public ManagedIdentityAzureSecretResolver(
         IAzureSecretAuthorizationStore authorizationStore,
-        IAzureKeyVaultSecretReader reader)
+        IAzureKeyVaultSecretReader reader,
+        TimeProvider? timeProvider = null)
     {
         _authorizationStore = authorizationStore ?? throw new ArgumentNullException(nameof(authorizationStore));
         _reader = reader ?? throw new ArgumentNullException(nameof(reader));
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public ManagedIdentityAzureSecretResolver(
         IAzureProviderResourceAssignmentStore assignmentStore,
         IAzureProviderOperationStore operationStore,
-        IAzureKeyVaultSecretReader reader)
-        : this(new DurableAzureSecretAuthorizationStore(assignmentStore, operationStore), reader)
+        IAzureKeyVaultSecretReader reader,
+        TimeProvider? timeProvider = null)
+        : this(new DurableAzureSecretAuthorizationStore(assignmentStore, operationStore), reader, timeProvider)
     {
     }
 
@@ -312,7 +316,7 @@ public sealed class ManagedIdentityAzureSecretResolver : IAzureSecretResolver
             throw new ArgumentException("The Key Vault secret locator is unsafe.", nameof(request));
 
         var authorization = await _authorizationStore.GetAsync(request.WorkspaceId, assignmentId, cancellationToken);
-        if (!IsAuthorized(request, assignmentId, locator, authorization))
+        if (!IsAuthorized(request, assignmentId, locator, authorization, _timeProvider.GetUtcNow()))
             throw new InvalidOperationException("The requested Azure secret is not authorized.");
 
         if (providerOwnedSqlConnection)
@@ -325,7 +329,8 @@ public sealed class ManagedIdentityAzureSecretResolver : IAzureSecretResolver
         AzureSecretResolutionRequest request,
         Guid assignmentId,
         AzureKeyVaultSecretLocator? locator,
-        AzureSecretAuthorization? authorization)
+        AzureSecretAuthorization? authorization,
+        DateTimeOffset now)
     {
         if (authorization is null)
             return false;
@@ -336,14 +341,17 @@ public sealed class ManagedIdentityAzureSecretResolver : IAzureSecretResolver
         if (assignment.Id != assignmentId || assignment.WorkspaceId != request.WorkspaceId ||
             assignment.OrganizationId != request.OrganizationId || assignment.InstanceId != request.InstanceId ||
             assignment.State is AzureProviderAssignmentState.Deleted or AzureProviderAssignmentState.Unknown ||
+            assignment.NamingVersion != AzureProviderResourceAssignmentNaming.CurrentVersion ||
             assignment.LastOperationId != operation.Id ||
             operation.WorkspaceId != request.WorkspaceId || operation.OrganizationId != request.OrganizationId ||
             operation.InstanceId != request.InstanceId || operation.ProviderAssignmentId != assignmentId ||
             !string.Equals(operation.TargetKey, assignment.WorkloadName, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(operation.ProviderScopeFingerprint, assignment.ProviderScopeFingerprint, StringComparison.Ordinal) ||
             operation.Status != AzureProviderOperationStatus.Running ||
-            operation.Action == AzureProviderOperationAction.Delete ||
+            operation.Action != AzureProviderOperationAction.Reconcile ||
             operation.Phase != AzureProviderOperationPhase.FoundationSubmitted ||
+            operation.LeaseExpiresAt is not { } leaseExpiresAt || leaseExpiresAt <= now ||
+            string.IsNullOrWhiteSpace(operation.WorkerId) ||
             operation.PersistedMetadataInvalid ||
             !AzureProviderOperationValidation.IsSafeSecretReferences(operation.SecretReferences) ||
             !operation.SafeSecretReferences.TryGetValue(request.Name, out var persistedReference) ||
@@ -379,17 +387,18 @@ public sealed class ManagedIdentityAzureSecretResolver : IAzureSecretResolver
 
         var resources = assignment.Resources;
         var clientId = resources.WorkloadIdentityClientId;
+        var subscriptionId = assignment.SubscriptionId;
         if (string.IsNullOrWhiteSpace(assignment.SubscriptionId) ||
             string.IsNullOrWhiteSpace(assignment.ResourceGroupName) ||
             string.IsNullOrWhiteSpace(assignment.WorkloadName) ||
-            !Guid.TryParseExact(assignment.SubscriptionId, "D", out _) ||
+            !Guid.TryParseExact(subscriptionId, "D", out var parsedSubscriptionId) || parsedSubscriptionId == Guid.Empty ||
             !IsSafeWorkloadName(assignment.WorkloadName) ||
             string.IsNullOrWhiteSpace(resources.ResourceGroupName) ||
             string.IsNullOrWhiteSpace(resources.SqlServerResourceId) ||
             string.IsNullOrWhiteSpace(resources.SqlServerFqdn) ||
             string.IsNullOrWhiteSpace(resources.WorkloadIdentityResourceId) ||
             string.IsNullOrWhiteSpace(clientId) ||
-            !Guid.TryParseExact(clientId, "D", out _) ||
+            !Guid.TryParseExact(clientId, "D", out var parsedClientId) || parsedClientId == Guid.Empty ||
             !string.Equals(clientId, clientId.ToLowerInvariant(), StringComparison.Ordinal))
             return false;
 
@@ -413,11 +422,8 @@ public sealed class ManagedIdentityAzureSecretResolver : IAzureSecretResolver
 
     private static AzureSecretLease MaterializeSqlConnection(AzureProviderResourceAssignment assignment)
     {
-        // The caller's request resources and the operation snapshot are intentionally not
-        // consulted here. The assignment is the provider-owned durable resource authority.
-        if (!HasAuthorizedSqlResources(assignment))
-            throw new InvalidOperationException("The requested Azure secret is not authorized.");
-
+        // HasAuthorizedSqlResources ran as part of IsAuthorized. The caller's request
+        // resources and the operation snapshot are intentionally not consulted here.
         var resources = assignment.Resources;
         var value = $"Server=tcp:{resources.SqlServerFqdn},1433;Initial Catalog=Elsa;Encrypt=True;Authentication=\"Active Directory Managed Identity\";User Id={resources.WorkloadIdentityClientId};TrustServerCertificate=False;Connection Timeout=30;";
         return new AzureSecretLease(value);

@@ -47,7 +47,7 @@ public sealed record AzureProviderResourceAssignmentRequest(
     string ResourceGroupNamePrefix,
     string WorkloadName,
     string Location,
-    int NamingVersion = 1);
+    int NamingVersion = AzureProviderResourceAssignmentNaming.CurrentVersion);
 
 public interface IAzureProviderResourceAssignmentStore
 {
@@ -67,7 +67,9 @@ public static class AzureProviderResourceAssignmentNaming
     /// <summary>Legacy proof hosts bind the exact caller-supplied disposable group.</summary>
     public const int ExplicitDisposableGroup = 0;
 
-    public static string ResourceGroupName(string prefix, Guid instanceId, int namingVersion = 1)
+    public const int CurrentVersion = 1;
+
+    public static string ResourceGroupName(string prefix, Guid instanceId, int namingVersion = CurrentVersion)
     {
         if (namingVersion == ExplicitDisposableGroup && instanceId != Guid.Empty &&
             !string.IsNullOrWhiteSpace(prefix) && prefix.Length <= 90 &&
@@ -76,7 +78,7 @@ public static class AzureProviderResourceAssignmentNaming
         if (string.IsNullOrWhiteSpace(prefix) || prefix.Length > 50 ||
             prefix.Any(character => !char.IsAsciiLetterOrDigit(character) && character is not '-' and not '_'))
             throw new ArgumentException("The Azure resource-group prefix is unsafe.", nameof(prefix));
-        if (instanceId == Guid.Empty || namingVersion != 1)
+        if (instanceId == Guid.Empty || namingVersion != CurrentVersion)
             throw new ArgumentException("The Azure assignment naming authority is invalid.", nameof(instanceId));
 
         return $"{prefix.TrimEnd('-')}-{instanceId:N}";

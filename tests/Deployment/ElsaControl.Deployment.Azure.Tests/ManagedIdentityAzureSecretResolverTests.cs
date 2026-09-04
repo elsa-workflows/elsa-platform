@@ -145,6 +145,9 @@ public sealed class ManagedIdentityAzureSecretResolverTests
     [InlineData("MissingWorkloadIdentityClientId")]
     [InlineData("WrongWorkloadIdentityClientId")]
     [InlineData("WrongResourceGroup")]
+    [InlineData("WrongNamingVersion")]
+    [InlineData("EmptySubscriptionId")]
+    [InlineData("EmptyClientId")]
     [InlineData("WrongAssignmentWorkspace")]
     [InlineData("WrongAssignmentOrganization")]
     [InlineData("WrongAssignmentInstance")]
@@ -159,7 +162,10 @@ public sealed class ManagedIdentityAzureSecretResolverTests
     [InlineData("WrongOperationScope")]
     [InlineData("WrongOperationStatus")]
     [InlineData("DeleteOperation")]
+    [InlineData("InvalidOperationAction")]
     [InlineData("BeforeFoundation")]
+    [InlineData("ExpiredLease")]
+    [InlineData("MissingLease")]
     public async Task Rejects_missing_or_mismatched_provider_authority_evidence(string changed)
     {
         var reader = new FakeReader();
@@ -193,6 +199,15 @@ public sealed class ManagedIdentityAzureSecretResolverTests
                 break;
             case "WrongResourceGroup":
                 authorization = authorization with { Assignment = authorization.Assignment with { Resources = SqlResources() with { ResourceGroupName = "other-rg" } } };
+                break;
+            case "WrongNamingVersion":
+                authorization = authorization with { Assignment = authorization.Assignment with { NamingVersion = 0 } };
+                break;
+            case "EmptySubscriptionId":
+                authorization = authorization with { Assignment = authorization.Assignment with { SubscriptionId = Guid.Empty.ToString("D") } };
+                break;
+            case "EmptyClientId":
+                authorization = authorization with { Assignment = authorization.Assignment with { Resources = SqlResources() with { WorkloadIdentityClientId = Guid.Empty.ToString("D") } } };
                 break;
             case "WrongAssignmentWorkspace":
                 authorization = authorization with { Assignment = authorization.Assignment with { WorkspaceId = Guid.NewGuid() } };
@@ -236,8 +251,17 @@ public sealed class ManagedIdentityAzureSecretResolverTests
             case "DeleteOperation":
                 authorization = authorization with { Operation = authorization.Operation with { Action = AzureProviderOperationAction.Delete } };
                 break;
+            case "InvalidOperationAction":
+                authorization = authorization with { Operation = authorization.Operation with { Action = (AzureProviderOperationAction)99 } };
+                break;
             case "BeforeFoundation":
                 authorization = authorization with { Operation = authorization.Operation with { Phase = AzureProviderOperationPhase.Planned } };
+                break;
+            case "ExpiredLease":
+                authorization = authorization with { Operation = authorization.Operation with { LeaseExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1) } };
+                break;
+            case "MissingLease":
+                authorization = authorization with { Operation = authorization.Operation with { LeaseExpiresAt = null } };
                 break;
         }
 
@@ -328,9 +352,9 @@ public sealed class ManagedIdentityAzureSecretResolverTests
         null,
         AzureProviderHealth.Unknown,
         [],
-        null,
-        null,
-        null,
+        "test-worker",
+        DateTimeOffset.UtcNow.AddMinutes(10),
+        DateTimeOffset.UtcNow,
         DateTimeOffset.UtcNow,
         DateTimeOffset.UtcNow,
         null,
