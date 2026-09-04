@@ -1,3 +1,5 @@
+using ElsaControl.Deployment.Core.Instances;
+
 namespace ElsaControl.Deployment.Azure;
 
 /// <summary>
@@ -8,6 +10,32 @@ namespace ElsaControl.Deployment.Azure;
 public sealed record AzureProviderOperationCreateResult(
     AzureProviderOperation Operation,
     bool Replayed);
+
+/// <summary>
+/// Result of the durable authorization boundary immediately before an Azure mutation. The
+/// operation snapshot is read from the same compare-and-set transaction that evaluated the
+/// commercial projection, so a denied operation cannot race into a provider call.
+/// </summary>
+public sealed record AzureProviderOperationAuthorizationResult(
+    AzureProviderOperation Operation,
+    ElsaInstanceCommercialGateDecision Decision);
+
+/// <summary>
+/// Optional store capability for the commercial authorization linearization point. Stores that
+/// own the entitlement projection should implement this beside the operation CAS methods;
+/// lightweight provider-test stores may continue to exercise the executor fallback.
+/// </summary>
+public interface IAzureProviderOperationAuthorizationStore
+{
+    Task<AzureProviderOperationAuthorizationResult?> AuthorizeAsync(
+        Guid workspaceId,
+        Guid operationId,
+        string leaseToken,
+        IElsaInstanceCommercialGate commercialGate,
+        DateTimeOffset now,
+        long? expectedVersion = null,
+        CancellationToken cancellationToken = default);
+}
 
 public interface IAzureProviderOperationStore
 {

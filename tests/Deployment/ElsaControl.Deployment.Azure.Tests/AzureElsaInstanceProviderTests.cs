@@ -7,6 +7,7 @@ namespace ElsaControl.Deployment.Azure.Tests;
 public sealed class AzureElsaInstanceProviderTests
 {
     private static readonly Guid TestInstanceId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    private static readonly Guid TestOrganizationId = Guid.Parse("44444444-4444-4444-4444-444444444444");
 
     [Theory]
     [InlineData("3.8", "3.8.0-preview.5413")]
@@ -261,6 +262,20 @@ public sealed class AzureElsaInstanceProviderTests
     }
 
     [Fact]
+    public async Task Lifecycle_submission_without_an_organization_binding_is_rejected_before_durable_submission()
+    {
+        var plan = Translate("5.0", "5.0.0");
+        var service = new CapturingOperationService(CreateOperation(Guid.NewGuid(), plan, Guid.NewGuid()));
+        var provider = new AzureElsaInstanceProvider(service, new CapturingOperationStore(), EnabledOptions());
+
+        var exception = await Assert.ThrowsAsync<ElsaInstanceProviderSubmissionException>(() => provider.SubmitAsync(
+            CreateSubmission(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), plan) with { OrganizationId = null }));
+
+        Assert.Equal(ElsaInstanceProviderSubmissionFailureKind.Rejected, exception.Kind);
+        Assert.Empty(service.Submissions);
+    }
+
+    [Fact]
     public async Task Unsafe_extension_plan_is_rejected_before_durable_provider_submission()
     {
         var workspaceId = Guid.NewGuid();
@@ -346,7 +361,9 @@ public sealed class AzureElsaInstanceProviderTests
             ElsaDesiredLifecycle.Running,
             ToResolvedPlan(plan),
             new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()),
-            "westeurope");
+            "westeurope",
+            TestOrganizationId,
+            ElsaInstanceOperationAction.Reconcile);
 
     private static ResolvedElsaApplicationPlan ToResolvedPlan(AzureWorkloadPlan plan) =>
         AzureWorkloadPlanTranslatorTests.CreatePlan(plan.ReleaseLine, plan.ElsaVersion);

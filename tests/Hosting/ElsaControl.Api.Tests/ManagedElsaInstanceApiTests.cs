@@ -55,6 +55,25 @@ public sealed class ManagedElsaInstanceApiTests : IClassFixture<ManagedElsaInsta
     }
 
     [Fact]
+    public async Task Onboarding_options_are_not_advertised_when_commercial_admission_is_constrained()
+    {
+        var app = await PrepareApplicationAsync([], [
+            CatalogEntry("future-runtime", "5.0", "5.0.1", "stable", "combined", "supported", "paid")
+        ]);
+        var client = app.CreateControlIdentityClient(subject: "managed-constrained-owner");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, workspaceId);
+        await SetSubscriptionStateAsync(app, workspaceId, OrganizationSubscriptionState.Constrained);
+
+        var response = await client.GetAsync($"/api/workspaces/{workspaceId}/instances/onboarding-options");
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Contains(ElsaInstanceCommercialOperation.LifecycleConstrained,
+            await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Null(_fixture.ReleaseCatalog.Query);
+    }
+
+    [Fact]
     public async Task Create_rejects_a_release_outside_the_eligible_catalog()
     {
         var app = await PrepareApplicationAsync([]);
@@ -239,6 +258,43 @@ public sealed class ManagedElsaInstanceApiTests : IClassFixture<ManagedElsaInsta
         var acceptedAudit = Assert.Single(audit!.Items);
         Assert.NotNull(acceptedAudit.ActorAccountId);
         Assert.Null(acceptedAudit.OperatorSubject);
+    }
+
+    [Fact]
+    public async Task Provider_mutations_return_a_stable_422_when_the_entitlement_is_constrained()
+    {
+        var app = await PrepareApplicationAsync([]);
+        var client = app.CreateTrustedWorkspaceClient("managed-instance-commercial-denied");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, workspaceId);
+        await SetSubscriptionStateAsync(app, workspaceId, OrganizationSubscriptionState.Constrained);
+
+        var create = new HttpRequestMessage(HttpMethod.Post, $"/api/workspaces/{workspaceId}/instances")
+        {
+            Content = JsonContent.Create(new ManagedElsaInstanceCreateRequest("Denied runtime", "denied-runtime", Intent()),
+                options: ControlApiTestApplication.JsonOptions)
+        };
+        create.Headers.Add("Idempotency-Key", "denied-create-runtime");
+        var createResponse = await client.SendAsync(create);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, createResponse.StatusCode);
+        Assert.Contains(ElsaInstanceCommercialOperation.LifecycleConstrained, await createResponse.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+        await SetSubscriptionStateAsync(app, workspaceId, OrganizationSubscriptionState.Active);
+        var created = await CreateCanonicalInstanceAsync(client, workspaceId, "denied-patch-runtime");
+        await MarkOperationSucceededAsync(app, created.Operation.Id);
+        await SetSubscriptionStateAsync(app, workspaceId, OrganizationSubscriptionState.Constrained);
+        var patch = new HttpRequestMessage(HttpMethod.Patch, $"/api/workspaces/{workspaceId}/instances/{created.Instance.InstanceId}")
+        {
+            Content = JsonContent.Create(new ManagedElsaInstancePatchRequest(Name: "Denied rename"),
+                options: ControlApiTestApplication.JsonOptions)
+        };
+        patch.Headers.Add("Idempotency-Key", "denied-rename-runtime");
+        patch.Headers.TryAddWithoutValidation("If-Match", created.Instance.ETag);
+        var patchResponse = await client.SendAsync(patch);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, patchResponse.StatusCode);
+        Assert.Contains(ElsaInstanceCommercialOperation.LifecycleConstrained, await patchResponse.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -970,8 +1026,24 @@ public sealed class ManagedElsaInstanceApiTests : IClassFixture<ManagedElsaInsta
             OrganizationId = organizationId,
             ManagedHostingEnabled = true,
             MaxSources = 5,
-            MaxWorkspaces = 5
+            MaxWorkspaces = 5,
+            MaxInstances = int.MaxValue,
+            SubscriptionState = OrganizationSubscriptionState.Active
         });
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task SetSubscriptionStateAsync(
+        ControlApiTestApplication app,
+        Guid workspaceId,
+        OrganizationSubscriptionState state)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+        var organizationId = await db.Workspaces.Where(x => x.Id == workspaceId).Select(x => x.OrganizationId).SingleAsync();
+        var entitlement = await db.OrganizationEntitlementSnapshots.SingleAsync(x => x.OrganizationId == organizationId);
+        entitlement.SubscriptionState = state;
+        entitlement.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync();
     }
 

@@ -196,6 +196,17 @@ public sealed class ManagedElsaHandoffTests
             var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
             var workspace = await db.Workspaces.SingleAsync(x => x.Id == workspaceId);
             organizationId = workspace.OrganizationId;
+            db.OrganizationEntitlementSnapshots.Add(new OrganizationEntitlementSnapshot
+            {
+                OrganizationId = organizationId,
+                ManagedHostingEnabled = true,
+                SubscriptionState = OrganizationSubscriptionState.Active,
+                MaxInstances = int.MaxValue,
+                SyncedAt = DateTimeOffset.UtcNow,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            });
+            await db.SaveChangesAsync();
             var lifecycle = new ElsaInstanceLifecycleService(
                 new EfCoreElsaInstanceLifecycleStore(db, new EmptyLifecycleResolutionInputSource()));
             await lifecycle.CreateAsync(new ElsaInstanceCreateRequest(
@@ -779,6 +790,17 @@ public sealed class ManagedElsaHandoffTests
             var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
             var workspace = await db.Workspaces.SingleAsync(x => x.Id == workspaceId);
             organizationId = workspace.OrganizationId;
+            db.OrganizationEntitlementSnapshots.Add(new OrganizationEntitlementSnapshot
+            {
+                OrganizationId = organizationId,
+                ManagedHostingEnabled = true,
+                SubscriptionState = OrganizationSubscriptionState.Active,
+                MaxInstances = int.MaxValue,
+                SyncedAt = DateTimeOffset.UtcNow,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            });
+            await db.SaveChangesAsync();
             var lifecycle = new ElsaInstanceLifecycleService(
                 new EfCoreElsaInstanceLifecycleStore(db, new EmptyLifecycleResolutionInputSource()));
             await lifecycle.CreateAsync(new ElsaInstanceCreateRequest(

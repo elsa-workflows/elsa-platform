@@ -1,4 +1,5 @@
 using ElsaControl.Deployment.Azure;
+using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.PackageCatalog.Core.Accounts;
 
 namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models;
@@ -8,6 +9,9 @@ internal sealed class AzureProviderOperationEntity
     public Guid Id { get; set; }
     public Guid WorkspaceId { get; set; }
     public Workspace? Workspace { get; set; }
+    public Guid? OrganizationId { get; set; }
+    public Guid? InstanceId { get; set; }
+    public ElsaInstanceOperationAction? LifecycleAction { get; set; }
     public string TargetKey { get; set; } = "";
     public AzureProviderOperationAction Action { get; set; }
     public string IdempotencyKey { get; set; } = "";

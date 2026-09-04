@@ -1,10 +1,14 @@
 using ElsaControl.Deployment.Azure;
+using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Proof;
 
 namespace ElsaControl.Deployment.Proof.Tests;
 
 public sealed class AzureProviderProofAdapterTests
 {
+    private static readonly Guid ProofOrganizationId = Guid.Parse("19519519-5195-4195-8195-195195195195");
+    private static readonly Guid ProofInstanceId = Guid.Parse("29529529-5295-4295-8295-295295295295");
+
     [Fact]
     public async Task Selection_and_admitted_plan_preserve_exact_immutable_identity()
     {
@@ -37,7 +41,9 @@ public sealed class AzureProviderProofAdapterTests
             templateFingerprint,
             null!,
             null!,
-            new StaticPlanFactory(new AzureProviderOperationSubmission("proof-1", templateFingerprint, plan)));
+            new StaticPlanFactory(new AzureProviderOperationSubmission(
+                "proof-1", templateFingerprint, plan, OrganizationId: ProofOrganizationId,
+                InstanceId: ProofInstanceId, LifecycleAction: ElsaInstanceOperationAction.Reconcile)));
 
         var first = await adapter.SelectAsync(input, environment);
         var second = await adapter.SelectAsync(input, environment);

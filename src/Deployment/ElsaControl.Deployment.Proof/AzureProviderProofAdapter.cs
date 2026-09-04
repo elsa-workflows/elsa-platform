@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Azure;
 
 namespace ElsaControl.Deployment.Proof;
@@ -96,6 +97,10 @@ public sealed class AzureProviderProofAdapter(
 
         if (submission.Plan is null)
             throw new DeploymentProofStageException(DeploymentProofStage.Plan, "azure.proof.planUnavailable", "An admitted Azure proof plan could not be created.");
+        if (submission.OrganizationId is not { } organizationId || organizationId == Guid.Empty ||
+            submission.InstanceId is not { } instanceId || instanceId == Guid.Empty ||
+            submission.LifecycleAction is not { } lifecycleAction || !Enum.IsDefined(lifecycleAction))
+            throw new DeploymentProofStageException(DeploymentProofStage.Plan, "azure.proof.identityRequired", "The admitted Azure proof plan has no complete lifecycle identity.");
 
         var planImageReference = $"{submission.Plan.ImageRepository}@sha256:{submission.Plan.ImageDigest}";
         if (!string.Equals(submission.TemplateFingerprint, templateFingerprint, StringComparison.OrdinalIgnoreCase) ||
@@ -129,7 +134,8 @@ public sealed class AzureProviderProofAdapter(
         var execution = await executor.ApplyAsync(
             AzureProviderOperationService.CreateOperationRequest(
                 workspaceId, submission.IdempotencyKey, templateFingerprint, submission.Plan,
-                AzureProviderOperationAction.Reconcile, submission.ProviderScopeFingerprint),
+                AzureProviderOperationAction.Reconcile, submission.ProviderScopeFingerprint,
+                submission.OrganizationId, submission.InstanceId, submission.LifecycleAction),
             submission.Plan,
             cancellationToken);
         if (!execution.Succeeded)
@@ -194,7 +200,8 @@ public sealed class AzureProviderProofAdapter(
         var execution = await executor.ApplyAsync(
             AzureProviderOperationService.CreateOperationRequest(
                 workspaceId, submission.IdempotencyKey, templateFingerprint, submission.Plan,
-                AzureProviderOperationAction.Reconcile, submission.ProviderScopeFingerprint),
+                AzureProviderOperationAction.Reconcile, submission.ProviderScopeFingerprint,
+                submission.OrganizationId, submission.InstanceId, submission.LifecycleAction),
             submission.Plan,
             cancellationToken);
         _operations[plan.PlanId] = execution.Operation;
@@ -217,12 +224,14 @@ public sealed class AzureProviderProofAdapter(
         if (prepareCleanup is not null)
             await prepareCleanup(cancellationToken);
         var submission = GetSubmission(plan, DeploymentProofStage.Cleanup);
-        var operation = await operationService.SubmitDeleteAsync(workspaceId, submission, cancellationToken);
+        var deleteSubmission = submission with { LifecycleAction = ElsaInstanceOperationAction.Delete };
+        var operation = await operationService.SubmitDeleteAsync(workspaceId, deleteSubmission, cancellationToken);
         var execution = await executor.DeleteAsync(
             AzureProviderOperationService.CreateOperationRequest(
-                workspaceId, operation.IdempotencyKey, templateFingerprint, submission.Plan,
-                AzureProviderOperationAction.Delete, submission.ProviderScopeFingerprint),
-            submission.Plan,
+                workspaceId, operation.IdempotencyKey, templateFingerprint, deleteSubmission.Plan,
+                AzureProviderOperationAction.Delete, deleteSubmission.ProviderScopeFingerprint,
+                deleteSubmission.OrganizationId, deleteSubmission.InstanceId, deleteSubmission.LifecycleAction),
+            deleteSubmission.Plan,
             cancellationToken);
         if (!execution.Succeeded)
             throw new DeploymentProofStageException(DeploymentProofStage.Cleanup, "azure.proof.cleanupFailed", "The Azure provider did not confirm cleanup.");

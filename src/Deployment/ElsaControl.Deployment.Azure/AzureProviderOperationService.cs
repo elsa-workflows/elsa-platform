@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Security.Cryptography;
 using System.Text;
+using ElsaControl.Deployment.Abstractions.Instances;
 
 namespace ElsaControl.Deployment.Azure;
 
@@ -13,7 +14,10 @@ public sealed record AzureProviderOperationSubmission(
     string IdempotencyKey,
     string TemplateFingerprint,
     AzureWorkloadPlan Plan,
-    string? ProviderScopeFingerprint = null);
+    string? ProviderScopeFingerprint = null,
+    Guid? OrganizationId = null,
+    Guid? InstanceId = null,
+    ElsaInstanceOperationAction? LifecycleAction = null);
 
 public sealed record AzureProviderOperationStatusResponse(
     AzureProviderOperation Operation,
@@ -184,7 +188,10 @@ public sealed class AzureProviderOperationService(
             submission.TemplateFingerprint,
             plan,
             action,
-            submission.ProviderScopeFingerprint);
+            submission.ProviderScopeFingerprint,
+            submission.OrganizationId,
+            submission.InstanceId,
+            submission.LifecycleAction);
         var result = await store.CreateOrGetWithResultAsync(operationRequest, _timeProvider.GetUtcNow(), cancellationToken);
         return new(result.Operation, result.Replayed);
     }
@@ -195,7 +202,10 @@ public sealed class AzureProviderOperationService(
         string templateFingerprint,
         AzureWorkloadPlan plan,
         AzureProviderOperationAction action = AzureProviderOperationAction.Reconcile,
-        string? providerScopeFingerprint = null) =>
+        string? providerScopeFingerprint = null,
+        Guid? organizationId = null,
+        Guid? instanceId = null,
+        ElsaInstanceOperationAction? lifecycleAction = null) =>
         new(
             workspaceId,
             plan.WorkloadName,
@@ -220,7 +230,10 @@ public sealed class AzureProviderOperationService(
                 StringComparer.OrdinalIgnoreCase)),
             providerScopeFingerprint,
             plan.SqlWorkflowPackageVersion,
-            plan.SqlQuartzPackageVersion);
+            plan.SqlQuartzPackageVersion,
+            organizationId,
+            instanceId,
+            lifecycleAction);
 
     internal static AzureProviderOperationRequest CreateOperationRequest(AzureProviderOperation operation) =>
         new(
@@ -244,7 +257,10 @@ public sealed class AzureProviderOperationService(
             operation.SafeSecretReferences,
             operation.ProviderScopeFingerprint,
             operation.SqlWorkflowPackageVersion,
-            operation.SqlQuartzPackageVersion);
+            operation.SqlQuartzPackageVersion,
+            operation.OrganizationId,
+            operation.InstanceId,
+            operation.LifecycleAction);
 
     internal static AzureWorkloadPlan? TryRestorePlan(AzureProviderOperation operation)
     {

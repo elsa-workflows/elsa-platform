@@ -209,6 +209,7 @@ internal sealed class OrganizationEntitlementSnapshotConfiguration : IEntityType
         builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.Property(x => x.SubscriptionState).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.MaxInstances).IsRequired();
         builder.HasIndex(x => x.OrganizationId).IsUnique();
         builder.HasOne(x => x.Subscription)
             .WithMany()
@@ -791,6 +792,9 @@ internal sealed class AzureProviderOperationConfiguration : IEntityTypeConfigura
         builder.Property(x => x.Phase).HasConversion<string>().HasMaxLength(64);
         builder.Property(x => x.Health).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.TargetKey).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.OrganizationId);
+        builder.Property(x => x.InstanceId);
+        builder.Property(x => x.LifecycleAction).HasConversion<string>().HasMaxLength(64);
         builder.Property(x => x.IdempotencyKey).HasMaxLength(512).IsRequired();
         builder.Property(x => x.RequestHash).HasMaxLength(64).IsRequired();
         builder.Property(x => x.OperationIdentity).HasMaxLength(64).IsRequired();
@@ -842,9 +846,9 @@ internal sealed class AzureProviderOperationConfiguration : IEntityTypeConfigura
         ConfigureNullableDateTime(builder.Property(x => x.HeartbeatAt));
         builder.HasIndex(x => new { x.WorkspaceId, x.TargetKey, x.IdempotencyKey }).IsUnique();
         builder.HasIndex(x => new { x.WorkspaceId, x.TargetKey, x.OperationIdentity })
-            .IsUnique().HasFilter("Status IN ('Accepted', 'Queued', 'Running', 'RecoveryRequired')");
+            .IsUnique().HasFilter("Status IN ('Accepted', 'Queued', 'EntitlementHeld', 'Running', 'RecoveryRequired')");
         builder.HasIndex(x => new { x.WorkspaceId, x.TargetKey })
-            .IsUnique().HasFilter("Status IN ('Accepted', 'Queued', 'Running', 'RecoveryRequired')");
+            .IsUnique().HasFilter("Status IN ('Accepted', 'Queued', 'EntitlementHeld', 'Running', 'RecoveryRequired')");
         builder.HasIndex(x => new { x.Status, x.LeaseExpiresAt, x.UpdatedAt, x.Id });
         builder.HasIndex(x => new { x.WorkspaceId, x.TargetKey, x.CreatedAt });
         builder.HasOne(x => x.Workspace).WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Restrict);

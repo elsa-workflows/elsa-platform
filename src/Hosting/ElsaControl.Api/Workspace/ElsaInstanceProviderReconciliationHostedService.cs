@@ -1,4 +1,5 @@
 using ElsaControl.Deployment.Core.Instances;
+using ElsaControl.Deployment.Abstractions.Instances;
 using Microsoft.Extensions.Options;
 
 namespace ElsaControl.Api.Workspace;
@@ -64,11 +65,14 @@ public sealed class ElsaInstanceProviderReconciliationHostedService(
         var provider = scope.ServiceProvider.GetRequiredService<IElsaInstanceProviderSubmissionPort>();
         var submissionStore = scope.ServiceProvider.GetRequiredService<IElsaInstanceProviderSubmissionStore>();
         var reconciler = scope.ServiceProvider.GetRequiredService<IElsaInstanceProviderReconciliationService>();
+        var commercialGate = scope.ServiceProvider.GetService<IElsaInstanceCommercialGate>();
+        var entitlementHoldStore = scope.ServiceProvider.GetService<IElsaInstanceEntitlementHoldStore>();
         var operations = await pending.ListPendingProviderOperationsAsync(64, stoppingToken);
         foreach (var operation in operations)
         {
             stoppingToken.ThrowIfCancellationRequested();
-            await ProcessOperationAsync(operation, provider, submissionStore, reconciler, stoppingToken);
+            await ProcessOperationAsync(
+                operation, provider, submissionStore, reconciler, commercialGate, entitlementHoldStore, stoppingToken);
         }
     }
 
@@ -77,6 +81,8 @@ public sealed class ElsaInstanceProviderReconciliationHostedService(
         IElsaInstanceProviderSubmissionPort provider,
         IElsaInstanceProviderSubmissionStore submissionStore,
         IElsaInstanceProviderReconciliationService reconciler,
+        IElsaInstanceCommercialGate? commercialGate,
+        IElsaInstanceEntitlementHoldStore? entitlementHoldStore,
         CancellationToken stoppingToken)
     {
         // A process can stop after the durable provider operation was created but
@@ -85,6 +91,34 @@ public sealed class ElsaInstanceProviderReconciliationHostedService(
         // identity makes the replay exactly-once.
         if (operation.Submission is { } submission)
         {
+            // Revalidate the durable hand-off immediately before replay. A legacy
+            // row without an organization binding remains observable, but its
+            // provider mutation is rejected by the provider adapter; new
+            // managed-instance submissions always carry both identities.
+            if (submission.OrganizationId is { } organizationId &&
+                submission.InstanceId != Guid.Empty && submission.DesiredLifecycle != ElsaDesiredLifecycle.Deleting)
+            {
+                if (entitlementHoldStore is not null)
+                {
+                    var authorization = await entitlementHoldStore.AuthorizeProviderSubmissionAsync(
+                            operation.WorkspaceId,
+                            submission.InstanceId,
+                            operation.OperationId,
+                            DateTimeOffset.UtcNow,
+                            stoppingToken);
+                    if (!authorization.Allowed)
+                        return;
+                }
+                else if (commercialGate is not null)
+                {
+                    var commercialDecision = await commercialGate.EvaluateAsync(
+                        organizationId,
+                        submission.OperationAction ?? ElsaInstanceOperationAction.Reconcile,
+                        cancellationToken: stoppingToken);
+                    if (!commercialDecision.Allowed)
+                        return;
+                }
+            }
             try
             {
                 var submitted = await provider.SubmitAsync(submission, stoppingToken);

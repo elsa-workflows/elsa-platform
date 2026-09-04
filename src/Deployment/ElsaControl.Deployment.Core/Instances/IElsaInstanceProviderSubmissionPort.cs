@@ -45,11 +45,15 @@ public sealed record ElsaInstanceProviderSubmission(
     ElsaDesiredLifecycle DesiredLifecycle,
     ResolvedElsaApplicationPlan Plan,
     ElsaInstanceLifecycleDeploymentTarget DeploymentTarget,
-    string? Location = null)
+    string? Location = null,
+    Guid? OrganizationId = null,
+    ElsaInstanceOperationAction? OperationAction = null)
 {
     public void Validate()
     {
-        if (WorkspaceId == Guid.Empty || InstanceId == Guid.Empty || OperationId == Guid.Empty || AttemptNumber < 1)
+        if (WorkspaceId == Guid.Empty || InstanceId == Guid.Empty || OperationId == Guid.Empty ||
+            OrganizationId is null || OrganizationId == Guid.Empty || OperationAction is null ||
+            !Enum.IsDefined(OperationAction.Value) || AttemptNumber < 1)
             throw new InvalidOperationException("Provider submission identity is invalid.");
         ArgumentNullException.ThrowIfNull(Plan);
         DeploymentTarget.Validate();

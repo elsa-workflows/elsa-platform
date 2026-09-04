@@ -267,6 +267,9 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                     b.Property<bool>("ManagedHostingEnabled")
                         .HasColumnType("bit");
 
+                    b.Property<int>("MaxInstances")
+                        .HasColumnType("int");
+
                     b.Property<int?>("MaxPackagesIndexed")
                         .HasColumnType("int");
 
@@ -1129,6 +1132,13 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("nvarchar(512)");
 
+                    b.Property<Guid?>("InstanceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("LifecycleAction")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("Isolation")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -1158,6 +1168,9 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid?>("OrganizationId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Phase")
                         .IsRequired()
@@ -1294,7 +1307,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 
                     b.HasIndex("WorkspaceId", "TargetKey")
                         .IsUnique()
-                        .HasFilter("Status IN ('Accepted', 'Queued', 'Running', 'RecoveryRequired')");
+                        .HasFilter("Status IN ('Accepted', 'Queued', 'EntitlementHeld', 'Running', 'RecoveryRequired')");
 
                     b.HasIndex("WorkspaceId", "TargetKey", "CreatedAt");
 
@@ -1303,7 +1316,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 
                     b.HasIndex("WorkspaceId", "TargetKey", "OperationIdentity")
                         .IsUnique()
-                        .HasFilter("Status IN ('Accepted', 'Queued', 'Running', 'RecoveryRequired')");
+                        .HasFilter("Status IN ('Accepted', 'Queued', 'EntitlementHeld', 'Running', 'RecoveryRequired')");
 
                     b.HasIndex("Status", "LeaseExpiresAt", "UpdatedAt", "Id");
 

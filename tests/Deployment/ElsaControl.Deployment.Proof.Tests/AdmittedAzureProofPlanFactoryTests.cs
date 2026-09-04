@@ -7,6 +7,8 @@ namespace ElsaControl.Deployment.Proof.Tests;
 
 public sealed class AdmittedAzureProofPlanFactoryTests
 {
+    private static readonly Guid ProofOrganizationId = Guid.Parse("19519519-5195-4195-8195-195195195195");
+    private static readonly Guid ProofInstanceId = Guid.Parse("29529529-5295-4295-8295-295295295295");
     private const string ManifestDigest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     private const string ImageDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     private const string SignatureDigest = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
@@ -15,7 +17,7 @@ public sealed class AdmittedAzureProofPlanFactoryTests
     public void Creates_deterministic_submission_from_admitted_plan()
     {
         var factory = new AdmittedAzureProofPlanFactory(
-            Resolution(), new("proof", "westeurope"), new string('c', 64), new string('d', 64), ["studio", "server"]);
+            Resolution(), new("proof", "westeurope"), new string('c', 64), new string('d', 64), ["studio", "server"], ProofOrganizationId, ProofInstanceId);
         var selection = Selection();
         var environment = new DeploymentProofEnvironment("proof", "westeurope", "azure", []);
 
@@ -34,7 +36,7 @@ public sealed class AdmittedAzureProofPlanFactoryTests
     public void Creates_submission_for_governed_north_europe_fallback()
     {
         var factory = new AdmittedAzureProofPlanFactory(
-            Resolution(), new("proof", "northeurope"), new string('c', 64), new string('d', 64), ["studio", "server"]);
+            Resolution(), new("proof", "northeurope"), new string('c', 64), new string('d', 64), ["studio", "server"], ProofOrganizationId, ProofInstanceId);
 
         var submission = factory.Create(
             Selection(), new DeploymentProofEnvironment("proof", "northeurope", "azure", []));
@@ -46,7 +48,7 @@ public sealed class AdmittedAzureProofPlanFactoryTests
     public void Rejects_selection_or_environment_mismatch_with_value_free_error()
     {
         var factory = new AdmittedAzureProofPlanFactory(
-            Resolution(), new("proof", "westeurope"), new string('c', 64), new string('d', 64), ["studio", "server"]);
+            Resolution(), new("proof", "westeurope"), new string('c', 64), new string('d', 64), ["studio", "server"], ProofOrganizationId, ProofInstanceId);
 
         var environmentError = Assert.Throws<DeploymentProofStageException>(() => factory.Create(
             Selection(), new("secret-environment", "eastus", "azure", [])));

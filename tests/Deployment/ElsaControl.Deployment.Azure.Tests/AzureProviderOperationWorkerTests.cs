@@ -1,3 +1,5 @@
+using ElsaControl.Deployment.Abstractions.Instances;
+
 namespace ElsaControl.Deployment.Azure.Tests;
 
 public sealed class AzureProviderOperationWorkerTests
@@ -190,7 +192,12 @@ public sealed class AzureProviderOperationWorkerTests
             new Dictionary<string, string>(),
             SqlWorkflowPackageVersion: "3.8.0-preview.5413",
             SqlQuartzPackageVersion: "3.8.0-preview.5413");
-        return WithComputedMetadata(operation);
+        return WithComputedMetadata(operation with
+        {
+            OrganizationId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+            InstanceId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
+            LifecycleAction = ElsaInstanceOperationAction.Reconcile
+        });
     }
 
     private static AzureProviderOperation WithComputedMetadata(AzureProviderOperation operation)
@@ -216,7 +223,10 @@ public sealed class AzureProviderOperationWorkerTests
             operation.SafeSecretReferences,
             operation.ProviderScopeFingerprint,
             operation.SqlWorkflowPackageVersion,
-            operation.SqlQuartzPackageVersion);
+            operation.SqlQuartzPackageVersion,
+            operation.OrganizationId,
+            operation.InstanceId,
+            operation.LifecycleAction);
         return operation with
         {
             RequestHash = AzureProviderOperationValidation.ComputeRequestHash(request),

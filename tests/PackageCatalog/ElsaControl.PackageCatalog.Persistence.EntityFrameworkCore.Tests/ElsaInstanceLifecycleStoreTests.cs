@@ -1295,6 +1295,73 @@ public sealed class ElsaInstanceLifecycleStoreTests
     }
 
     [Fact]
+    public async Task Queued_provider_submission_is_held_without_a_call_and_resumes_the_same_run_once()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var (workspace, accepted) = await QueueManagedLifecycleRunAsync(db, "Provider entitlement hold");
+        var operation = await db.ElsaInstanceOperations.SingleAsync(x => x.Id == accepted.Operation.Id);
+        var runId = operation.DeploymentRunId;
+        Assert.NotNull(runId);
+
+        var entitlement = await db.OrganizationEntitlementSnapshots.SingleAsync(x => x.OrganizationId == workspace.OrganizationId);
+        entitlement.SubscriptionState = OrganizationSubscriptionState.Constrained;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var store = new EfCoreElsaInstanceLifecycleStore(
+            db, EmptyResolutionInputSource.Instance, new FixedTimeProvider(Now));
+        var denied = await store.AuthorizeProviderSubmissionAsync(
+            workspace.Id, accepted.Instance.Id, accepted.Operation.Id, Now.AddMinutes(1));
+
+        Assert.False(denied.Allowed);
+        Assert.Equal(ElsaInstanceCommercialOperation.LifecycleConstrained, denied.Code);
+        db.ChangeTracker.Clear();
+        Assert.Equal(ElsaInstanceOperationState.EntitlementHeld,
+            (await db.ElsaInstanceOperations.SingleAsync(x => x.Id == accepted.Operation.Id)).State);
+        var heldAudit = Assert.Single(await db.ElsaInstanceAuditEvents
+            .Where(x => x.EventType == "lifecycle.entitlement-held")
+            .ToListAsync());
+        Assert.Equal(ElsaInstanceCommercialOperation.LifecycleConstrained, heldAudit.DiagnosticCode);
+        Assert.DoesNotContain(workspace.OrganizationId.ToString("D"), heldAudit.Summary ?? "", StringComparison.OrdinalIgnoreCase);
+        var heldPending = Assert.Single(await store.ListPendingProviderOperationsAsync(16));
+        Assert.NotNull(heldPending.Submission);
+        Assert.Equal(accepted.Operation.Id, heldPending.Submission!.OperationId);
+
+        entitlement = await db.OrganizationEntitlementSnapshots.SingleAsync(x => x.OrganizationId == workspace.OrganizationId);
+        entitlement.SubscriptionState = OrganizationSubscriptionState.Active;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var resumed = await store.AuthorizeProviderSubmissionAsync(
+            workspace.Id, accepted.Instance.Id, accepted.Operation.Id, Now.AddMinutes(2));
+
+        Assert.True(resumed.Allowed);
+        var pending = Assert.Single(await store.ListPendingProviderOperationsAsync(16));
+        Assert.NotNull(pending.Submission);
+        Assert.Equal(accepted.Operation.Id, pending.Submission!.OperationId);
+        Assert.Equal(accepted.Instance.Id, pending.Submission.InstanceId);
+        var currentOperation = await db.ElsaInstanceOperations.AsNoTracking().SingleAsync(x => x.Id == accepted.Operation.Id);
+        Assert.Equal(ElsaInstanceOperationState.Queued, currentOperation.State);
+        Assert.Equal(runId, currentOperation.DeploymentRunId);
+
+        await store.CommitProviderSubmissionAsync(new(
+            workspace.Id,
+            accepted.Instance.Id,
+            accepted.Operation.Id,
+            accepted.Operation.AttemptNumber,
+            "provider-operation-accepted",
+            Now.AddMinutes(3)));
+
+        var afterSubmission = Assert.Single(await store.ListPendingProviderOperationsAsync(16));
+        Assert.Null(afterSubmission.Submission);
+        currentOperation = await db.ElsaInstanceOperations.AsNoTracking().SingleAsync(x => x.Id == accepted.Operation.Id);
+        Assert.Equal(ElsaInstanceOperationState.RecoveryRequired, currentOperation.State);
+        Assert.Equal(runId, currentOperation.DeploymentRunId);
+    }
+
+    [Fact]
     public async Task Accepted_provider_handoff_does_not_replay_submission_on_every_poll()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -1740,7 +1807,9 @@ public sealed class ElsaInstanceLifecycleStoreTests
             ElsaDesiredLifecycle.Running,
             resolved.Plan!,
             deploymentTarget,
-            "westeurope"));
+            "westeurope",
+            accepted.Instance.OrganizationId,
+            ElsaInstanceOperationAction.Reconcile));
         Assert.False(submission.Replayed);
 
         var providerOperation = Assert.Single(await operationStore.ListRunnableAsync(Now, 16));
@@ -1969,6 +2038,17 @@ public sealed class ElsaInstanceLifecycleStoreTests
     {
         var workspace = new Workspace { Name = name };
         db.Workspaces.Add(workspace);
+        await db.SaveChangesAsync();
+        db.OrganizationEntitlementSnapshots.Add(new OrganizationEntitlementSnapshot
+        {
+            OrganizationId = workspace.OrganizationId,
+            ManagedHostingEnabled = true,
+            SubscriptionState = OrganizationSubscriptionState.Active,
+            MaxInstances = int.MaxValue,
+            SyncedAt = Now,
+            CreatedAt = Now,
+            UpdatedAt = Now
+        });
         await db.SaveChangesAsync();
         return workspace;
     }

@@ -1,4 +1,6 @@
 using ElsaControl.Deployment.Azure;
+using ElsaControl.Deployment.Abstractions.Instances;
+using ElsaControl.Deployment.Core.Instances;
 
 namespace ElsaControl.Deployment.Azure.Tests;
 
@@ -45,6 +47,142 @@ public sealed class AzureProviderExecutorTests
             Assert.Equal(new string('a', 64), command.Context.PlanFingerprint);
             Assert.Equal(new string('b', 64), command.Context.TemplateFingerprint);
         });
+    }
+
+    [Fact]
+    public async Task Entitlement_denial_holds_before_the_first_runner_call_and_resume_reuses_the_operation()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner();
+        var gate = new ToggleCommercialGate();
+        var executor = new AzureProviderExecutor(
+            store,
+            runner,
+            new StaticTimeProvider(Now),
+            TimeSpan.FromMinutes(5),
+            commercialGate: gate);
+        var request = CreateRequest() with
+        {
+            OrganizationId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+            InstanceId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd")
+        };
+
+        var held = await executor.ApplyAsync(request, CreatePlan());
+
+        Assert.Equal(AzureProviderExecutionOutcome.InProgress, held.Outcome);
+        Assert.Equal(AzureProviderOperationStatus.EntitlementHeld, held.Operation.Status);
+        Assert.Equal(ElsaInstanceCommercialOperation.LifecycleConstrained, held.Code);
+        Assert.Empty(runner.Steps);
+
+        gate.Allowed = true;
+        var resumed = await executor.ApplyAsync(request, CreatePlan());
+
+        Assert.Equal(AzureProviderExecutionOutcome.Succeeded, resumed.Outcome);
+        Assert.Equal(AzureProviderOperationStatus.Succeeded, resumed.Operation.Status);
+        Assert.Equal(held.Operation.Id, resumed.Operation.Id);
+        Assert.Equal(7, runner.Steps.Count);
+    }
+
+    [Fact]
+    public async Task Entitlement_denial_cas_loss_returns_current_concurrent_winner_without_provider_call()
+    {
+        var store = new FakeOperationStore { ConcurrentWinnerStatus = AzureProviderOperationStatus.Succeeded };
+        var runner = new RecordingRunner();
+        var gate = new ToggleCommercialGate();
+        var executor = new AzureProviderExecutor(
+            store,
+            runner,
+            new StaticTimeProvider(Now),
+            TimeSpan.FromMinutes(5),
+            commercialGate: gate);
+
+        var result = await executor.ApplyAsync(CreateRequest(), CreatePlan());
+
+        Assert.Equal(AzureProviderOperationStatus.Succeeded, result.Operation.Status);
+        Assert.Equal(3, result.Operation.Version);
+        Assert.Equal(AzureProviderExecutionOutcome.NoOp, result.Outcome);
+        Assert.Equal("azure.operation.no-op", result.Code);
+        Assert.Empty(runner.Steps);
+    }
+
+    [Fact]
+    public async Task Legacy_unbound_reconcile_is_held_before_any_provider_call()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner();
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+        var request = CreateRequest() with
+        {
+            OrganizationId = null,
+            InstanceId = null,
+            LifecycleAction = null
+        };
+
+        var result = await executor.ApplyAsync(request, CreatePlan());
+
+        Assert.Equal(AzureProviderExecutionOutcome.InProgress, result.Outcome);
+        Assert.Equal(AzureProviderOperationStatus.EntitlementHeld, result.Operation.Status);
+        Assert.Equal(ElsaInstanceCommercialOperation.BindingRequired, result.Code);
+        Assert.Empty(runner.Steps);
+    }
+
+    [Fact]
+    public async Task Legacy_unbound_delete_is_held_before_any_provider_call()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner();
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now));
+        var request = CreateRequest() with
+        {
+            Action = AzureProviderOperationAction.Delete,
+            OrganizationId = null,
+            InstanceId = null,
+            LifecycleAction = null
+        };
+
+        var result = await executor.DeleteAsync(request, CreatePlan());
+
+        Assert.Equal(AzureProviderExecutionOutcome.InProgress, result.Outcome);
+        Assert.Equal(AzureProviderOperationStatus.EntitlementHeld, result.Operation.Status);
+        Assert.Equal(ElsaInstanceCommercialOperation.BindingRequired, result.Code);
+        Assert.Empty(runner.Steps);
+    }
+
+    [Fact]
+    public async Task Constrained_stop_reaches_the_provider_runner()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner();
+        var gate = new ToggleCommercialGate();
+        var executor = new AzureProviderExecutor(
+            store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5), commercialGate: gate);
+        var request = CreateRequest() with { LifecycleAction = ElsaInstanceOperationAction.Stop };
+
+        var result = await executor.ApplyAsync(request, CreatePlan());
+
+        Assert.Equal(AzureProviderExecutionOutcome.Succeeded, result.Outcome);
+        Assert.Equal(AzureProviderOperationStatus.Succeeded, result.Operation.Status);
+        Assert.Equal(7, runner.Steps.Count);
+    }
+
+    [Theory]
+    [InlineData(ElsaInstanceOperationAction.Start)]
+    [InlineData(ElsaInstanceOperationAction.Reconcile)]
+    public async Task Constrained_start_and_reconcile_are_held_before_the_runner(
+        ElsaInstanceOperationAction lifecycleAction)
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner();
+        var gate = new ToggleCommercialGate();
+        var executor = new AzureProviderExecutor(
+            store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5), commercialGate: gate);
+        var request = CreateRequest() with { LifecycleAction = lifecycleAction };
+
+        var result = await executor.ApplyAsync(request, CreatePlan());
+
+        Assert.Equal(AzureProviderExecutionOutcome.InProgress, result.Outcome);
+        Assert.Equal(AzureProviderOperationStatus.EntitlementHeld, result.Operation.Status);
+        Assert.Empty(runner.Steps);
     }
 
     [Fact]
@@ -683,7 +821,10 @@ public sealed class AzureProviderExecutorTests
         },
         null,
         "3.8.0-preview.5413",
-        "3.8.0-preview.5413");
+        "3.8.0-preview.5413",
+        Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+        Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
+        ElsaInstanceOperationAction.Reconcile);
 
     private static AzureWorkloadPlan CreatePlan() => new(
         "workload-a",
@@ -877,6 +1018,7 @@ public sealed class AzureProviderExecutorTests
         public AzureProviderOperationStatus? RejectCreateWithStatus { get; init; }
         public bool LoseLeaseOnHeartbeat { get; init; }
         public AzureProviderResourceReferences? LatestReconcileResources { get; init; }
+        public AzureProviderOperationStatus? ConcurrentWinnerStatus { get; init; }
 
         public async Task<AzureProviderOperationCreateResult> CreateOrGetWithResultAsync(
             AzureProviderOperationRequest request,
@@ -894,7 +1036,7 @@ public sealed class AzureProviderExecutorTests
                 return Task.FromResult(_operation);
             }
 
-            _operation = new(
+            _operation = new AzureProviderOperation(
                 Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
                 normalized.WorkspaceId,
                 normalized.TargetKey,
@@ -927,7 +1069,12 @@ public sealed class AzureProviderExecutorTests
                 null,
                 now,
                 now,
-                null);
+                null) with
+            {
+                OrganizationId = normalized.OrganizationId,
+                InstanceId = normalized.InstanceId,
+                LifecycleAction = normalized.LifecycleAction
+            };
             if (RejectCreateWithStatus is { } conflictStatus)
             {
                 _operation = _operation with { Status = conflictStatus, Version = _operation.Version + 1 };
@@ -962,7 +1109,10 @@ public sealed class AzureProviderExecutorTests
                 _operation = _operation with { Status = observedStatus, Version = _operation.Version + 1, UpdatedAt = now };
                 return Task.FromResult<AzureProviderOperation?>(null);
             }
-            if (_operation is null || expectedVersion.HasValue && _operation.Version != expectedVersion.Value || _operation.Status != (recovery ? AzureProviderOperationStatus.RecoveryRequired : AzureProviderOperationStatus.Accepted))
+            if (_operation is null || expectedVersion.HasValue && _operation.Version != expectedVersion.Value ||
+                (recovery
+                    ? _operation.Status != AzureProviderOperationStatus.RecoveryRequired
+                    : _operation.Status is not (AzureProviderOperationStatus.Accepted or AzureProviderOperationStatus.Queued or AzureProviderOperationStatus.EntitlementHeld)))
                 return Task.FromResult<AzureProviderOperation?>(null);
             _operation = _operation with
             {
@@ -1027,7 +1177,20 @@ public sealed class AzureProviderExecutorTests
         {
             if (_operation is null || _operation.Status != AzureProviderOperationStatus.Running || expectedVersion.HasValue && _operation.Version != expectedVersion.Value)
                 return Task.FromResult<AzureProviderOperation?>(null);
-            _operation = _operation with { Status = status, Version = _operation.Version + 1, UpdatedAt = now, CompletedAt = status == AzureProviderOperationStatus.RecoveryRequired ? null : now, WorkerId = null, LeaseExpiresAt = null };
+            if (ConcurrentWinnerStatus is { } concurrentStatus)
+            {
+                _operation = _operation with
+                {
+                    Status = concurrentStatus,
+                    Version = _operation.Version + 1,
+                    UpdatedAt = now,
+                    CompletedAt = concurrentStatus is AzureProviderOperationStatus.RecoveryRequired or AzureProviderOperationStatus.EntitlementHeld ? null : now,
+                    WorkerId = null,
+                    LeaseExpiresAt = null
+                };
+                return Task.FromResult<AzureProviderOperation?>(null);
+            }
+            _operation = _operation with { Status = status, Version = _operation.Version + 1, UpdatedAt = now, CompletedAt = status is AzureProviderOperationStatus.RecoveryRequired or AzureProviderOperationStatus.EntitlementHeld ? null : now, WorkerId = null, LeaseExpiresAt = null };
             _transitions.Add(new(_operation.Id, _operation.Id, _transitions.Count + 1, status, _operation.Phase, code, code, now));
             return Task.FromResult<AzureProviderOperation?>(_operation);
         }
@@ -1035,5 +1198,22 @@ public sealed class AzureProviderExecutorTests
         public Task<int> RecoverStaleAsync(DateTimeOffset now, CancellationToken cancellationToken = default) => Task.FromResult(0);
 
         public Task<IReadOnlyList<AzureProviderOperationTransition>> ListTransitionsAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<AzureProviderOperationTransition>>(_transitions);
+    }
+
+    private sealed class ToggleCommercialGate : IElsaInstanceCommercialGate
+    {
+        public bool Allowed { get; set; }
+
+        public Task<ElsaInstanceCommercialGateDecision> EvaluateAsync(
+            Guid organizationId,
+            ElsaInstanceOperationAction action,
+            int? activeInstanceCount = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(action is ElsaInstanceOperationAction.Stop or ElsaInstanceOperationAction.Delete || Allowed
+                ? ElsaInstanceCommercialGateDecision.Allow()
+                : new ElsaInstanceCommercialGateDecision(
+                    false,
+                    ElsaInstanceCommercialOperation.LifecycleConstrained,
+                    "The organization subscription does not permit managed-instance changes."));
     }
 }
