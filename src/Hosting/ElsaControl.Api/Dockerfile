@@ -33,7 +33,9 @@ ARG TARGETARCH
 ARG SQLCMD_VERSION=1.10.0
 ARG SQLCMD_AMD64_SHA256=92516d98c63d99b0994de5b61350c91f6915f9b76f139a59039fbcb225c2e987
 ARG SQLCMD_ARM64_SHA256=9faaa981f9c374f319ac796dedb4678499b8596c87d5b6c512e9b0e7a3b74f8e
-RUN tdnf install --assumeyes tar bzip2 \
+# Copying the shared .NET runtime does not copy its OS dependencies. Keep full
+# globalization/time-zone support; invariant mode is not compatible with SQL.
+RUN tdnf install --assumeyes tar bzip2 icu tzdata libstdc++ openssl-libs \
     && tdnf clean all \
     && case "$TARGETARCH" in \
       amd64) sqlcmd_sha256="$SQLCMD_AMD64_SHA256" ;; \

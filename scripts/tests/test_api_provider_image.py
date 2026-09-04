@@ -43,6 +43,10 @@ class ApiProviderImageTests(unittest.TestCase):
         ):
             self.assertIn(expected, self.source)
 
+    def test_dotnet_native_dependencies_preserve_full_globalization(self) -> None:
+        self.assertIn("icu tzdata libstdc++ openssl-libs", self.source)
+        self.assertNotIn("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=true", self.source)
+
     def test_image_does_not_enable_remote_mutation_by_default(self) -> None:
         for forbidden in (
             "Deployment__AzureProvider__WorkerEnabled=true",
