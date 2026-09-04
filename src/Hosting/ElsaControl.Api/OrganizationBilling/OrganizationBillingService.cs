@@ -21,6 +21,9 @@ public sealed class OrganizationBillingApiService(
         if (!access.Succeeded)
             return OrganizationBillingApiResult.Denied(access.Failure!.Value);
 
+        if (!IsStripeProvider)
+            return OrganizationBillingApiResult.Unavailable();
+
         if (!_stripeOptions.IsCheckoutConfigured)
             return OrganizationBillingApiResult.Unavailable();
 
@@ -57,6 +60,9 @@ public sealed class OrganizationBillingApiService(
         if (!access.Succeeded)
             return OrganizationBillingApiResult.Denied(access.Failure!.Value);
 
+        if (!IsStripeProvider)
+            return OrganizationBillingApiResult.Unavailable();
+
         if (!_stripeOptions.IsPortalConfigured)
             return OrganizationBillingApiResult.Unavailable();
 
@@ -79,6 +85,8 @@ public sealed class OrganizationBillingApiService(
             return OrganizationBillingApiResult.Unavailable();
         }
     }
+
+    private bool IsStripeProvider => string.Equals(provider.Provider, BillingProviderNames.Stripe, StringComparison.Ordinal);
 }
 
 public sealed record OrganizationBillingApiResult(

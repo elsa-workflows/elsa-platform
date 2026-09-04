@@ -51,6 +51,7 @@ public sealed class OrganizationBillingStore(CatalogDbContext dbContext) : IOrga
         try
         {
             await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+            await EnsureOrganizationExistsAsync(providerEvent.OrganizationId, cancellationToken);
             var existingEvent = await dbContext.BillingProviderEvents
                 .SingleOrDefaultAsync(x => x.Provider == providerEvent.Provider && x.ProviderEventId == providerEvent.ProviderEventId, cancellationToken);
             if (existingEvent is not null)
@@ -151,6 +152,7 @@ public sealed class OrganizationBillingStore(CatalogDbContext dbContext) : IOrga
     {
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        await EnsureOrganizationExistsAsync(providerEvent.OrganizationId, cancellationToken);
         var existingEvent = await dbContext.BillingProviderEvents
             .SingleOrDefaultAsync(x => x.Provider == providerEvent.Provider && x.ProviderEventId == providerEvent.ProviderEventId, cancellationToken);
         if (existingEvent is not null)
@@ -387,6 +389,12 @@ public sealed class OrganizationBillingStore(CatalogDbContext dbContext) : IOrga
     {
         if (existing is not null && incoming is not null && !string.Equals(existing, incoming, StringComparison.Ordinal))
             throw new BillingProviderEventConflictException($"A subscription cannot change its provider {referenceName} reference.");
+    }
+
+    private async Task EnsureOrganizationExistsAsync(Guid organizationId, CancellationToken cancellationToken)
+    {
+        if (!await dbContext.Organizations.AsNoTracking().AnyAsync(x => x.Id == organizationId, cancellationToken))
+            throw new ArgumentException("Billing event organization does not exist.", nameof(organizationId));
     }
 
     private static void ValidateEvent(BillingProviderEvent providerEvent, bool allowUnknown)

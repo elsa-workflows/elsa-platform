@@ -112,6 +112,31 @@ public sealed class OrganizationBillingPersistenceTests
     }
 
     [Fact]
+    public async Task Unknown_event_for_missing_organization_is_rejected_without_persistence()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateDb(connection);
+        await db.Database.EnsureCreatedAsync();
+        var missingOrganizationId = Guid.NewGuid();
+        var providerEvent = new BillingProviderEvent(
+            missingOrganizationId,
+            BillingProviderNames.Stripe,
+            "evt-unknown-missing-organization",
+            "checkout.session.completed",
+            null,
+            Now,
+            "sha256:" + new string('e', 64));
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+            new OrganizationBillingStore(db).RecordUnknownAsync(providerEvent, Now.AddMinutes(1)));
+
+        Assert.StartsWith("Billing event organization does not exist.", exception.Message);
+        Assert.Equal(0, await db.BillingProviderEvents.CountAsync());
+        Assert.Equal(0, await db.OrganizationAuditRecords.CountAsync());
+    }
+
+    [Fact]
     public async Task Known_event_without_lifecycle_state_is_rejected_with_a_distinct_validation_message()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -671,7 +696,7 @@ public sealed class OrganizationBillingPersistenceTests
     }
 
     [Fact]
-    public async Task Failed_event_commit_rolls_back_inbox_subscription_projection_and_audit()
+    public async Task Known_event_for_missing_organization_is_rejected_without_persistence()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -683,8 +708,10 @@ public sealed class OrganizationBillingPersistenceTests
             OrganizationId = OrganizationId
         };
 
-        await Assert.ThrowsAnyAsync<DbUpdateException>(() =>
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
             new OrganizationBillingStore(db).ConsumeAsync(providerEvent, Now.AddMinutes(2)));
+
+        Assert.StartsWith("Billing event organization does not exist.", exception.Message);
 
         db.ChangeTracker.Clear();
         Assert.Equal(0, await db.BillingProviderEvents.CountAsync());

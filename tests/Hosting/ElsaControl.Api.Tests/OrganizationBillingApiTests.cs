@@ -58,6 +58,39 @@ public sealed class OrganizationBillingApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Checkout_fails_closed_before_trial_when_the_injected_provider_is_not_stripe()
+    {
+        await _app.SeedAsync(_ => Task.CompletedTask);
+        var owner = _app.CreateControlIdentityClient(subject: "billing-mismatch-checkout-owner");
+        var organizationId = (await owner.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Organizations.Single().Id;
+        _provider.Provider = "fake";
+
+        var response = await owner.PostControlJsonAsync($"/api/organizations/{organizationId}/billing/checkout", new { });
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Null(_provider.LastCheckout);
+        await using var scope = _app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+        Assert.Empty(await db.OrganizationSubscriptions.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Portal_fails_closed_before_provider_call_when_the_injected_provider_is_not_stripe()
+    {
+        await _app.SeedAsync(_ => Task.CompletedTask);
+        var owner = _app.CreateControlIdentityClient(subject: "billing-mismatch-portal-owner");
+        var organizationId = (await owner.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Organizations.Single().Id;
+        var checkout = await owner.PostControlJsonAsync($"/api/organizations/{organizationId}/billing/checkout", new { });
+        Assert.Equal(HttpStatusCode.OK, checkout.StatusCode);
+        _provider.Provider = "fake";
+
+        var response = await owner.PostControlJsonAsync($"/api/organizations/{organizationId}/billing/portal", new { });
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal(0, _provider.PortalCalls);
+    }
+
+    [Fact]
     public async Task Organization_member_cannot_start_checkout_and_unknown_webhook_is_audit_only()
     {
         await _app.SeedAsync(_ => Task.CompletedTask);
@@ -211,6 +244,30 @@ public sealed class OrganizationBillingApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Webhook_for_missing_organization_returns_safe_bad_request_without_persistence()
+    {
+        await _app.SeedAsync(_ => Task.CompletedTask);
+        var missingOrganizationId = Guid.NewGuid();
+        _provider.WebhookResult = BillingWebhookNormalizationResult.KnownEvent(new BillingProviderEvent(
+            missingOrganizationId,
+            BillingProviderNames.Stripe,
+            "evt-missing-organization",
+            "customer.subscription.updated",
+            OrganizationSubscriptionState.Active,
+            DateTimeOffset.UtcNow,
+            Sha256("missing-organization")));
+
+        var response = await PostWebhookAsync("missing-organization-body");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+        Assert.Equal("webhook.invalid", body!["code"]);
+        await using var scope = _app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+        Assert.Empty(await db.BillingProviderEvents.ToListAsync());
+    }
+
+    [Fact]
     public async Task Disabled_stripe_webhook_returns_safe_bad_request_without_constructing_a_client()
     {
         await using var app = new ControlApiTestApplication();
@@ -287,6 +344,7 @@ public sealed class OrganizationBillingApiTests : IAsyncLifetime
     {
         public string Provider { get; set; } = BillingProviderNames.Stripe;
         public int WebhookVerificationCalls { get; private set; }
+        public int PortalCalls { get; private set; }
         public BillingCheckoutSessionRequest? LastCheckout { get; private set; }
         public BillingWebhookNormalizationResult WebhookResult { get; set; } = BillingWebhookNormalizationResult.Invalid("webhook.invalid");
 
@@ -297,7 +355,13 @@ public sealed class OrganizationBillingApiTests : IAsyncLifetime
         }
 
         public Task<BillingSessionLink> CreateCustomerPortalSessionAsync(BillingCustomerPortalSessionRequest request, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new BillingSessionLink("https://portal.fake.test/session"));
+            CreatePortalSessionAsync();
+
+        private Task<BillingSessionLink> CreatePortalSessionAsync()
+        {
+            PortalCalls++;
+            return Task.FromResult(new BillingSessionLink("https://portal.fake.test/session"));
+        }
 
         public BillingWebhookNormalizationResult VerifyAndNormalizeWebhook(ReadOnlyMemory<byte> rawBody, string signature, DateTimeOffset receivedAt)
         {
