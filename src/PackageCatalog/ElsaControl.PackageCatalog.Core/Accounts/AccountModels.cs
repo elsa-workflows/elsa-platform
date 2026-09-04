@@ -54,6 +54,8 @@ public sealed class Organization
     public List<Workspace> Workspaces { get; set; } = [];
     public List<OrganizationEntitlementSnapshot> EntitlementSnapshots { get; set; } = [];
     public List<OrganizationAuditRecord> AuditRecords { get; set; } = [];
+    public List<OrganizationSubscription> Subscriptions { get; set; } = [];
+    public List<BillingProviderEventInboxEntry> BillingProviderEvents { get; set; } = [];
 }
 
 public sealed class OrganizationMembership
@@ -112,6 +114,16 @@ public sealed class OrganizationEntitlementSnapshot
     public bool PrivateFeedsEnabled { get; set; }
     public bool ManagedHostingEnabled { get; set; }
     public bool DeploymentTargetsEnabled { get; set; }
+    /// <summary>
+    /// The provider-neutral commercial lifecycle state used when the snapshot
+    /// was projected. Capability and limit fields remain the authoritative
+    /// product policy and are intentionally preserved by billing projection.
+    /// Null means no commercial lifecycle has been projected for this legacy
+    /// or otherwise uninitialized entitlement snapshot.
+    /// </summary>
+    public OrganizationSubscriptionState? SubscriptionState { get; set; }
+    public Guid? SubscriptionId { get; set; }
+    public OrganizationSubscription? Subscription { get; set; }
     public DateTimeOffset SyncedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
@@ -156,7 +168,9 @@ public enum OrganizationAuditAction
     WorkspaceCreated,
     WorkspaceArchived,
     EntitlementChanged,
-    RoleChanged
+    RoleChanged,
+    SubscriptionChanged,
+    BillingEventConsumed
 }
 
 public enum WorkspaceKind

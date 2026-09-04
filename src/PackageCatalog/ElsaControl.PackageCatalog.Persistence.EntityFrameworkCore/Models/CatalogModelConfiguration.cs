@@ -208,7 +208,13 @@ internal sealed class OrganizationEntitlementSnapshotConfiguration : IEntityType
         builder.Property(x => x.SyncedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.SubscriptionState).HasConversion<string>().HasMaxLength(32);
         builder.HasIndex(x => x.OrganizationId).IsUnique();
+        builder.HasOne(x => x.Subscription)
+            .WithMany()
+            .HasForeignKey(x => new { x.OrganizationId, x.SubscriptionId })
+            .HasPrincipalKey(x => new { x.OrganizationId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }
 
@@ -224,6 +230,62 @@ internal sealed class OrganizationAuditRecordConfiguration : IEntityTypeConfigur
         builder.Property(x => x.Summary).HasMaxLength(2048).IsRequired();
         builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.HasIndex(x => new { x.OrganizationId, x.CreatedAt });
+    }
+}
+
+internal sealed class OrganizationSubscriptionConfiguration : IEntityTypeConfiguration<OrganizationSubscription>
+{
+    public void Configure(EntityTypeBuilder<OrganizationSubscription> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Provider).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.ProviderCustomerReference).HasMaxLength(512);
+        builder.Property(x => x.ProviderSubscriptionReference).HasMaxLength(512);
+        builder.Property(x => x.State).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.LastProviderEventId).HasMaxLength(256);
+        builder.Property(x => x.TrialStartedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.TrialEndsAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.ActivatedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.PastDueAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.ConstrainedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.SuspendedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.RetainedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.DeletedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.Property(x => x.LastProviderEventOccurredAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.UpdatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.HasIndex(x => x.OrganizationId).IsUnique();
+        builder.HasAlternateKey(x => new { x.OrganizationId, x.Id });
+        builder.HasIndex(x => new { x.Provider, x.ProviderCustomerReference })
+            .IsUnique()
+            .HasFilter("ProviderCustomerReference IS NOT NULL");
+        builder.HasIndex(x => new { x.Provider, x.ProviderSubscriptionReference })
+            .IsUnique()
+            .HasFilter("ProviderSubscriptionReference IS NOT NULL");
+        builder.HasOne(x => x.Organization).WithMany(x => x.Subscriptions).HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+internal sealed class BillingProviderEventInboxEntryConfiguration : IEntityTypeConfiguration<BillingProviderEventInboxEntry>
+{
+    public void Configure(EntityTypeBuilder<BillingProviderEventInboxEntry> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Provider).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.ProviderEventId).HasMaxLength(256).IsRequired();
+        builder.Property(x => x.EventType).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.State).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.EventHash).HasMaxLength(71).IsRequired();
+        builder.Property(x => x.ProviderCustomerReference).HasMaxLength(512);
+        builder.Property(x => x.ProviderSubscriptionReference).HasMaxLength(512);
+        builder.Property(x => x.ProcessingStatus).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.RejectionCode).HasMaxLength(128);
+        builder.Property(x => x.OccurredAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.ReceivedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+        builder.Property(x => x.ProcessedAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+        builder.HasIndex(x => new { x.Provider, x.ProviderEventId }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.OccurredAt });
+        builder.HasOne(x => x.Organization).WithMany(x => x.BillingProviderEvents).HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Cascade);
     }
 }
 
