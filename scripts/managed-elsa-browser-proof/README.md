@@ -2,11 +2,11 @@
 
 This harness runs the real Control console, Keycloak, Control API, an Elsa 3.8 Combined runtime, and Chromium through the production handoff endpoints. It proves the browser journey without claiming that the production API provisioned the runtime.
 
-The fixture copies the repository's isolated Keycloak catalog, migrates the copy, creates one deterministic managed instance through the production lifecycle service, projects a separately verified healthy endpoint, and creates the production identity binding. The direct health projection is a proof-fixture boundary only; it is not deployment or provider evidence.
+The fixture creates and migrates a fresh catalog from the checked-in Keycloak realm, creates one deterministic managed instance through the production lifecycle service, projects a separately verified healthy endpoint, and creates the production identity binding. The direct health projection is a proof-fixture boundary only; it is not deployment or provider evidence.
 
 ## Prerequisites
 
-- Docker, .NET 10, Node/npm, Playwright Chromium, `mkcert`, `openssl`, `curl`, and `lsof`.
+- Docker, .NET 10, Node/npm, Playwright Chromium, `mkcert`, `openssl`, `curl`, `grep`, `lsof`, `tee`, and `tr`.
 - The local `mkcert` root must be installed in the macOS trust store.
 - Ports 5173, 5220, 7094, 7444, and 8080 must be free.
 - Registry access for the pinned runtime image.
@@ -17,7 +17,11 @@ Run from the repository root:
 ./scripts/managed-elsa-browser-proof/run-local.sh
 ```
 
-The default image is the immutable admitted amd64 Combined digest used by the first Elsa 3.8 proof. To validate a replacement candidate, pass an immutable digest or a deliberately local pre-release image:
+The browser proof opens the verified runtime through the production handoff, creates and
+publishes a fixture-owned workflow with one `WriteLine` activity, executes it to the
+terminal `Finished` state, and then verifies replay rejection and runtime-session logout.
+
+The default image is the current immutable admitted amd64 Combined digest for the Elsa 3.8 handoff capability. To validate a replacement candidate, pass an immutable digest or a deliberately local pre-release image:
 
 ```bash
 MANAGED_ELSA_PROOF_RUNTIME_IMAGE=registry.example/runtime-combined@sha256:<digest> \

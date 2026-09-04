@@ -15,7 +15,7 @@ const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const fixtureProject = process.env.MANAGED_ELSA_PROOF_FIXTURE_PROJECT ??
   path.join(repositoryRoot, "src/Hosting/ElsaControl.ManagedBrowserProof/ElsaControl.ManagedBrowserProof.csproj");
 
-test.use({ ignoreHTTPSErrors: true, trace: "off" });
+test.use({ ignoreHTTPSErrors: true, trace: "off", screenshot: "off", video: "off" });
 
 test.describe("managed Elsa browser proof", () => {
   test.skip(!proofEnabled, "Requires the isolated managed-Elsa proof fixture.");
@@ -31,7 +31,7 @@ test.describe("managed Elsa browser proof", () => {
       await runFixture("restore");
   });
 
-  test("opens a healthy instance, rejects replay, performs an authorized operation, and revokes the runtime session", async ({ page }) => {
+  test("opens a healthy instance, creates and runs a workflow, rejects replay, and revokes the runtime session", async ({ page }) => {
     test.setTimeout(90_000);
     await signInToControl(page);
 
@@ -43,7 +43,14 @@ test.describe("managed Elsa browser proof", () => {
 
     await openHealthyInstance(page);
     await expect(page).toHaveURL(new RegExp(`^${escapeRegExp(runtimeOrigin)}/`), { timeout: 30_000 });
-    expect(await protectedOperationStatus(page)).toBe(200);
+    const workflowProof = await createAndExecuteBasicWorkflow(page);
+    expect(workflowProof.createStatus).toBe(200);
+    expect(workflowProof.createdDefinitionId).toBe(workflowProof.definitionId);
+    expect(workflowProof.createdDefinitionPublished).toBe(true);
+    expect(workflowProof.executeStatus).toBe(200);
+    expect(workflowProof.workflowInstanceId).toMatch(/^[A-Za-z0-9._-]{1,256}$/);
+    expect(workflowProof.executionStatus).toBe("Finished");
+    expect(workflowProof.executionSubStatus).toBe("Finished");
 
     expect(callbackForm).toBeDefined();
     expect([...callbackForm!.keys()].sort()).toEqual(["code", "state"]);
@@ -124,6 +131,146 @@ function managedInstanceRow(page: Page) {
 function protectedOperationStatus(page: Page) {
   return page.evaluate(async () =>
     fetch("/elsa/api/workflow-definitions?skip=0&take=1", { credentials: "include" }).then((response) => response.status));
+}
+
+function createAndExecuteBasicWorkflow(page: Page) {
+  const definitionId = "managed-elsa-browser-proof-v1";
+
+  return page.evaluate(async ({ definitionId }) => {
+    const knownWorkflowStatus = (value: unknown) => {
+      const stringStatuses = ["Running", "Finished", "Faulted", "Cancelled", "Suspended", "Interrupted"];
+      if (value === 0)
+        return "Running";
+      if (value === 1)
+        return "Finished";
+      return typeof value === "string" && stringStatuses.includes(value) ? value : undefined;
+    };
+    const knownWorkflowSubStatus = (value: unknown) => {
+      const numericStatuses = ["Pending", "Executing", "Suspended", "Finished", "Cancelled", "Faulted", "Interrupted"];
+      if (typeof value === "number" && Number.isInteger(value))
+        return numericStatuses[value];
+      return typeof value === "string" && numericStatuses.includes(value) ? value : undefined;
+    };
+
+    const createResponse = await fetch("/elsa/api/workflow-definitions", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: {
+          definitionId,
+          name: "Managed Elsa browser proof",
+          description: "Synthetic managed runtime workflow smoke proof",
+          variables: [],
+          inputs: [],
+          outputs: [],
+          outcomes: [],
+          customProperties: {},
+          root: {
+            id: "managed-elsa-browser-proof-root",
+            type: "Elsa.Flowchart",
+            version: 1,
+            metadata: {},
+            customProperties: {
+              canStartWorkflow: false,
+              runAsynchronously: false
+            },
+            activities: [
+              {
+                id: "managed-elsa-browser-proof-write-line",
+                name: "WriteLine",
+                type: "Elsa.WriteLine",
+                version: 1,
+                metadata: {},
+                customProperties: {
+                  canStartWorkflow: false,
+                  runAsynchronously: false
+                },
+                text: {
+                  typeName: "String",
+                  expression: {
+                    type: "Literal",
+                    value: "managed-elsa-browser-proof"
+                  }
+                }
+              }
+            ],
+            connections: []
+          }
+        },
+        publish: true
+      })
+    });
+
+    let createdDefinitionId: string | undefined;
+    let createdDefinitionPublished: boolean | undefined;
+    if (createResponse.ok) {
+      const response = await createResponse.json() as {
+        workflowDefinition?: { definitionId?: string; isPublished?: boolean };
+      };
+      createdDefinitionId = response.workflowDefinition?.definitionId;
+      createdDefinitionPublished = response.workflowDefinition?.isPublished;
+    }
+
+    let executeStatus: number | undefined;
+    let workflowInstanceId: string | undefined;
+    let executionStatus: string | undefined;
+    let executionSubStatus: string | undefined;
+    if (createResponse.ok && createdDefinitionId === definitionId && createdDefinitionPublished === true) {
+      const executeResponse = await fetch(
+        `/elsa/api/workflow-definitions/${encodeURIComponent(definitionId)}/execute`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            correlationId: "managed-elsa-browser-proof-v1",
+            name: "Managed Elsa browser proof execution"
+          })
+        });
+      executeStatus = executeResponse.status;
+
+      const headerValue = executeResponse.headers.get("x-elsa-workflow-instance-id")?.trim();
+      if (executeResponse.ok && headerValue && /^[A-Za-z0-9._-]{1,256}$/.test(headerValue)) {
+        workflowInstanceId = headerValue;
+
+        const deadline = Date.now() + 30_000;
+        while (Date.now() < deadline) {
+          const instanceResponse = await fetch(
+            `/elsa/api/workflow-instances/${encodeURIComponent(workflowInstanceId)}`,
+            { credentials: "include" });
+          if (!instanceResponse.ok)
+            break;
+
+          const response = await instanceResponse.json() as {
+            status?: unknown;
+            subStatus?: unknown;
+            workflowState?: { status?: unknown; subStatus?: unknown };
+          };
+          const state = response.workflowState ?? response;
+          executionStatus = knownWorkflowStatus(response.status) ?? knownWorkflowStatus(state.status);
+          executionSubStatus = knownWorkflowSubStatus(response.subStatus) ?? knownWorkflowSubStatus(state.subStatus);
+          if ((executionStatus === "Finished" && executionSubStatus === "Finished") ||
+            [executionStatus, executionSubStatus].some((value) =>
+              ["Faulted", "Cancelled", "Suspended", "Interrupted"].includes(value ?? "")))
+            break;
+
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      }
+    }
+
+    return {
+      definitionId,
+      createStatus: createResponse.status,
+      createdDefinitionId,
+      createdDefinitionPublished,
+      executeStatus,
+      workflowInstanceId,
+      executionStatus,
+      executionSubStatus
+    };
+  }, { definitionId });
 }
 
 async function runFixture(command: "restore" | "revoke" | "unavailable") {

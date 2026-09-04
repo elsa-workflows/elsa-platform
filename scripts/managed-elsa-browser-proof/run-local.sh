@@ -15,7 +15,7 @@ fixture_database="$proof_root/catalog.db"
 control_pid=""
 console_pid=""
 
-immutable_runtime_image=${MANAGED_ELSA_PROOF_RUNTIME_IMAGE:-valenceruntimeimages.azurecr.io/runtime-combined@sha256:67f78a17e8e3e63ace78977e93e79bbb9466661d0e2ada526e74551c43b130f8}
+immutable_runtime_image=${MANAGED_ELSA_PROOF_RUNTIME_IMAGE:-valenceruntimeimages.azurecr.io/runtime-combined@sha256:f078521ca5395722fbc829bcaebfd62d924664db0e6947199444296b4aabb1cf}
 
 cleanup() {
   set +e
@@ -30,7 +30,9 @@ cleanup() {
     "${TMPDIR:-/tmp}"/elsa-managed-browser-proof.*) rm -rf "$proof_root" ;;
   esac
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -61,7 +63,7 @@ wait_for_url() {
   return 1
 }
 
-for command in curl docker dotnet lsof mkcert npm openssl; do
+for command in curl docker dotnet grep lsof mkcert npm openssl tee tr; do
   require_command "$command"
 done
 for port in 5173 5220 7094 7444 8080; do
@@ -69,29 +71,28 @@ for port in 5173 5220 7094 7444 8080; do
 done
 docker info >/dev/null
 
-baseline_database="$repo_root/src/Hosting/ElsaControl.Api/elsa-control-catalog-keycloak.db"
-if [[ ! -f "$baseline_database" ]]; then
-  echo "The isolated Keycloak catalog baseline is missing." >&2
-  exit 2
-fi
-
-cp "$baseline_database" "$fixture_database"
+fixture_project="$repo_root/src/Hosting/ElsaControl.ManagedBrowserProof/ElsaControl.ManagedBrowserProof.csproj"
+keycloak_issuer="http://127.0.0.1:8080/realms/elsa-control"
+keycloak_realm="$repo_root/dev/keycloak/elsa-control-realm.json"
+keycloak_username=${MANAGED_ELSA_PROOF_USERNAME:-ada}
+dotnet build "$fixture_project" >/dev/null
+dotnet run --no-build --project "$fixture_project" -- \
+  initialize "$fixture_database" "$keycloak_issuer" "$keycloak_realm" "$keycloak_username" >/dev/null
 mkcert -cert-file "$proof_root/tls.crt" -key-file "$proof_root/tls.key" runtime.localhost control.localhost localhost >/dev/null
 cp "$(mkcert -CAROOT)/rootCA.pem" "$proof_root/local-root-ca.crt"
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$proof_root/control-handoff-key.pem" 2>/dev/null
 chmod 600 "$proof_root/control-handoff-key.pem"
 
-dotnet build "$repo_root/src/Hosting/ElsaControl.ManagedBrowserProof/ElsaControl.ManagedBrowserProof.csproj" >/dev/null
-dotnet run --no-build --project "$repo_root/src/Hosting/ElsaControl.ManagedBrowserProof/ElsaControl.ManagedBrowserProof.csproj" -- \
+dotnet run --no-build --project "$fixture_project" -- \
   seed "$fixture_database" "$runtime_origin" >/dev/null
-dotnet run --no-build --project "$repo_root/src/Hosting/ElsaControl.ManagedBrowserProof/ElsaControl.ManagedBrowserProof.csproj" -- \
+dotnet run --no-build --project "$fixture_project" -- \
   seed "$fixture_database" "$runtime_origin" >/dev/null
-if dotnet run --no-build --project "$repo_root/src/Hosting/ElsaControl.ManagedBrowserProof/ElsaControl.ManagedBrowserProof.csproj" -- \
+if dotnet run --no-build --project "$fixture_project" -- \
   seed "$fixture_database" "https://conflict.localhost:7444" >/dev/null 2>&1; then
   echo "The fixture accepted a conflicting runtime origin." >&2
   exit 1
 fi
-dotnet run --no-build --project "$repo_root/src/Hosting/ElsaControl.ManagedBrowserProof/ElsaControl.ManagedBrowserProof.csproj" -- \
+dotnet run --no-build --project "$fixture_project" -- \
   seed "$fixture_database" "$runtime_origin" >/dev/null
 
 docker build --platform linux/amd64 \
@@ -155,7 +156,7 @@ wait_for_url "Managed runtime" "$runtime_origin/health" 90
 control_pid=$!
 wait_for_url "Elsa Control" "https://localhost:7094/health" 90
 
-npm --prefix "$repo_root/src/Hosting/ElsaControl.Console" ci >/dev/null
+npm --prefix "$repo_root/src/Hosting/ElsaControl.Console" ci --prefer-offline --no-audit --no-fund >/dev/null
 (
   export CATALOG_API_PROXY_TARGET=http://localhost:5220
   npm --prefix "$repo_root/src/Hosting/ElsaControl.Console" run dev -- --host 127.0.0.1
@@ -163,11 +164,48 @@ npm --prefix "$repo_root/src/Hosting/ElsaControl.Console" ci >/dev/null
 console_pid=$!
 wait_for_url "Elsa Control console" "http://localhost:5173/admin/"
 
-npm --prefix "$repo_root/tests/Hosting/ElsaControl.Console.E2E" ci >/dev/null
-MANAGED_ELSA_BROWSER_PROOF=1 \
-MANAGED_ELSA_PROOF_DATABASE="$fixture_database" \
-MANAGED_ELSA_PROOF_RUNTIME_ORIGIN="$runtime_origin/" \
-ADMIN_UI_BASE_URL=http://localhost:5173 \
-npm --prefix "$repo_root/tests/Hosting/ElsaControl.Console.E2E" run e2e -- managed-elsa-browser-proof.spec.ts --project=chromium --reporter=line
+npm --prefix "$repo_root/tests/Hosting/ElsaControl.Console.E2E" ci --prefer-offline --no-audit --no-fund >/dev/null
+playwright_list_output="$proof_root/playwright-list.log"
+if ! MANAGED_ELSA_BROWSER_PROOF=1 \
+  MANAGED_ELSA_PROOF_DATABASE="$fixture_database" \
+  MANAGED_ELSA_PROOF_RUNTIME_ORIGIN="$runtime_origin/" \
+  MANAGED_ELSA_PROOF_USERNAME="$keycloak_username" \
+  ADMIN_UI_BASE_URL=http://localhost:5173 \
+  FORCE_COLOR=0 \
+  npm --prefix "$repo_root/tests/Hosting/ElsaControl.Console.E2E" run e2e -- \
+    managed-elsa-browser-proof.spec.ts --project=chromium --list --reporter=line 2>&1 | tee "$playwright_list_output"; then
+  echo "Managed Elsa browser proof test discovery failed." >&2
+  exit 1
+fi
+
+expected_scenarios=$(tr -d '\r' <"$playwright_list_output" | grep -Eo 'Total: [0-9]+' | tr -cd '0-9' || true)
+if [[ "$expected_scenarios" != 4 ]]; then
+  echo "Managed Elsa browser proof must discover exactly 4 scenarios (found: ${expected_scenarios:-none})." >&2
+  exit 1
+fi
+
+playwright_output="$proof_root/playwright.log"
+if ! MANAGED_ELSA_BROWSER_PROOF=1 \
+  MANAGED_ELSA_PROOF_DATABASE="$fixture_database" \
+  MANAGED_ELSA_PROOF_RUNTIME_ORIGIN="$runtime_origin/" \
+  MANAGED_ELSA_PROOF_USERNAME="$keycloak_username" \
+  ADMIN_UI_BASE_URL=http://localhost:5173 \
+  FORCE_COLOR=0 \
+  npm --prefix "$repo_root/tests/Hosting/ElsaControl.Console.E2E" run e2e -- \
+    managed-elsa-browser-proof.spec.ts --project=chromium --reporter=line 2>&1 | tee "$playwright_output"; then
+  echo "Managed Elsa local browser proof failed." >&2
+  exit 1
+fi
+
+playwright_summary=$(tr -d '\r' <"$playwright_output")
+if printf '%s\n' "$playwright_summary" | grep -Eiq '([1-9][0-9]* (failed|flaky|skipped|interrupted)|did not run)'; then
+  echo "Managed Elsa local browser proof did not complete every discovered scenario." >&2
+  exit 1
+fi
+
+if ! printf '%s\n' "$playwright_summary" | grep -Eq "(^|[[:space:]])${expected_scenarios} passed([[:space:]]|$)"; then
+  echo "Managed Elsa local browser proof did not complete all $expected_scenarios scenarios." >&2
+  exit 1
+fi
 
 echo "Managed Elsa local browser proof passed."
