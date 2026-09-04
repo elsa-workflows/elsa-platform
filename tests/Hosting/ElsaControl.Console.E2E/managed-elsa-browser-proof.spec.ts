@@ -48,6 +48,7 @@ test.describe("managed Elsa browser proof", () => {
     expect(workflowProof.createdDefinitionId).toBe(workflowProof.definitionId);
     expect(workflowProof.createdDefinitionPublished).toBe(true);
     expect(workflowProof.executeStatus).toBe(200);
+    expect(workflowProof.workflowInstanceId).toMatch(/^[A-Za-z0-9._-]{1,256}$/);
     expect(workflowProof.executionStatus).toBe("Finished");
     expect(workflowProof.executionSubStatus).toBe("Finished");
 
@@ -136,6 +137,11 @@ function createAndExecuteBasicWorkflow(page: Page) {
   const definitionId = "managed-elsa-browser-proof-v1";
 
   return page.evaluate(async ({ definitionId }) => {
+    const knownWorkflowStatus = (value: unknown) => typeof value === "string" &&
+      ["Running", "Finished", "Faulted", "Cancelled", "Suspended"].includes(value)
+      ? value
+      : undefined;
+
     const createResponse = await fetch("/elsa/api/workflow-definitions", {
       method: "POST",
       credentials: "include",
@@ -197,6 +203,7 @@ function createAndExecuteBasicWorkflow(page: Page) {
     }
 
     let executeStatus: number | undefined;
+    let workflowInstanceId: string | undefined;
     let executionStatus: string | undefined;
     let executionSubStatus: string | undefined;
     if (createResponse.ok && createdDefinitionId === definitionId && createdDefinitionPublished === true) {
@@ -213,12 +220,32 @@ function createAndExecuteBasicWorkflow(page: Page) {
         });
       executeStatus = executeResponse.status;
 
-      if (executeResponse.ok) {
-        const response = await executeResponse.json() as {
-          workflowState?: { status?: string; subStatus?: string };
-        };
-        executionStatus = response.workflowState?.status;
-        executionSubStatus = response.workflowState?.subStatus;
+      const headerValue = executeResponse.headers.get("x-elsa-workflow-instance-id")?.trim();
+      if (executeResponse.ok && headerValue && /^[A-Za-z0-9._-]{1,256}$/.test(headerValue)) {
+        workflowInstanceId = headerValue;
+
+        const deadline = Date.now() + 30_000;
+        while (Date.now() < deadline) {
+          const instanceResponse = await fetch(
+            `/elsa/api/workflow-instances/${encodeURIComponent(workflowInstanceId)}`,
+            { credentials: "include" });
+          if (!instanceResponse.ok)
+            break;
+
+          const response = await instanceResponse.json() as {
+            status?: unknown;
+            subStatus?: unknown;
+            workflowState?: { status?: unknown; subStatus?: unknown };
+          };
+          const state = response.workflowState ?? response;
+          executionStatus = knownWorkflowStatus(response.status) ?? knownWorkflowStatus(state.status);
+          executionSubStatus = knownWorkflowStatus(response.subStatus) ?? knownWorkflowStatus(state.subStatus);
+          if (executionStatus === "Finished" ||
+            ["Faulted", "Cancelled", "Suspended"].includes(executionStatus ?? ""))
+            break;
+
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
       }
     }
 
@@ -228,6 +255,7 @@ function createAndExecuteBasicWorkflow(page: Page) {
       createdDefinitionId,
       createdDefinitionPublished,
       executeStatus,
+      workflowInstanceId,
       executionStatus,
       executionSubStatus
     };

@@ -13,6 +13,26 @@ if (args.Length < 2 || args[0] is not ("initialize" or "seed" or "revoke" or "re
     return Fail("Usage: ElsaControl.ManagedBrowserProof <initialize|seed|revoke|restore|unavailable> <arguments>.");
 
 var command = args[0];
+var runtimeOrigin = default(ElsaManagedEndpointOrigin);
+if (command == "initialize")
+{
+    if (args.Length != 5)
+        return Fail("Usage: ElsaControl.ManagedBrowserProof initialize <sqlite-db-path> <issuer> <realm-json-path> <username>.");
+    if (TryCreateFixtureIssuer(args[2]) is null)
+        return Fail("The fixture identity issuer is invalid.");
+    if (!File.Exists(Path.GetFullPath(args[3])))
+        return Fail("The fixture realm file does not exist.");
+    if (string.IsNullOrWhiteSpace(args[4]))
+        return Fail("The fixture realm username is required.");
+}
+else
+{
+    if (args.Length != 3)
+        return Fail("Usage: ElsaControl.ManagedBrowserProof <seed|revoke|restore|unavailable> <sqlite-db-path> <runtime-origin>.");
+    if (!ElsaManagedEndpointOrigin.TryCreate(args[2], out runtimeOrigin))
+        return Fail("The runtime origin must be an absolute HTTPS origin without credentials, path, query, or fragment.");
+}
+
 var databasePath = Path.GetFullPath(args[1]);
 if (command != "initialize" && !File.Exists(databasePath))
     return Fail("The fixture database does not exist.");
@@ -26,25 +46,21 @@ await database.Database.MigrateAsync();
 
 if (command == "initialize")
 {
-    if (args.Length != 5)
-        return Fail("Usage: ElsaControl.ManagedBrowserProof initialize <sqlite-db-path> <issuer> <realm-json-path> <username>.");
-
     var result = await InitializeAsync(database, args[2], args[3], args[4]);
+    if (result.Workspaces.Count != 1)
+        return Fail("The isolated proof database must contain exactly one workspace after initialization.");
+
+    var workspace = result.Workspaces[0];
     Console.WriteLine(JsonSerializer.Serialize(new
     {
         command,
-        organizationId = result.Workspaces.Single().OrganizationId,
-        workspaceId = result.Workspaces.Single().Id,
+        organizationId = workspace.OrganizationId,
+        workspaceId = workspace.Id,
         accountId = result.Account.Id,
         status = "succeeded"
     }));
     return 0;
 }
-
-if (args.Length != 3)
-    return Fail("Usage: ElsaControl.ManagedBrowserProof <seed|revoke|restore|unavailable> <sqlite-db-path> <runtime-origin>.");
-if (!ElsaManagedEndpointOrigin.TryCreate(args[2], out var runtimeOrigin))
-    return Fail("The runtime origin must be an absolute HTTPS origin without credentials, path, query, or fragment.");
 
 var workspaces = await database.Workspaces
     .AsNoTracking()
@@ -102,14 +118,8 @@ static async Task<AccountWorkspaceContext> InitializeAsync(
     string realmPath,
     string username)
 {
-    if (!Uri.TryCreate(issuer, UriKind.Absolute, out var issuerUri) ||
-        issuerUri.Scheme is not ("http" or "https") ||
-        !string.IsNullOrEmpty(issuerUri.UserInfo) ||
-        !string.IsNullOrEmpty(issuerUri.Query) ||
-        !string.IsNullOrEmpty(issuerUri.Fragment))
-    {
-        throw new InvalidOperationException("The fixture identity issuer is invalid.");
-    }
+    var issuerUri = TryCreateFixtureIssuer(issuer) ??
+                    throw new InvalidOperationException("The fixture identity issuer is invalid.");
 
     await using var realmStream = File.OpenRead(Path.GetFullPath(realmPath));
     var realmDocument = await JsonDocument.ParseAsync(realmStream);
@@ -139,6 +149,19 @@ static async Task<AccountWorkspaceContext> InitializeAsync(
             displayName,
             email));
     }
+}
+
+static Uri? TryCreateFixtureIssuer(string value)
+{
+    if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+        uri.Scheme is not ("http" or "https") ||
+        string.IsNullOrEmpty(uri.Host) ||
+        !string.IsNullOrEmpty(uri.UserInfo) ||
+        !string.IsNullOrEmpty(uri.Query) ||
+        !string.IsNullOrEmpty(uri.Fragment))
+        return null;
+
+    return uri;
 }
 
 static async Task SeedAsync(
