@@ -473,7 +473,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         if (currentValue is null)
             return;
 
-        if (!lifecycleTransition && currentState != expectedState ||
+        if (currentState != expectedState ||
             !lifecycleTransition && !allowFuture && currentValue.Value.ToUniversalTime() != currentCursor.ToUniversalTime() ||
             !lifecycleTransition && allowFuture && currentValue.Value.ToUniversalTime() < currentCursor.ToUniversalTime())
             throw new InvalidOperationException($"Subscription {propertyName} must match its lifecycle event.");

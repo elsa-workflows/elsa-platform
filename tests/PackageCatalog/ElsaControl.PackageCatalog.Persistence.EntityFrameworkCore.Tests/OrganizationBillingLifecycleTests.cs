@@ -175,6 +175,23 @@ public sealed class OrganizationBillingLifecycleTests
     }
 
     [Fact]
+    public async Task Provider_timeout_is_recorded_as_retryable_when_the_host_token_is_not_cancelled()
+    {
+        await using var fixture = await LifecycleFixture.CreateAsync();
+        await fixture.StartTrialAsync(fixture.OrganizationId, Start);
+        await fixture.Store.RequestDeletionAsync(fixture.OrganizationId, Start.AddDays(1));
+        var clock = new TestTimeProvider(Start.AddDays(1));
+        var worker = new OrganizationBillingLifecycleWorker(fixture.Store, clock, new TimeoutCleanupProvider());
+
+        var result = await worker.ProcessAvailableAsync("worker");
+
+        Assert.Equal(1, result.CleanupAttempts);
+        var cleanup = await fixture.Db.OrganizationBillingCleanups.SingleAsync();
+        Assert.Equal(OrganizationBillingCleanupState.Queued, cleanup.State);
+        Assert.Equal("cleanup.provider-unavailable", cleanup.LastFailureCode);
+    }
+
+    [Fact]
     public async Task Provider_event_backfills_references_while_cleanup_is_leased_and_retry_preserves_them()
     {
         await using var fixture = await LifecycleFixture.CreateAsync();
@@ -281,6 +298,19 @@ public sealed class OrganizationBillingLifecycleTests
         Assert.Equal("Subscription lifecycle version can only advance with a state transition.", error.Message);
     }
 
+    [Fact]
+    public async Task Lifecycle_transition_cannot_bind_a_timestamp_for_an_unrelated_state()
+    {
+        await using var fixture = await LifecycleFixture.CreateAsync();
+        var subscription = await fixture.StartTrialAsync(fixture.OrganizationId, Start);
+        OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.PastDue, Start.AddDays(14), advanceLifecycleVersion: true);
+        subscription.ActivatedAt = Start.AddDays(14);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Db.SaveChangesAsync());
+
+        Assert.Equal("Subscription ActivatedAt must match its lifecycle event.", error.Message);
+    }
+
     private sealed class LifecycleFixture(SqliteConnection connection, CatalogDbContext db) : IAsyncDisposable
     {
         public Guid OrganizationId { get; } = Guid.NewGuid();
@@ -347,5 +377,13 @@ public sealed class OrganizationBillingLifecycleTests
             Requests.Add(request);
             return Task.FromResult(_outcomes.Dequeue());
         }
+    }
+
+    private sealed class TimeoutCleanupProvider : IOrganizationBillingCleanupProvider
+    {
+        public string Provider => "stripe";
+
+        public Task<OrganizationBillingCleanupOutcome> CleanupAsync(OrganizationBillingCleanupRequest request, CancellationToken cancellationToken = default) =>
+            throw new OperationCanceledException("provider timeout");
     }
 }

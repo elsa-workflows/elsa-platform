@@ -53,7 +53,7 @@ public sealed class OrganizationBillingLifecycleWorker(
                         cancellationToken);
                     failureCode = outcome == OrganizationBillingCleanupOutcome.ConfirmedAbsent ? null : "cleanup.provider-unavailable";
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
                     throw;
                 }
