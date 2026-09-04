@@ -13,6 +13,30 @@ public static class OrganizationBillingEndpoints
         var group = endpoints.MapGroup("/api/organizations/{organizationId:guid}/billing")
             .WithTags("Organization Billing");
 
+        group.MapGet("/", async (
+            Guid organizationId,
+            HttpContext context,
+            IWorkspaceIdentityReader identityReader,
+            OrganizationBillingApiService billing,
+            CancellationToken cancellationToken) =>
+        {
+            var identity = await identityReader.ReadAsync(context);
+            if (identity is null)
+                return WorkspaceIdentityHttpContextExtensions.UnauthorizedWorkspaceIdentity();
+
+            var result = await billing.GetStatusAsync(identity, organizationId, cancellationToken);
+            if (result.Succeeded)
+            {
+                context.Response.Headers.CacheControl = "private, no-store";
+                context.Response.Headers.Pragma = "no-cache";
+                return Results.Ok(result.Status);
+            }
+
+            return result.Failure is OrganizationWorkspaceFailure.OrganizationNotAllowed
+                ? Results.NotFound(new { code = "organization.not-found" })
+                : Results.Forbid();
+        });
+
         group.MapPost("/checkout", async (
             Guid organizationId,
             HttpContext context,
@@ -148,3 +172,97 @@ public static class OrganizationBillingEndpoints
 }
 
 public sealed record OrganizationBillingSessionResponse(string Url);
+
+public sealed record OrganizationBillingStatusResponse(
+    Guid OrganizationId,
+    OrganizationBillingSubscriptionResponse? Subscription,
+    OrganizationBillingEntitlementResponse? Entitlements,
+    OrganizationBillingCapacityResponse Capacity,
+    IReadOnlyList<string> Capabilities)
+{
+    public static OrganizationBillingStatusResponse From(
+        Guid organizationId,
+        OrganizationSubscription? subscription,
+        OrganizationEntitlementSnapshot? entitlement,
+        int activeWorkspaces,
+        int activeManagedInstances) =>
+        new(
+            organizationId,
+            subscription is null ? null : new OrganizationBillingSubscriptionResponse(
+                subscription.State.ToString(),
+                subscription.TrialStartedAt,
+                subscription.TrialEndsAt,
+                subscription.ActivatedAt,
+                subscription.PastDueAt,
+                subscription.ConstrainedAt,
+                subscription.SuspendedAt,
+                subscription.RetainedAt,
+                subscription.DeletedAt,
+                subscription.UpdatedAt),
+            entitlement is null ? null : new OrganizationBillingEntitlementResponse(
+                entitlement.CanCreateCustomSources,
+                entitlement.MaxSources,
+                entitlement.MaxWorkspaces,
+                entitlement.MaxInstances,
+                entitlement.MaxPackagesIndexed,
+                entitlement.MaxVersionsPerPackage,
+                entitlement.MaxSyncsPerDay,
+                entitlement.PrivateFeedsEnabled,
+                entitlement.ManagedHostingEnabled,
+                entitlement.DeploymentTargetsEnabled,
+                entitlement.SyncedAt),
+            new OrganizationBillingCapacityResponse(
+                activeManagedInstances,
+                entitlement?.MaxInstances,
+                activeWorkspaces,
+                entitlement?.MaxWorkspaces),
+            CapabilitiesFor(entitlement));
+
+    private static IReadOnlyList<string> CapabilitiesFor(OrganizationEntitlementSnapshot? entitlement)
+    {
+        if (entitlement is null)
+            return [];
+
+        var capabilities = new List<string>(4);
+        if (entitlement.ManagedHostingEnabled)
+            capabilities.Add("managed-hosting");
+        if (entitlement.DeploymentTargetsEnabled)
+            capabilities.Add("deployment-targets");
+        if (entitlement.CanCreateCustomSources)
+            capabilities.Add("custom-sources");
+        if (entitlement.PrivateFeedsEnabled)
+            capabilities.Add("private-feeds");
+        return capabilities;
+    }
+}
+
+public sealed record OrganizationBillingSubscriptionResponse(
+    string State,
+    DateTimeOffset TrialStartedAt,
+    DateTimeOffset TrialEndsAt,
+    DateTimeOffset? ActivatedAt,
+    DateTimeOffset? PastDueAt,
+    DateTimeOffset? ConstrainedAt,
+    DateTimeOffset? SuspendedAt,
+    DateTimeOffset? RetainedAt,
+    DateTimeOffset? DeletedAt,
+    DateTimeOffset UpdatedAt);
+
+public sealed record OrganizationBillingEntitlementResponse(
+    bool CanCreateCustomSources,
+    int MaxSources,
+    int MaxWorkspaces,
+    int MaxInstances,
+    int? MaxPackagesIndexed,
+    int? MaxVersionsPerPackage,
+    int? MaxSyncsPerDay,
+    bool PrivateFeedsEnabled,
+    bool ManagedHostingEnabled,
+    bool DeploymentTargetsEnabled,
+    DateTimeOffset SyncedAt);
+
+public sealed record OrganizationBillingCapacityResponse(
+    int ManagedInstancesUsed,
+    int? ManagedInstancesLimit,
+    int WorkspacesUsed,
+    int? WorkspacesLimit);

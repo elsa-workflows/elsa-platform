@@ -131,6 +131,15 @@ public sealed class AccountWorkspaceService
         return new WorkspaceAccess(existing.Context.Account.Id, workspace.Id, workspace.Role, workspace.OrganizationId, workspace.OrganizationRole);
     }
 
+    public Task<OrganizationEntitlementSnapshot?> GetLatestOrganizationEntitlementAsync(Guid organizationId, CancellationToken cancellationToken = default) =>
+        _store.GetLatestOrganizationEntitlementAsync(organizationId, cancellationToken);
+
+    public Task<int> ActiveWorkspaceCountAsync(Guid organizationId, CancellationToken cancellationToken = default) =>
+        _store.ActiveWorkspaceCountAsync(organizationId, cancellationToken);
+
+    public Task<int> ActiveManagedInstanceCountAsync(Guid organizationId, CancellationToken cancellationToken = default) =>
+        _store.ActiveManagedInstanceCountAsync(organizationId, cancellationToken);
+
     public async Task<OrganizationWorkspaceListResult> ListOrganizationWorkspacesAsync(TrustedWorkspaceIdentity identity, Guid organizationId, CancellationToken cancellationToken = default)
     {
         var accountContext = await GetOrCreateAsync(identity, cancellationToken);
@@ -264,6 +273,7 @@ public interface IAccountWorkspaceStore
     Task<bool> WorkspaceExistsAsync(Guid workspaceId, CancellationToken cancellationToken = default);
     Task<OrganizationEntitlementSnapshot?> GetLatestOrganizationEntitlementAsync(Guid organizationId, CancellationToken cancellationToken = default);
     Task<int> ActiveWorkspaceCountAsync(Guid organizationId, CancellationToken cancellationToken = default);
+    Task<int> ActiveManagedInstanceCountAsync(Guid organizationId, CancellationToken cancellationToken = default);
     Task<bool> OrganizationWorkspaceNameExistsAsync(Guid organizationId, string name, Guid? excludingWorkspaceId, CancellationToken cancellationToken = default);
     Task<bool> WorkspaceBelongsToOrganizationAsync(Guid organizationId, Guid workspaceId, CancellationToken cancellationToken = default);
     Task<bool> OrganizationAccountMembershipExistsAsync(Guid organizationId, Guid accountId, CancellationToken cancellationToken = default);
@@ -338,6 +348,7 @@ public enum WorkspaceLifecycleStatus
 
 public enum OrganizationOperation
 {
+    ViewOrganization,
     CreateWorkspace,
     ManageWorkspaces,
     ManageWorkspaceMembers,
@@ -399,6 +410,7 @@ public static class OrganizationRolePolicy
     public static bool Allows(OrganizationRole role, OrganizationOperation operation) =>
         operation switch
         {
+            OrganizationOperation.ViewOrganization => true,
             OrganizationOperation.CreateWorkspace => role is OrganizationRole.Owner or OrganizationRole.Administrator or OrganizationRole.WorkspaceCreator,
             OrganizationOperation.ManageWorkspaces => role is OrganizationRole.Owner or OrganizationRole.Administrator,
             OrganizationOperation.ManageWorkspaceMembers => role is OrganizationRole.Owner or OrganizationRole.Administrator,

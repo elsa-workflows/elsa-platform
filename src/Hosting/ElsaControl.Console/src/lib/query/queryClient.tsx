@@ -64,6 +64,7 @@ export const queryKeys = {
   managedElsaInstances: (workspaceId: string) => ["managed-elsa", workspaceId, "instances"] as const,
   managedElsaInstanceHealth: (workspaceId: string, instanceId: string) => ["managed-elsa", workspaceId, "instances", instanceId, "health"] as const,
   managedElsaInstanceAudit: (workspaceId: string, instanceId: string) => ["managed-elsa", workspaceId, "instances", instanceId, "audit"] as const,
+  organizationBilling: (organizationId: string) => ["organization-billing", organizationId] as const,
   weaverConfiguration: (workspaceId: string) => ["weaver", workspaceId, "configuration"] as const,
   weaverSession: (workspaceId: string, sessionId: string) => ["weaver", workspaceId, "sessions", sessionId] as const
 };

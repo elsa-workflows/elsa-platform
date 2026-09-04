@@ -12,6 +12,29 @@ public sealed class OrganizationBillingApiService(
 {
     private readonly StripeBillingOptions _stripeOptions = stripeOptions.Value;
 
+    public async Task<OrganizationBillingStatusApiResult> GetStatusAsync(
+        TrustedWorkspaceIdentity identity,
+        Guid organizationId,
+        CancellationToken cancellationToken)
+    {
+        var access = await accounts.GetOrganizationAccessAsync(identity, organizationId, OrganizationOperation.ViewOrganization, cancellationToken);
+        if (!access.Succeeded)
+            return OrganizationBillingStatusApiResult.Denied(access.Failure!.Value);
+
+        var entitlement = await accounts.GetLatestOrganizationEntitlementAsync(organizationId, cancellationToken);
+        var subscription = await billing.GetSubscriptionAsync(organizationId, cancellationToken);
+        var activeWorkspaces = await accounts.ActiveWorkspaceCountAsync(organizationId, cancellationToken);
+        var activeManagedInstances = await accounts.ActiveManagedInstanceCountAsync(organizationId, cancellationToken);
+
+        return OrganizationBillingStatusApiResult.Success(
+            OrganizationBillingStatusResponse.From(
+                organizationId,
+                subscription,
+                entitlement,
+                activeWorkspaces,
+                activeManagedInstances));
+    }
+
     public async Task<OrganizationBillingApiResult> CreateCheckoutAsync(
         TrustedWorkspaceIdentity identity,
         Guid organizationId,
@@ -101,4 +124,14 @@ public sealed record OrganizationBillingApiResult(
     public static OrganizationBillingApiResult Denied(OrganizationWorkspaceFailure failure) => new(null, failure, false, false);
     public static OrganizationBillingApiResult Unavailable() => new(null, null, true, false);
     public static OrganizationBillingApiResult CustomerUnavailable() => new(null, null, false, true);
+}
+
+public sealed record OrganizationBillingStatusApiResult(
+    OrganizationBillingStatusResponse? Status,
+    OrganizationWorkspaceFailure? Failure)
+{
+    public bool Succeeded => Status is not null && Failure is null;
+
+    public static OrganizationBillingStatusApiResult Success(OrganizationBillingStatusResponse status) => new(status, null);
+    public static OrganizationBillingStatusApiResult Denied(OrganizationWorkspaceFailure failure) => new(null, failure);
 }
