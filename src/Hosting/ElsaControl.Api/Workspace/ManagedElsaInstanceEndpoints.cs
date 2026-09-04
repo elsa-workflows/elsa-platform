@@ -67,9 +67,17 @@ public static class ManagedElsaInstanceEndpoints
 
         group.MapGet("/onboarding-options", async (
             Guid workspaceId,
+            HttpContext context,
+            IElsaInstanceCommercialGate commercialGate,
             IGovernedReleaseCatalogStore catalog,
             CancellationToken cancellationToken) =>
         {
+            var access = context.GetWorkspaceAccess();
+            var commercialDecision = await commercialGate.EvaluateAsync(
+                access.OrganizationId, ElsaInstanceOperationAction.Create, cancellationToken: cancellationToken);
+            if (!commercialDecision.Allowed)
+                return Problem(commercialDecision.Code, commercialDecision.Summary, StatusCodes.Status422UnprocessableEntity);
+
             // Match the lifecycle resolver's fail-closed eligibility boundary so
             // every option shown here can be resolved when the customer submits it.
             var entries = await catalog.QueryAsync(new GovernedReleaseCatalogQuery(

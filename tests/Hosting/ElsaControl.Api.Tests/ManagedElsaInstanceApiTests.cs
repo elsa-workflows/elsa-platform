@@ -55,6 +55,25 @@ public sealed class ManagedElsaInstanceApiTests : IClassFixture<ManagedElsaInsta
     }
 
     [Fact]
+    public async Task Onboarding_options_are_not_advertised_when_commercial_admission_is_constrained()
+    {
+        var app = await PrepareApplicationAsync([], [
+            CatalogEntry("future-runtime", "5.0", "5.0.1", "stable", "combined", "supported", "paid")
+        ]);
+        var client = app.CreateControlIdentityClient(subject: "managed-constrained-owner");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, workspaceId);
+        await SetSubscriptionStateAsync(app, workspaceId, OrganizationSubscriptionState.Constrained);
+
+        var response = await client.GetAsync($"/api/workspaces/{workspaceId}/instances/onboarding-options");
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Contains(ElsaInstanceCommercialOperation.LifecycleConstrained,
+            await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Null(_fixture.ReleaseCatalog.Query);
+    }
+
+    [Fact]
     public async Task Create_rejects_a_release_outside_the_eligible_catalog()
     {
         var app = await PrepareApplicationAsync([]);

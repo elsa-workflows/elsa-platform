@@ -26,7 +26,7 @@ public sealed class EfCoreElsaInstanceCommercialGate(CatalogDbContext db) : IEls
             return ElsaInstanceCommercialGateDecision.Allow();
 
         var entitlement = await db.OrganizationEntitlementSnapshots
-            .AsTracking()
+            .AsNoTracking()
             .SingleOrDefaultAsync(x => x.OrganizationId == organizationId, cancellationToken);
         if (entitlement is null || !entitlement.ManagedHostingEnabled)
             return Deny(ElsaInstanceCommercialOperation.EntitlementRequired, "Managed hosting is not enabled for this organization.");
