@@ -42,7 +42,10 @@ public sealed class AzureElsaInstanceProvider(
                 IdempotencyKey(request.OperationId),
                 _options.TemplateFingerprint,
                 translation.Plan!,
-                _options.ProviderScopeFingerprint);
+                _options.ProviderScopeFingerprint,
+                request.OrganizationId,
+                request.InstanceId,
+                request.OperationAction);
         }
         catch (ElsaInstanceProviderSubmissionException)
         {
@@ -103,6 +106,7 @@ public sealed class AzureElsaInstanceProvider(
             !string.Equals(operation.TargetKey, WorkloadName(request.InstanceId), StringComparison.OrdinalIgnoreCase) ||
             operation.Action != AzureProviderOperationAction.Reconcile ||
             !string.Equals(operation.IdempotencyKey, IdempotencyKey(request.OperationId), StringComparison.Ordinal) ||
+            operation.InstanceId is { } boundInstanceId && boundInstanceId != request.InstanceId ||
             !string.Equals(operation.ProviderScopeFingerprint, NormalizeScope(_options.ProviderScopeFingerprint), StringComparison.Ordinal))
             return CorrelationMismatch(request);
 

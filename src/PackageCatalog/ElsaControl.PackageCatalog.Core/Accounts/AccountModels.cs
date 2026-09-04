@@ -108,6 +108,8 @@ public sealed class OrganizationEntitlementSnapshot
     public bool CanCreateCustomSources { get; set; }
     public int MaxSources { get; set; }
     public int MaxWorkspaces { get; set; }
+    /// <summary>Maximum number of retained managed instances for this organization.</summary>
+    public int MaxInstances { get; set; } = int.MaxValue;
     public int? MaxPackagesIndexed { get; set; }
     public int? MaxVersionsPerPackage { get; set; }
     public int? MaxSyncsPerDay { get; set; }

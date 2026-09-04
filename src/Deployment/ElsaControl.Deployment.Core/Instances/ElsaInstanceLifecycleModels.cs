@@ -99,6 +99,9 @@ public enum ElsaInstanceLifecycleConflictReason
     /// <summary>The requested slug is already reserved by another instance in the workspace.</summary>
     SlugConflict,
 
+    /// <summary>The organization commercial projection does not permit this mutation.</summary>
+    CommercialDenied,
+
     /// <summary>Any other invariant violation that does not fit the categories above.</summary>
     InvalidState,
 }
@@ -110,11 +113,16 @@ public enum ElsaInstanceLifecycleConflictReason
 /// </summary>
 public sealed class ElsaInstanceLifecycleConflictException : InvalidOperationException
 {
-    public ElsaInstanceLifecycleConflictException(string message, ElsaInstanceLifecycleConflictReason reason = ElsaInstanceLifecycleConflictReason.InvalidState)
+    public ElsaInstanceLifecycleConflictException(
+        string message,
+        ElsaInstanceLifecycleConflictReason reason = ElsaInstanceLifecycleConflictReason.InvalidState,
+        string? commercialCode = null)
         : base(message)
     {
         Reason = reason;
+        CommercialCode = commercialCode;
     }
 
     public ElsaInstanceLifecycleConflictReason Reason { get; }
+    public string? CommercialCode { get; }
 }

@@ -15,6 +15,21 @@ public sealed class ElsaInstanceLifecycleWorkerTests
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-08-30T10:00:00Z");
 
     [Fact]
+    public void Provider_submission_requires_a_non_empty_organization_binding()
+    {
+        var submission = new ElsaInstanceProviderSubmission(
+            WorkspaceId,
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            1,
+            ElsaDesiredLifecycle.Running,
+            null!,
+            null!);
+
+        Assert.Throws<InvalidOperationException>(() => submission.Validate());
+    }
+
+    [Fact]
     public async Task Resolves_accepted_work_and_commits_one_queued_run_atomically()
     {
         var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));

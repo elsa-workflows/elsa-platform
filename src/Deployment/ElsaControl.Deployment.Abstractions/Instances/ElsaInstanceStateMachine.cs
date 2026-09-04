@@ -20,6 +20,8 @@ public enum ElsaInstanceOperationState
     Accepted,
     WaitingForPriorOperation,
     Queued,
+    /// <summary>Provider work held until organization entitlement is restored.</summary>
+    EntitlementHeld,
     Running,
     Succeeded,
     Failed,
@@ -217,6 +219,10 @@ public sealed record ElsaInstanceOperation
             (ElsaInstanceOperationState.WaitingForPriorOperation, ElsaInstanceOperationState.Failed) => true,
             (ElsaInstanceOperationState.WaitingForPriorOperation, ElsaInstanceOperationState.Cancelled) => true,
             (ElsaInstanceOperationState.Queued, ElsaInstanceOperationState.Running) => true,
+            (ElsaInstanceOperationState.Queued, ElsaInstanceOperationState.EntitlementHeld) => true,
+            (ElsaInstanceOperationState.EntitlementHeld, ElsaInstanceOperationState.Queued) => true,
+            (ElsaInstanceOperationState.EntitlementHeld, ElsaInstanceOperationState.Cancelled) => true,
+            (ElsaInstanceOperationState.EntitlementHeld, ElsaInstanceOperationState.Failed) => true,
             (ElsaInstanceOperationState.Queued, ElsaInstanceOperationState.Failed) => true,
             (ElsaInstanceOperationState.Queued, ElsaInstanceOperationState.Cancelled) => true,
             (ElsaInstanceOperationState.Queued, ElsaInstanceOperationState.RecoveryRequired) => true,
@@ -245,6 +251,7 @@ public static class ElsaInstanceOperationGuard
         return state is
             ElsaInstanceOperationState.Accepted or
             ElsaInstanceOperationState.Queued or
+            ElsaInstanceOperationState.EntitlementHeld or
             ElsaInstanceOperationState.Running or
             ElsaInstanceOperationState.RecoveryRequired;
     }
@@ -261,6 +268,7 @@ public static class ElsaInstanceOperationGuard
             ElsaInstanceOperationState.Accepted or
             ElsaInstanceOperationState.WaitingForPriorOperation or
             ElsaInstanceOperationState.Queued or
+            ElsaInstanceOperationState.EntitlementHeld or
             ElsaInstanceOperationState.Running or
             ElsaInstanceOperationState.RecoveryRequired;
     }

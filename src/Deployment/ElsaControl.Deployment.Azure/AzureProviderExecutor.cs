@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using ElsaControl.Deployment.Abstractions.Instances;
+using ElsaControl.Deployment.Core.Instances;
 
 namespace ElsaControl.Deployment.Azure;
 
@@ -16,6 +18,7 @@ public sealed class AzureProviderExecutor
     private readonly TimeSpan _leaseDuration;
     private readonly TimeSpan _heartbeatInterval;
     private readonly string _workerId;
+    private readonly IElsaInstanceCommercialGate? _commercialGate;
 
     public AzureProviderExecutor(
         IAzureProviderOperationStore store,
@@ -23,7 +26,8 @@ public sealed class AzureProviderExecutor
         TimeProvider? timeProvider = null,
         TimeSpan? leaseDuration = null,
         string? workerId = null,
-        TimeSpan? heartbeatInterval = null)
+        TimeSpan? heartbeatInterval = null,
+        IElsaInstanceCommercialGate? commercialGate = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _runner = runner ?? throw new ArgumentNullException(nameof(runner));
@@ -36,6 +40,7 @@ public sealed class AzureProviderExecutor
             throw new ArgumentOutOfRangeException(nameof(heartbeatInterval), "The heartbeat interval must be positive and shorter than the lease.");
         _workerId = workerId ?? $"azure-executor-{Guid.NewGuid():N}";
         AzureProviderOperationValidation.ValidateWorkerId(_workerId);
+        _commercialGate = commercialGate;
     }
 
     /// <summary>
@@ -172,6 +177,13 @@ public sealed class AzureProviderExecutor
                 if (cancellationToken.IsCancellationRequested)
                     return await MarkRecoveryAsync(operation, leaseToken, "azure.step.cancelled", "The Azure lifecycle step was cancelled before the next remote mutation.");
 
+                // This is the last authorization check before the remote runner
+                // call. If entitlement was downgraded before this CAS, the
+                // operation is held for retry and no provider mutation occurs.
+                var entitlementResult = await RevalidateCommercialAsync(operation, leaseToken, cancellationToken);
+                if (entitlementResult is not null)
+                    return entitlementResult;
+
                 var command = new AzureProviderRunnerCommand(
                     step,
                     plan,
@@ -293,6 +305,86 @@ public sealed class AzureProviderExecutor
                     return await MarkRecoveryAsync(operation, leaseToken, "azure.step.cancelled", "The Azure lifecycle step completed but the operation was cancelled before the next remote mutation.");
             }
         }
+    }
+
+    private async Task<AzureProviderExecutionResult?> RevalidateCommercialAsync(
+        AzureProviderOperation operation,
+        string leaseToken,
+        CancellationToken cancellationToken)
+    {
+        if (operation.Action == AzureProviderOperationAction.Delete)
+            return null;
+
+        if (operation.OrganizationId is not { } organizationId || organizationId == Guid.Empty ||
+            operation.InstanceId is not { } instanceId || instanceId == Guid.Empty ||
+            operation.LifecycleAction is not { } lifecycleAction)
+        {
+            var bindingHeld = await _store.FinalizeAsync(
+                operation.WorkspaceId,
+                operation.Id,
+                leaseToken,
+                AzureProviderOperationStatus.EntitlementHeld,
+                ElsaInstanceCommercialOperation.BindingRequired,
+                _timeProvider.GetUtcNow(),
+                operation.Version,
+                cancellationToken);
+            return Result(
+                bindingHeld ?? operation,
+                AzureProviderExecutionOutcome.InProgress,
+                ElsaInstanceCommercialOperation.BindingRequired,
+                "The managed-instance provider operation is missing its durable identity binding.");
+        }
+
+        if (_commercialGate is null)
+            return null;
+
+        // The catalog-backed store owns the durable linearization point. It evaluates the
+        // current entitlement while holding the operation transaction and, when denied, clears
+        // this lease in the same CAS that records EntitlementHeld. A downgrade committed before
+        // this boundary therefore cannot race into the provider runner.
+        if (_store is IAzureProviderOperationAuthorizationStore authorizationStore)
+        {
+            var authorization = await authorizationStore.AuthorizeAsync(
+                operation.WorkspaceId,
+                operation.Id,
+                leaseToken,
+                _commercialGate,
+                _timeProvider.GetUtcNow(),
+                operation.Version,
+                cancellationToken);
+            if (authorization is null)
+                return await GetConcurrentResultAsync(operation);
+            if (authorization.Decision.Allowed)
+                return null;
+
+            return Result(
+                authorization.Operation,
+                AzureProviderExecutionOutcome.InProgress,
+                authorization.Decision.Code,
+                authorization.Decision.Summary);
+        }
+
+        var decision = await _commercialGate.EvaluateAsync(
+            organizationId,
+            lifecycleAction,
+            cancellationToken: cancellationToken);
+        if (decision.Allowed)
+            return null;
+
+        var fallbackHeld = await _store.FinalizeAsync(
+            operation.WorkspaceId,
+            operation.Id,
+            leaseToken,
+            AzureProviderOperationStatus.EntitlementHeld,
+            decision.Code,
+            _timeProvider.GetUtcNow(),
+            operation.Version,
+            cancellationToken);
+        return Result(
+            fallbackHeld ?? operation,
+            AzureProviderExecutionOutcome.InProgress,
+            decision.Code,
+            decision.Summary);
     }
 
     private async Task<AzureProviderExecutionResult> ExecuteDeleteAsync(

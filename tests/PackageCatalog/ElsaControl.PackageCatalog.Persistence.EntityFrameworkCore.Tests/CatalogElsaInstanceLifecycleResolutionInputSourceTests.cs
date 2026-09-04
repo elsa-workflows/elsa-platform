@@ -49,6 +49,16 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSourceTests : IAs
         };
         _db.Organizations.Add(organization);
         _db.Workspaces.Add(_workspace);
+        _db.OrganizationEntitlementSnapshots.Add(new OrganizationEntitlementSnapshot
+        {
+            OrganizationId = organization.Id,
+            ManagedHostingEnabled = true,
+            SubscriptionState = OrganizationSubscriptionState.Active,
+            MaxInstances = int.MaxValue,
+            SyncedAt = DateTimeOffset.UtcNow,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        });
         await _db.SaveChangesAsync();
 
         var store = new EfCoreElsaInstanceLifecycleStore(_db, EmptyResolutionInputSource.Instance);
@@ -237,7 +247,9 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSourceTests : IAs
             ElsaDesiredLifecycle.Running,
             resolved.Plan!,
             input.DeploymentTarget,
-            "westeurope"));
+            "westeurope",
+            _accepted.Instance.OrganizationId,
+            ElsaInstanceOperationAction.Reconcile));
 
         var persisted = await _db.AzureProviderOperations.AsNoTracking().SingleAsync();
         Assert.False(submission.Replayed);

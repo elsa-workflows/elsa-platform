@@ -260,7 +260,9 @@ public sealed class InMemoryElsaInstanceLifecycleStore(
                                 instance.DesiredLifecycle,
                                 typedPlan,
                                 target,
-                                instance.PlacementIntent.RegionCode);
+                                instance.PlacementIntent.RegionCode,
+                                instance.OrganizationId,
+                                operation.Action);
                             candidate.Validate();
                             submission = candidate;
                         }

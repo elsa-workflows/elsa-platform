@@ -1,14 +1,18 @@
 using System.Collections.ObjectModel;
+using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ElsaControl.Deployment.Azure;
+using ElsaControl.Deployment.Core.Instances;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 
-public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzureProviderOperationStore
+public sealed class AzureProviderOperationStore(CatalogDbContext db) :
+    IAzureProviderOperationStore,
+    IAzureProviderOperationAuthorizationStore
 {
     private static readonly IReadOnlyDictionary<string, string> EmptySecretReferences =
         new ReadOnlyDictionary<string, string>(
@@ -32,7 +36,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         var identityEntity = await db.AzureProviderOperations.AsNoTracking()
             .Where(x => x.WorkspaceId == normalized.WorkspaceId && x.TargetKey == normalized.TargetKey &&
                         x.OperationIdentity == identity &&
-                        (x.Status == AzureProviderOperationStatus.Accepted || x.Status == AzureProviderOperationStatus.Queued ||
+                        (x.Status == AzureProviderOperationStatus.Accepted || x.Status == AzureProviderOperationStatus.Queued || x.Status == AzureProviderOperationStatus.EntitlementHeld ||
                          x.Status == AzureProviderOperationStatus.Running || x.Status == AzureProviderOperationStatus.RecoveryRequired))
             .SingleOrDefaultAsync(cancellationToken);
         existing ??= identityEntity is null ? null : ToModel(identityEntity);
@@ -52,6 +56,9 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         {
             Id = Guid.NewGuid(),
             WorkspaceId = normalized.WorkspaceId,
+            OrganizationId = normalized.OrganizationId,
+            InstanceId = normalized.InstanceId,
+            LifecycleAction = normalized.LifecycleAction,
             TargetKey = normalized.TargetKey,
             Action = normalized.Action,
             IdempotencyKey = normalized.IdempotencyKey,
@@ -123,7 +130,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             existing = await FindByKeyAsync(normalized, cancellationToken);
             identityEntity = await db.AzureProviderOperations.AsNoTracking()
                 .Where(x => x.WorkspaceId == normalized.WorkspaceId && x.TargetKey == normalized.TargetKey && x.OperationIdentity == identity &&
-                            (x.Status == AzureProviderOperationStatus.Accepted || x.Status == AzureProviderOperationStatus.Queued ||
+                            (x.Status == AzureProviderOperationStatus.Accepted || x.Status == AzureProviderOperationStatus.Queued || x.Status == AzureProviderOperationStatus.EntitlementHeld ||
                              x.Status == AzureProviderOperationStatus.Running || x.Status == AzureProviderOperationStatus.RecoveryRequired))
                 .SingleOrDefaultAsync(cancellationToken);
             existing ??= identityEntity is null ? null : ToModel(identityEntity);
@@ -149,7 +156,8 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
 
         var operations = await db.AzureProviderOperations.AsNoTracking()
             .Where(x => (x.Status == AzureProviderOperationStatus.Accepted ||
-                         x.Status == AzureProviderOperationStatus.Queued) &&
+                         x.Status == AzureProviderOperationStatus.Queued ||
+                         x.Status == AzureProviderOperationStatus.EntitlementHeld) &&
                         x.CompletedAt == null &&
                         (x.LeaseExpiresAt == null || x.LeaseExpiresAt <= now))
             .OrderBy(x => x.UpdatedAt)
@@ -219,8 +227,8 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var changed = await db.AzureProviderOperations
             .Where(x => x.WorkspaceId == workspaceId && x.Id == operationId &&
-                        (x.Status == AzureProviderOperationStatus.Accepted ||
-                         x.Status == AzureProviderOperationStatus.Queued ||
+                         (x.Status == AzureProviderOperationStatus.Accepted ||
+                          x.Status == AzureProviderOperationStatus.Queued || x.Status == AzureProviderOperationStatus.EntitlementHeld ||
                          x.Status == AzureProviderOperationStatus.RecoveryRequired) &&
                         (!expectedVersion.HasValue || x.Version == expectedVersion.Value))
             .ExecuteUpdateAsync(setters => setters
@@ -260,6 +268,67 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
     public Task<AzureProviderOperation?> ClaimRecoveryAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) =>
         ClaimCoreAsync(workspaceId, operationId, workerId, leaseToken, leaseDuration, now, expectedVersion, allowRecovery: true, cancellationToken);
 
+    public async Task<AzureProviderOperationAuthorizationResult?> AuthorizeAsync(
+        Guid workspaceId,
+        Guid operationId,
+        string leaseToken,
+        IElsaInstanceCommercialGate commercialGate,
+        DateTimeOffset now,
+        long? expectedVersion = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (workspaceId == Guid.Empty || operationId == Guid.Empty)
+            throw new ArgumentException("A complete provider operation identity is required.");
+        AzureProviderOperationValidation.ValidateLeaseToken(leaseToken);
+        ArgumentNullException.ThrowIfNull(commercialGate);
+
+        db.ChangeTracker.Clear();
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable, cancellationToken);
+        var entity = await db.AzureProviderOperations.SingleOrDefaultAsync(
+            x => x.WorkspaceId == workspaceId && x.Id == operationId,
+            cancellationToken);
+        if (entity is null || entity.Status != AzureProviderOperationStatus.Running ||
+            !LeaseMatches(entity, leaseToken, now) ||
+            expectedVersion.HasValue && entity.Version != expectedVersion.Value)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        var decision = entity.OrganizationId is not { } organizationId || organizationId == Guid.Empty ||
+                       entity.InstanceId is not { } instanceId || instanceId == Guid.Empty ||
+                       entity.LifecycleAction is not { } lifecycleAction
+            ? new ElsaInstanceCommercialGateDecision(
+                false,
+                ElsaInstanceCommercialOperation.BindingRequired,
+                "The managed-instance provider operation is missing its durable identity binding.")
+            : await commercialGate.EvaluateAsync(
+                organizationId,
+                lifecycleAction,
+                cancellationToken: cancellationToken);
+
+        if (decision.Allowed)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return new(ToModel(entity), decision);
+        }
+
+        entity.Status = AzureProviderOperationStatus.EntitlementHeld;
+        entity.CompletedAt = null;
+        entity.UpdatedAt = now;
+        entity.Version++;
+        entity.CompletionLeaseTokenHash = entity.LeaseTokenHash;
+        entity.CompletionFingerprint = Hash($"{AzureProviderOperationStatus.EntitlementHeld}|{decision.Code}");
+        entity.LeaseTokenHash = null;
+        entity.LeaseExpiresAt = null;
+        entity.WorkerId = null;
+        AddTransition(entity, decision.Code, decision.Summary, now);
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return new(ToModel(entity), decision);
+    }
+
     private async Task<AzureProviderOperation?> ClaimCoreAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion, bool allowRecovery, CancellationToken cancellationToken)
     {
         AzureProviderOperationValidation.ValidateWorkerId(workerId);
@@ -276,11 +345,11 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             var changed = await db.AzureProviderOperations.Where(x => x.WorkspaceId == workspaceId && x.Id == operationId &&
                      (allowRecovery
                          ? x.Status == AzureProviderOperationStatus.RecoveryRequired
-                         : x.Status == AzureProviderOperationStatus.Accepted || x.Status == AzureProviderOperationStatus.Queued) &&
+                         : x.Status == AzureProviderOperationStatus.Accepted || x.Status == AzureProviderOperationStatus.Queued || x.Status == AzureProviderOperationStatus.EntitlementHeld) &&
                      (x.LeaseExpiresAt == null || x.LeaseExpiresAt <= now) && (!expectedVersion.HasValue || x.Version == expectedVersion.Value) &&
                      !db.AzureProviderOperations.Any(other => other.Id != operationId && other.WorkspaceId == workspaceId &&
                          other.TargetKey == x.TargetKey &&
-                         (other.Status == AzureProviderOperationStatus.Accepted || other.Status == AzureProviderOperationStatus.Queued ||
+                         (other.Status == AzureProviderOperationStatus.Accepted || other.Status == AzureProviderOperationStatus.Queued || other.Status == AzureProviderOperationStatus.EntitlementHeld ||
                           other.Status == AzureProviderOperationStatus.Running || other.Status == AzureProviderOperationStatus.RecoveryRequired)))
                 .ExecuteUpdateAsync(setters => setters
                     .SetProperty(x => x.Status, AzureProviderOperationStatus.Running)
@@ -376,7 +445,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
     {
         AzureProviderOperationValidation.ValidateLeaseToken(leaseToken);
         AzureProviderOperationValidation.ValidateCode(code);
-        if (status is not (AzureProviderOperationStatus.Succeeded or AzureProviderOperationStatus.Failed or AzureProviderOperationStatus.Cancelled or AzureProviderOperationStatus.RecoveryRequired))
+        if (status is not (AzureProviderOperationStatus.Succeeded or AzureProviderOperationStatus.Failed or AzureProviderOperationStatus.Cancelled or AzureProviderOperationStatus.RecoveryRequired or AzureProviderOperationStatus.EntitlementHeld))
             throw new ArgumentException("Invalid final operation status.", nameof(status));
         var entity = await db.AzureProviderOperations.SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == operationId, cancellationToken);
         if (entity is null) return null;
@@ -386,7 +455,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         entity.Status = status; entity.UpdatedAt = now; entity.Version++;
         // Recovery-required operations stay reservable for operator reconciliation, so they are
         // never stamped as completed regardless of which transition produced the status.
-        entity.CompletedAt = status == AzureProviderOperationStatus.RecoveryRequired ? null : now;
+        entity.CompletedAt = status is AzureProviderOperationStatus.RecoveryRequired or AzureProviderOperationStatus.EntitlementHeld ? null : now;
         entity.CompletionLeaseTokenHash = entity.LeaseTokenHash;
         entity.CompletionFingerprint = completionFingerprint;
         entity.LeaseTokenHash = null; entity.LeaseExpiresAt = null; entity.WorkerId = null;
@@ -448,7 +517,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
         CancellationToken cancellationToken) =>
         await db.AzureProviderOperations.AsNoTracking()
             .Where(x => x.WorkspaceId == request.WorkspaceId && x.TargetKey == request.TargetKey &&
-                        (x.Status == AzureProviderOperationStatus.Accepted || x.Status == AzureProviderOperationStatus.Queued ||
+                        (x.Status == AzureProviderOperationStatus.Accepted || x.Status == AzureProviderOperationStatus.Queued || x.Status == AzureProviderOperationStatus.EntitlementHeld ||
                          x.Status == AzureProviderOperationStatus.Running || x.Status == AzureProviderOperationStatus.RecoveryRequired))
             .OrderBy(x => x.CreatedAt)
             .ThenBy(x => x.Id)
@@ -532,7 +601,10 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) : IAzurePro
             diagnosticsInvalid || secretReferencesInvalid,
             x.ProviderScopeFingerprint,
             x.SqlWorkflowPackageVersion,
-            x.SqlQuartzPackageVersion);
+            x.SqlQuartzPackageVersion,
+            x.OrganizationId,
+            x.InstanceId,
+            x.LifecycleAction);
     }
 
     private static (IReadOnlyList<AzureProviderDiagnostic> Diagnostics, bool Invalid) ReadDiagnostics(string? json)

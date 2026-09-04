@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
+using ElsaControl.Deployment.Abstractions.Instances;
 
 namespace ElsaControl.Deployment.Azure;
 
@@ -13,6 +14,7 @@ public enum AzureProviderOperationStatus
 {
     Accepted,
     Queued,
+    EntitlementHeld,
     Running,
     Succeeded,
     Failed,
@@ -63,7 +65,10 @@ public sealed record AzureProviderOperationRequest(
     IReadOnlyDictionary<string, string>? SecretReferences = null,
     string? ProviderScopeFingerprint = null,
     string? SqlWorkflowPackageVersion = null,
-    string? SqlQuartzPackageVersion = null);
+    string? SqlQuartzPackageVersion = null,
+    Guid? OrganizationId = null,
+    Guid? InstanceId = null,
+    ElsaInstanceOperationAction? LifecycleAction = null);
 
 public sealed record AzureProviderResourceReferences(
     string? ResourceGroupName = null,
@@ -126,7 +131,10 @@ public sealed record AzureProviderOperation(
     [property: JsonIgnore] bool PersistedMetadataInvalid = false,
     string? ProviderScopeFingerprint = null,
     string? SqlWorkflowPackageVersion = null,
-    string? SqlQuartzPackageVersion = null)
+    string? SqlQuartzPackageVersion = null,
+    Guid? OrganizationId = null,
+    Guid? InstanceId = null,
+    ElsaInstanceOperationAction? LifecycleAction = null)
 {
     [JsonIgnore]
     public IReadOnlyDictionary<string, string> SafeSecretReferences => SecretReferences ?? EmptySecretReferences;

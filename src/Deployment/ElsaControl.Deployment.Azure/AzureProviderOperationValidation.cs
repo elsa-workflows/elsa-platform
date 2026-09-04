@@ -311,6 +311,11 @@ public static class AzureProviderOperationValidation
     {
         var errors = new List<string>();
         if (request.WorkspaceId == Guid.Empty) errors.Add("workspace.required");
+        if (request.OrganizationId is { } organizationId && organizationId == Guid.Empty) errors.Add("organization.invalid");
+        if (request.InstanceId is { } instanceId && instanceId == Guid.Empty) errors.Add("instance.invalid");
+        if ((request.OrganizationId is null) != (request.InstanceId is null)) errors.Add("instanceBinding.incomplete");
+        if (request.LifecycleAction is { } lifecycleAction && !Enum.IsDefined(lifecycleAction)) errors.Add("lifecycleAction.invalid");
+        if (request.OrganizationId is not null && request.LifecycleAction is null) errors.Add("lifecycleAction.required");
         if (!Enum.IsDefined(request.Action)) errors.Add("action.invalid");
         Required(request.TargetKey, "target");
         Required(request.IdempotencyKey, "idempotency");
@@ -363,7 +368,9 @@ public static class AzureProviderOperationValidation
     public static string ComputeRequestHash(AzureProviderOperationRequest request)
     {
         var normalized = Normalize(request);
-        var canonical = normalized.ProviderScopeFingerprint is null
+        var canonical = normalized.OrganizationId is not null
+            ? SerializeBoundRequest(normalized)
+            : normalized.ProviderScopeFingerprint is null
             ? normalized.SqlWorkflowPackageVersion is null && normalized.SqlQuartzPackageVersion is null
                 ? SerializeLegacyRequest(normalized)
                 : SerializeRequestWithPackageMetadata(normalized, includeProviderScope: false)
@@ -402,9 +409,12 @@ public static class AzureProviderOperationValidation
         var value = normalized.ProviderScopeFingerprint is null
             ? legacyValue
             : $"{legacyValue}|{normalized.ProviderScopeFingerprint}";
-        var withPackageMetadata = normalized.SqlWorkflowPackageVersion is null && normalized.SqlQuartzPackageVersion is null
+        var withBinding = normalized.OrganizationId is null
             ? value
-            : $"{value}|{normalized.SqlWorkflowPackageVersion}|{normalized.SqlQuartzPackageVersion}";
+            : $"{value}|{normalized.OrganizationId:D}|{normalized.InstanceId:D}|{normalized.LifecycleAction}";
+        var withPackageMetadata = normalized.SqlWorkflowPackageVersion is null && normalized.SqlQuartzPackageVersion is null
+            ? withBinding
+            : $"{withBinding}|{normalized.SqlWorkflowPackageVersion}|{normalized.SqlQuartzPackageVersion}";
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(withPackageMetadata))).ToLowerInvariant();
     }
 
@@ -452,6 +462,33 @@ public static class AzureProviderOperationValidation
         normalized.ReleaseManifestSignatureDigest,
         normalized.ReleaseManifestReference,
         normalized.ReleaseManifestSignatureReference,
+        secretReferences = normalized.SecretReferences
+    });
+
+    private static string SerializeBoundRequest(AzureProviderOperationRequest normalized) => JsonSerializer.Serialize(new
+    {
+        normalized.WorkspaceId,
+        normalized.OrganizationId,
+        normalized.InstanceId,
+        LifecycleAction = normalized.LifecycleAction?.ToString(),
+        normalized.TargetKey,
+        Action = normalized.Action.ToString(),
+        normalized.PlanFingerprint,
+        normalized.TemplateFingerprint,
+        normalized.ElsaVersion,
+        normalized.ReleaseLine,
+        normalized.Topology,
+        normalized.Isolation,
+        normalized.Location,
+        normalized.ImageRepository,
+        normalized.ImageDigest,
+        normalized.ReleaseManifestDigest,
+        normalized.ReleaseManifestSignatureDigest,
+        normalized.ReleaseManifestReference,
+        normalized.ReleaseManifestSignatureReference,
+        normalized.SqlWorkflowPackageVersion,
+        normalized.SqlQuartzPackageVersion,
+        normalized.ProviderScopeFingerprint,
         secretReferences = normalized.SecretReferences
     });
 

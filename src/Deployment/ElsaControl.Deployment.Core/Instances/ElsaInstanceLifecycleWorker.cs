@@ -14,11 +14,13 @@ public sealed class ElsaInstanceLifecycleWorker(
     IElsaInstancePlanResolver resolver,
     TimeProvider? timeProvider = null,
     IElsaInstanceProviderSubmissionPort? provider = null,
-    IElsaInstanceProviderSubmissionStore? submissionStore = null)
+    IElsaInstanceProviderSubmissionStore? submissionStore = null,
+    IElsaInstanceCommercialGate? commercialGate = null)
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly IElsaInstanceProviderSubmissionPort? _provider = provider;
     private readonly IElsaInstanceProviderSubmissionStore? _submissionStore = submissionStore;
+    private readonly IElsaInstanceCommercialGate? _commercialGate = commercialGate;
 
     public async Task<ElsaInstanceLifecycleWorkerBatchResult> ProcessAvailableAsync(
         string workerId,
@@ -151,6 +153,37 @@ public sealed class ElsaInstanceLifecycleWorker(
             if (_provider is null || result.Outcome is not ElsaInstanceLifecycleWorkerOutcome.Queued)
                 return (result, 0);
 
+            if (store is IElsaInstanceEntitlementHoldStore entitlementHoldStore)
+            {
+                var authorization = await entitlementHoldStore.AuthorizeProviderSubmissionAsync(
+                        item.Outbox.WorkspaceId,
+                        item.Outbox.InstanceId,
+                        item.Outbox.OperationId,
+                        _timeProvider.GetUtcNow(),
+                        cancellationToken);
+                if (!authorization.Allowed)
+                {
+                    // Authorization already performed the durable Queued -> Held
+                    // CAS. Reflect that result locally without opening a second
+                    // transaction (or emitting a duplicate audit event).
+                    result = result with
+                    {
+                        Operation = result.Operation.TransitionTo(
+                            ElsaControl.Deployment.Abstractions.Instances.ElsaInstanceOperationState.EntitlementHeld),
+                        FailureCode = authorization.Code,
+                        FailureSummary = authorization.Summary
+                    };
+                    return (result, 0);
+                }
+            }
+            else if (_commercialGate is not null)
+            {
+                var commercialDecision = await _commercialGate.EvaluateAsync(
+                    item.Instance.OrganizationId, item.Operation.Action, cancellationToken: cancellationToken);
+                if (!commercialDecision.Allowed)
+                    return (result, 0);
+            }
+
             // Submission happens only after the atomic plan/run reservation. The
             // provider seam is idempotent by operation identity, so an uncertain
             // process boundary cannot turn a replay into a second remote apply.
@@ -162,7 +195,9 @@ public sealed class ElsaInstanceLifecycleWorker(
                 item.Instance.DesiredLifecycle,
                 resolution.Plan,
                 item.Resolution.DeploymentTarget,
-                item.Instance.PlacementIntent.RegionCode);
+                item.Instance.PlacementIntent.RegionCode,
+                item.Instance.OrganizationId,
+                item.Operation.Action);
             try
             {
                 var submitted = await _provider.SubmitAsync(submission, cancellationToken);

@@ -259,9 +259,11 @@ builder.Services.AddScoped<IStripeCheckoutSessionGateway, StripeCheckoutSessionG
 builder.Services.AddScoped<IStripeCustomerPortalGateway, StripeCustomerPortalGateway>();
 builder.Services.AddScoped<IBillingProvider, StripeBillingProvider>();
 builder.Services.AddScoped<EfCoreElsaInstanceLifecycleStore>();
+builder.Services.AddScoped<IElsaInstanceCommercialGate, EfCoreElsaInstanceCommercialGate>();
 builder.Services.AddScoped<IElsaInstanceLifecycleStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
 builder.Services.AddScoped<IElsaInstanceLifecycleWorkerStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
 builder.Services.AddScoped<IElsaInstanceProviderSubmissionStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
+builder.Services.AddScoped<IElsaInstanceEntitlementHoldStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
 builder.Services.AddScoped<IElsaInstanceProviderPendingOperationStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
 builder.Services.AddScoped<IElsaInstanceProviderReconciliationStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
 builder.Services.AddScoped<IElsaInstanceDeletionStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());

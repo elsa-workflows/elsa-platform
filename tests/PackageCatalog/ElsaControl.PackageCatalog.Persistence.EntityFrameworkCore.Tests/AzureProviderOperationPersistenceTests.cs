@@ -1,4 +1,6 @@
+using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Azure;
+using ElsaControl.Deployment.Core.Instances;
 using ElsaControl.PackageCatalog.Core.Accounts;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models;
@@ -47,6 +49,41 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         Assert.Equal(first.Operation.Id, second.Operation.Id);
         var accepted = Assert.Single(await store.ListTransitionsAsync(_workspaceId, first.Operation.Id));
         Assert.Equal("Azure provider operation accepted.", accepted.Message);
+    }
+
+    [Fact]
+    public async Task Commercial_denial_is_authorized_and_held_in_the_same_operation_CAS()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var operation = await store.CreateOrGetAsync(Request() with
+        {
+            OrganizationId = Guid.NewGuid(),
+            InstanceId = Guid.NewGuid(),
+            LifecycleAction = ElsaInstanceOperationAction.Reconcile
+        }, now);
+        var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now));
+
+        var authorization = await store.AuthorizeAsync(
+            _workspaceId,
+            operation.Id,
+            "lease",
+            new DenyingCommercialGate(),
+            now,
+            claimed.Version);
+
+        Assert.NotNull(authorization);
+        Assert.False(authorization!.Decision.Allowed);
+        Assert.Equal(ElsaInstanceCommercialOperation.LifecycleConstrained, authorization.Decision.Code);
+        Assert.Equal(AzureProviderOperationStatus.EntitlementHeld, authorization.Operation.Status);
+        Assert.Null(authorization.Operation.CompletedAt);
+        Assert.Null(authorization.Operation.WorkerId);
+        Assert.Null(authorization.Operation.LeaseExpiresAt);
+        Assert.Contains(
+            await store.ListTransitionsAsync(_workspaceId, operation.Id),
+            transition => transition.Code == ElsaInstanceCommercialOperation.LifecycleConstrained);
     }
 
     [Fact]
@@ -634,6 +671,19 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         _workspaceId, "workload-a", AzureProviderOperationAction.Reconcile, "request-1",
         new('a', 64), new('b', 64), "3.8.0", "3.8", "combined", "Dedicated", "westeurope",
         "valenceruntimeimages.azurecr.io/runtime-combined", "sha256:" + new string('c', 64));
+
+    private sealed class DenyingCommercialGate : IElsaInstanceCommercialGate
+    {
+        public Task<ElsaInstanceCommercialGateDecision> EvaluateAsync(
+            Guid organizationId,
+            ElsaInstanceOperationAction action,
+            int? activeInstanceCount = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ElsaInstanceCommercialGateDecision(
+                false,
+                ElsaInstanceCommercialOperation.LifecycleConstrained,
+                "The organization subscription does not permit managed-instance changes."));
+    }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {

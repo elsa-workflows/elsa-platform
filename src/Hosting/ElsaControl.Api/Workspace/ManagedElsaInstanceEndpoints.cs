@@ -67,15 +67,9 @@ public static class ManagedElsaInstanceEndpoints
 
         group.MapGet("/onboarding-options", async (
             Guid workspaceId,
-            HttpContext context,
-            IAccountWorkspaceStore accountStore,
             IGovernedReleaseCatalogStore catalog,
             CancellationToken cancellationToken) =>
         {
-            var access = context.GetWorkspaceAccess();
-            if (!await HasManagedHostingEntitlementAsync(accountStore, access.OrganizationId, cancellationToken))
-                return Problem("instance.entitlement-required", "Managed hosting is not enabled for this organization.", StatusCodes.Status422UnprocessableEntity);
-
             // Match the lifecycle resolver's fail-closed eligibility boundary so
             // every option shown here can be resolved when the customer submits it.
             var entries = await catalog.QueryAsync(new GovernedReleaseCatalogQuery(
@@ -111,7 +105,7 @@ public static class ManagedElsaInstanceEndpoints
             Guid workspaceId,
             ManagedElsaInstanceCreateRequest request,
             HttpContext context,
-            IAccountWorkspaceStore accountStore,
+            IElsaInstanceCommercialGate commercialGate,
             IGovernedReleaseCatalogStore catalog,
             WorkspacePermissionService permissions,
             ElsaInstanceLifecycleService lifecycle,
@@ -130,9 +124,10 @@ public static class ManagedElsaInstanceEndpoints
                 return Problem("instance.shape-invalid", "Instance name, slug and intent are required.", StatusCodes.Status422UnprocessableEntity);
 
             var access = context.GetWorkspaceAccess();
-            var entitlement = await accountStore.GetLatestOrganizationEntitlementAsync(access.OrganizationId, cancellationToken);
-            if (entitlement is not { ManagedHostingEnabled: true })
-                return Problem("instance.entitlement-required", "Managed hosting is not enabled for this organization.", StatusCodes.Status422UnprocessableEntity);
+            var commercialDecision = await commercialGate.EvaluateAsync(
+                access.OrganizationId, ElsaInstanceOperationAction.Create, cancellationToken: cancellationToken);
+            if (!commercialDecision.Allowed)
+                return Problem(commercialDecision.Code, commercialDecision.Summary, StatusCodes.Status422UnprocessableEntity);
             if (!MatchesInitialLaunchProfile(request.Intent.Placement) ||
                 !await HasOneEligibleCatalogMatchAsync(catalog, request.Intent, cancellationToken))
                 return Problem("instance.catalog-selection-unavailable", "The selected managed release or launch profile is unavailable.", StatusCodes.Status422UnprocessableEntity);
@@ -203,7 +198,7 @@ public static class ManagedElsaInstanceEndpoints
             Guid instanceId,
             ManagedElsaInstancePatchRequest request,
             HttpContext context,
-            IAccountWorkspaceStore accountStore,
+            IElsaInstanceCommercialGate commercialGate,
             WorkspacePermissionService permissions,
             IElsaInstanceLifecycleStore store,
             ElsaInstanceLifecycleService lifecycle,
@@ -226,8 +221,10 @@ public static class ManagedElsaInstanceEndpoints
             if (request.Intent is null && request.Name is null)
                 return Problem("instance.shape-invalid", "At least one mutable instance field is required.", StatusCodes.Status422UnprocessableEntity);
             var access = context.GetWorkspaceAccess();
-            if (!await HasManagedHostingEntitlementAsync(accountStore, access.OrganizationId, cancellationToken))
-                return Problem("instance.entitlement-required", "Managed hosting is not enabled for this organization.", StatusCodes.Status422UnprocessableEntity);
+            var commercialDecision = await commercialGate.EvaluateAsync(
+                access.OrganizationId, ElsaInstanceOperationAction.UpdateIntent, cancellationToken: cancellationToken);
+            if (!commercialDecision.Allowed)
+                return Problem(commercialDecision.Code, commercialDecision.Summary, StatusCodes.Status422UnprocessableEntity);
             try
             {
                 var accepted = await lifecycle.UpdateIntentAsync(new ElsaInstanceIntentUpdateRequest(
@@ -250,7 +247,7 @@ public static class ManagedElsaInstanceEndpoints
             Guid instanceId,
             ManagedElsaInstanceOperationRequest request,
             HttpContext context,
-            IAccountWorkspaceStore accountStore,
+            IElsaInstanceCommercialGate commercialGate,
             WorkspacePermissionService permissions,
             ElsaInstanceLifecycleService lifecycle,
             IManagedElsaInstanceApiStore queries,
@@ -273,8 +270,6 @@ public static class ManagedElsaInstanceEndpoints
             if (request.ExpectedVersion is { } bodyVersion && expectedVersion.Value != bodyVersion)
                 return Problem("instance.version-conflict", "If-Match and expectedVersion do not agree.", StatusCodes.Status412PreconditionFailed);
             var access = context.GetWorkspaceAccess();
-            if (!await HasManagedHostingEntitlementAsync(accountStore, access.OrganizationId, cancellationToken))
-                return Problem("instance.entitlement-required", "Managed hosting is not enabled for this organization.", StatusCodes.Status422UnprocessableEntity);
 
             if (request.Action == ElsaInstanceOperationAction.Delete)
             {
@@ -285,6 +280,11 @@ public static class ManagedElsaInstanceEndpoints
                     return Problem("instance.delete-confirmation-required", "A delete confirmation is required.", StatusCodes.Status400BadRequest);
 
             }
+
+            var commercialDecision = await commercialGate.EvaluateAsync(
+                access.OrganizationId, request.Action, cancellationToken: cancellationToken);
+            if (!commercialDecision.Allowed)
+                return Problem(commercialDecision.Code, commercialDecision.Summary, StatusCodes.Status422UnprocessableEntity);
 
             try
             {
@@ -508,13 +508,6 @@ public static class ManagedElsaInstanceEndpoints
             new Dictionary<string, string> { ["self"] = location }));
     }
 
-    private static async Task<bool> HasManagedHostingEntitlementAsync(
-        IAccountWorkspaceStore accountStore,
-        Guid organizationId,
-        CancellationToken cancellationToken) =>
-        await accountStore.GetLatestOrganizationEntitlementAsync(organizationId, cancellationToken) is
-        { ManagedHostingEnabled: true };
-
     private static async Task<ManagedElsaInstanceResponse> ToResponseAsync(
         ElsaInstance instance,
         bool canOpen,
@@ -647,13 +640,16 @@ public static class ManagedElsaInstanceEndpoints
         ElsaInstanceLifecycleConflictReason.SlugConflict => "instance.slug-conflict",
         ElsaInstanceLifecycleConflictReason.OperationActive => "instance.operation-active",
         ElsaInstanceLifecycleConflictReason.IdempotencyConflict => "instance.idempotency-conflict",
+        ElsaInstanceLifecycleConflictReason.CommercialDenied when exception.CommercialCode is not null => exception.CommercialCode,
         _ => "instance.invalid-state",
     };
 
     private static int ConflictStatusCode(ElsaInstanceLifecycleConflictException exception) =>
         exception.Reason == ElsaInstanceLifecycleConflictReason.VersionConflict
             ? StatusCodes.Status412PreconditionFailed
-            : StatusCodes.Status409Conflict;
+            : exception.Reason == ElsaInstanceLifecycleConflictReason.CommercialDenied
+                ? StatusCodes.Status422UnprocessableEntity
+                : StatusCodes.Status409Conflict;
 
     private static IResult Problem(string code, string title, int statusCode) => Results.Problem(title: title, statusCode: statusCode,
         extensions: new Dictionary<string, object?> { ["code"] = code });
