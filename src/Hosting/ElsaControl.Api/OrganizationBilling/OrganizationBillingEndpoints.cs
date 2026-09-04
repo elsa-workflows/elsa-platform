@@ -55,6 +55,11 @@ public static class OrganizationBillingEndpoints
         OrganizationBillingService billing,
         CancellationToken cancellationToken)
     {
+        // The route is Stripe-specific. Fail closed if dependency injection is
+        // ever changed to resolve another provider implementation here.
+        if (!string.Equals(provider.Provider, BillingProviderNames.Stripe, StringComparison.Ordinal))
+            return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+
         if (context.Request.ContentLength is > MaxWebhookBodyBytes)
             return Results.BadRequest(new { code = "webhook.invalid" });
 
@@ -89,6 +94,10 @@ public static class OrganizationBillingEndpoints
         catch (ArgumentException)
         {
             return Results.BadRequest(new { code = "webhook.invalid" });
+        }
+        catch (BillingProviderEventConflictException)
+        {
+            return Results.Conflict(new { code = "webhook.conflict" });
         }
         return Results.Ok(new { status = ToWireStatus(result.Outcome) });
     }

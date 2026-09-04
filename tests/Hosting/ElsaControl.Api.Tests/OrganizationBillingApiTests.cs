@@ -71,7 +71,7 @@ public sealed class OrganizationBillingApiTests : IAsyncLifetime
 
         _provider.WebhookResult = BillingWebhookNormalizationResult.UnknownEvent(new BillingProviderEvent(
             organizationId,
-            "fake",
+            BillingProviderNames.Stripe,
             "evt_unknown",
             "checkout.session.completed",
             null,
@@ -99,7 +99,7 @@ public sealed class OrganizationBillingApiTests : IAsyncLifetime
         var owner = _app.CreateControlIdentityClient(subject: "billing-owner-3");
         var organizationId = (await owner.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Organizations.Single().Id;
         await owner.PostControlJsonAsync($"/api/organizations/{organizationId}/billing/checkout", new { });
-        var first = new BillingProviderEvent(organizationId, "fake", "evt-active", "customer.subscription.updated", OrganizationSubscriptionState.Active, DateTimeOffset.UtcNow, Sha256("active"));
+        var first = new BillingProviderEvent(organizationId, BillingProviderNames.Stripe, "evt-active", "customer.subscription.updated", OrganizationSubscriptionState.Active, DateTimeOffset.UtcNow, Sha256("active"));
         _provider.WebhookResult = BillingWebhookNormalizationResult.KnownEvent(first);
 
         var applied = await PostWebhookAsync("raw-supported-body");
@@ -126,6 +126,54 @@ public sealed class OrganizationBillingApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Stripe_webhook_fails_closed_when_the_injected_provider_is_not_stripe()
+    {
+        _provider.Provider = "fake";
+
+        var response = await PostWebhookAsync("provider-mismatch-body");
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal(0, _provider.WebhookVerificationCalls);
+    }
+
+    [Fact]
+    public async Task Conflicting_webhook_facts_return_a_stable_client_error()
+    {
+        await _app.SeedAsync(_ => Task.CompletedTask);
+        var owner = _app.CreateControlIdentityClient(subject: "billing-conflict-owner");
+        var organizationId = (await owner.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Organizations.Single().Id;
+        await owner.PostControlJsonAsync($"/api/organizations/{organizationId}/billing/checkout", new { });
+
+        var first = new BillingProviderEvent(
+            organizationId,
+            BillingProviderNames.Stripe,
+            "evt-conflicting-facts",
+            "customer.subscription.updated",
+            OrganizationSubscriptionState.Active,
+            DateTimeOffset.UtcNow,
+            Sha256("first-facts"));
+        _provider.WebhookResult = BillingWebhookNormalizationResult.KnownEvent(first);
+        var applied = await PostWebhookAsync("first-facts-body");
+
+        var conflicting = first with
+        {
+            State = OrganizationSubscriptionState.PastDue,
+            EventHash = Sha256("conflicting-facts")
+        };
+        _provider.WebhookResult = BillingWebhookNormalizationResult.KnownEvent(conflicting);
+        var conflict = await PostWebhookAsync("conflicting-facts-body");
+
+        Assert.Equal(HttpStatusCode.OK, applied.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+        var body = await conflict.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+        Assert.Equal("webhook.conflict", body!["code"]);
+
+        await using var scope = _app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+        Assert.Equal(1, await db.BillingProviderEvents.CountAsync());
+    }
+
+    [Fact]
     public async Task Invalid_and_malformed_webhook_results_fail_closed_without_persistence()
     {
         await _app.SeedAsync(_ => Task.CompletedTask);
@@ -138,7 +186,7 @@ public sealed class OrganizationBillingApiTests : IAsyncLifetime
         var malformed = await PostWebhookAsync("sensitive-raw-body-2");
         _provider.WebhookResult = BillingWebhookNormalizationResult.UnknownEvent(new BillingProviderEvent(
             organizationId,
-            "fake",
+            BillingProviderNames.Stripe,
             "evt-misclassified",
             "checkout.session.completed",
             OrganizationSubscriptionState.Active,
@@ -237,7 +285,8 @@ public sealed class OrganizationBillingApiTests : IAsyncLifetime
 
     private sealed class FakeBillingProvider : IBillingProvider
     {
-        public string Provider => "fake";
+        public string Provider { get; set; } = BillingProviderNames.Stripe;
+        public int WebhookVerificationCalls { get; private set; }
         public BillingCheckoutSessionRequest? LastCheckout { get; private set; }
         public BillingWebhookNormalizationResult WebhookResult { get; set; } = BillingWebhookNormalizationResult.Invalid("webhook.invalid");
 
@@ -250,6 +299,10 @@ public sealed class OrganizationBillingApiTests : IAsyncLifetime
         public Task<BillingSessionLink> CreateCustomerPortalSessionAsync(BillingCustomerPortalSessionRequest request, CancellationToken cancellationToken = default) =>
             Task.FromResult(new BillingSessionLink("https://portal.fake.test/session"));
 
-        public BillingWebhookNormalizationResult VerifyAndNormalizeWebhook(ReadOnlyMemory<byte> rawBody, string signature, DateTimeOffset receivedAt) => WebhookResult;
+        public BillingWebhookNormalizationResult VerifyAndNormalizeWebhook(ReadOnlyMemory<byte> rawBody, string signature, DateTimeOffset receivedAt)
+        {
+            WebhookVerificationCalls++;
+            return WebhookResult;
+        }
     }
 }
