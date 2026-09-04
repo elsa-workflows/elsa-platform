@@ -507,7 +507,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
 
             var activeInstanceCount = operation.Action == ElsaInstanceOperationAction.Create
                 ? await dbContext.ElsaInstances.CountAsync(
-                    x => x.OrganizationId == instance.OrganizationId && x.DeletedAt == null,
+                    x => x.OrganizationId == instance.OrganizationId && x.TargetMode == "managed" && x.DeletedAt == null,
                     cancellationToken)
                 : (int?)null;
             var commercialDecision = await _commercialGate.EvaluateAsync(

@@ -97,7 +97,17 @@ function LifecycleRail({ status }: { status: OrganizationBillingStatus }) {
   const state = status.subscription?.state ?? null;
   const meta = getBillingStateMeta(state);
   const subscription = status.subscription;
-  const deadline = subscription?.state === "Trial" ? subscription.trialEndsAt : subscription?.pastDueAt;
+  const deadline = subscription?.state === "Trial" ? subscription.trialEndsAt : null;
+  const deadlineLabel = subscription?.state === "Trial"
+    ? "Trial ends"
+    : subscription?.state === "PastDue"
+      ? "Past due since"
+      : "Next deadline";
+  const deadlineValue = deadline
+    ? formatDate(deadline)
+    : subscription?.state === "PastDue" && subscription.pastDueAt
+      ? formatDate(subscription.pastDueAt)
+      : "No deadline reported";
   const statusTone = toneClasses(meta.tone);
 
   return (
@@ -116,7 +126,7 @@ function LifecycleRail({ status }: { status: OrganizationBillingStatus }) {
 
       <div className="mt-6 grid gap-3 border-t border-border pt-4 sm:grid-cols-3">
         <LifecycleFact label="Current state" value={meta.label} />
-        <LifecycleFact label="Next deadline" value={deadline ? formatDate(deadline) : "No deadline reported"} />
+        <LifecycleFact label={deadlineLabel} value={deadlineValue} />
         <LifecycleFact label="Last updated" value={subscription ? formatDate(subscription.updatedAt) : "Not initialized"} />
       </div>
       <LifecycleTrack state={state} />

@@ -75,6 +75,24 @@ describe("OrganizationBillingPage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Billing service is unavailable");
     expect(screen.queryByText("Stripe")).not.toBeInTheDocument();
   });
+
+  it("labels the past-due transition time without presenting it as a deadline", async () => {
+    installFetch((input) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url.endsWith("/api/auth/session"))
+        return Response.json({ loginEnabled: true, authenticated: true, displayName: "Test User", email: "test@example.com", loginPath: "/api/auth/login", logoutPath: "/api/auth/logout" });
+      if (url.endsWith("/api/me/organizations"))
+        return Response.json(workspaceContextFixture("Owner"));
+      if (url.endsWith("/api/organizations/00000000-0000-0000-0000-000000000001/billing/"))
+        return Response.json(billingFixture("PastDue"));
+      return Response.json({ title: "Not found" }, { status: 404 });
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("Past due since")).toBeInTheDocument();
+    expect(screen.queryByText("Next deadline")).not.toBeInTheDocument();
+  });
 });
 
 function renderPage() {
@@ -107,15 +125,15 @@ function workspaceContextFixture(role: string) {
   };
 }
 
-function billingFixture() {
+function billingFixture(state = "Active") {
   return {
     organizationId,
     subscription: {
-      state: "Active",
+      state,
       trialStartedAt: "2026-08-01T00:00:00Z",
       trialEndsAt: "2026-08-15T00:00:00Z",
       activatedAt: "2026-08-10T00:00:00Z",
-      pastDueAt: null,
+      pastDueAt: state === "PastDue" ? "2026-09-01T00:00:00Z" : null,
       constrainedAt: null,
       suspendedAt: null,
       retainedAt: null,
