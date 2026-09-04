@@ -632,12 +632,13 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
         return new(
             SafeSymbol(baseException.GetType().FullName),
             SafeSymbol(baseException.TargetSite?.DeclaringType?.FullName),
-            SafeSymbol(baseException.TargetSite?.Name));
+            SafeSymbol(baseException.TargetSite?.Name),
+            new StackTrace(baseException, true).GetFrame(0)?.GetFileLineNumber());
     }
 
     private static string? SafeSymbol(string? value) =>
         value is { Length: > 0 and <= 256 } && value.All(character =>
-            char.IsAsciiLetterOrDigit(character) || character is '.' or '+' or '_' or '<' or '>' or '`' or '[' or ']' or ',')
+            char.IsAsciiLetterOrDigit(character) || character is '.' or '+' or '_' or '<' or '>' or '`' or '[' or ']' or ',' or '$')
             ? value
             : null;
 
@@ -740,7 +741,8 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
     private sealed record SafeExceptionEvidence(
         string? Type,
         string? TargetDeclaringType,
-        string? TargetMethod);
+        string? TargetMethod,
+        int? SourceLine);
 
     private sealed class ProofConfigurationException : Exception;
 
