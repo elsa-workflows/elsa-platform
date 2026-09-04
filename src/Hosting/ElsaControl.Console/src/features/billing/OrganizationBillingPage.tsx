@@ -20,12 +20,16 @@ export function OrganizationBillingPage() {
   });
   const queryClient = useQueryClient();
   const checkout = useMutation({
-    mutationFn: () => createOrganizationCheckout(organizationId),
-    onSuccess: (session) => openBillingSession(session.url)
+    mutationFn: async () => {
+      const session = await createOrganizationCheckout(organizationId);
+      openBillingSession(session.url);
+    }
   });
   const portal = useMutation({
-    mutationFn: () => createOrganizationBillingPortal(organizationId),
-    onSuccess: (session) => openBillingSession(session.url)
+    mutationFn: async () => {
+      const session = await createOrganizationBillingPortal(organizationId);
+      openBillingSession(session.url);
+    }
   });
 
   const refresh = async () => {
