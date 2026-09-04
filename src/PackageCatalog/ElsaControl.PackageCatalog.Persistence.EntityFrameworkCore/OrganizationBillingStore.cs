@@ -228,12 +228,6 @@ public sealed partial class OrganizationBillingStore(CatalogDbContext dbContext)
             return new(BillingEventConsumptionOutcome.IgnoredOutOfOrder, subscription, null, inbox);
         }
 
-        if (subscription.State != OrganizationSubscriptionState.Deleted)
-        {
-            subscription.ProviderCustomerReference ??= providerEvent.ProviderCustomerReference;
-            subscription.ProviderSubscriptionReference ??= providerEvent.ProviderSubscriptionReference;
-            await BackfillQueuedCleanupReferencesAsync(subscription, cancellationToken);
-        }
         if (!OrganizationSubscriptionLifecycle.CanTransition(subscription.State, providerEvent.State!.Value))
         {
             inbox.ProcessingStatus = BillingProviderEventProcessingStatus.Rejected;
@@ -246,6 +240,9 @@ public sealed partial class OrganizationBillingStore(CatalogDbContext dbContext)
         }
 
         OrganizationSubscriptionLifecycle.ApplyState(subscription, providerEvent.State.Value, occurrence);
+        subscription.ProviderCustomerReference ??= providerEvent.ProviderCustomerReference;
+        subscription.ProviderSubscriptionReference ??= providerEvent.ProviderSubscriptionReference;
+        await BackfillQueuedCleanupReferencesAsync(subscription, cancellationToken);
         if (isNewSubscription)
             dbContext.OrganizationSubscriptions.Add(subscription);
         subscription.LastProviderEventOccurredAt = occurrence;
