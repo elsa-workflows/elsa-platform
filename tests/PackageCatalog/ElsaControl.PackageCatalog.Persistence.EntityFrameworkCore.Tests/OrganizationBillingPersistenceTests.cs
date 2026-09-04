@@ -53,6 +53,63 @@ public sealed class OrganizationBillingPersistenceTests
     }
 
     [Fact]
+    public async Task Correlated_unknown_event_is_recorded_without_subscription_or_entitlement_projection()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateDb(connection);
+        await db.Database.EnsureCreatedAsync();
+        db.Organizations.Add(new Organization { Id = OrganizationId, Name = "Acme" });
+        await db.SaveChangesAsync();
+        var providerEvent = new BillingProviderEvent(
+            OrganizationId,
+            "stripe",
+            "evt-unknown",
+            "checkout.session.completed",
+            null,
+            Now,
+            "sha256:" + new string('a', 64));
+
+        var result = await new OrganizationBillingStore(db).RecordUnknownAsync(providerEvent, Now.AddMinutes(1));
+        var replay = await new OrganizationBillingStore(db).RecordUnknownAsync(providerEvent, Now.AddMinutes(2));
+
+        Assert.Equal(BillingEventConsumptionOutcome.RecordedUnknown, result.Outcome);
+        Assert.Equal(BillingEventConsumptionOutcome.Replayed, replay.Outcome);
+        Assert.Null(result.Event!.State);
+        Assert.Equal(BillingProviderEventProcessingStatus.RecordedUnknown, result.Event.ProcessingStatus);
+        Assert.Null(await db.OrganizationSubscriptions.SingleOrDefaultAsync(x => x.OrganizationId == OrganizationId));
+        Assert.Null(await db.OrganizationEntitlementSnapshots.SingleOrDefaultAsync(x => x.OrganizationId == OrganizationId));
+        Assert.Contains(await db.OrganizationAuditRecords.ToListAsync(), x => x.Summary.Contains("unsupported", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Unknown_event_with_lifecycle_state_is_rejected_without_persistence()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateDb(connection);
+        await db.Database.EnsureCreatedAsync();
+        db.Organizations.Add(new Organization { Id = OrganizationId, Name = "Acme" });
+        await db.SaveChangesAsync();
+
+        var providerEvent = new BillingProviderEvent(
+            OrganizationId,
+            "stripe",
+            "evt-misclassified",
+            "checkout.session.completed",
+            OrganizationSubscriptionState.Active,
+            Now,
+            "sha256:" + new string('b', 64));
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            new OrganizationBillingStore(db).RecordUnknownAsync(providerEvent, Now.AddMinutes(1)));
+
+        Assert.Equal(0, await db.BillingProviderEvents.CountAsync());
+        Assert.Equal(0, await db.OrganizationAuditRecords.CountAsync());
+        Assert.Null(await db.OrganizationSubscriptions.SingleOrDefaultAsync(x => x.OrganizationId == OrganizationId));
+    }
+
+    [Fact]
     public async Task Duplicate_event_is_replayed_without_duplicate_audit_or_inbox_rows()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

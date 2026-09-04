@@ -25,6 +25,8 @@ using ElsaControl.Api.Public.Packages;
 using ElsaControl.Api.Public.Sources;
 using ElsaControl.Api.Workspace;
 using ElsaControl.PackageCatalog.Core.Accounts;
+using ElsaControl.Billing.Stripe;
+using ElsaControl.Api.OrganizationBilling;
 using ElsaControl.PackageCatalog.Core.Approvals;
 using ElsaControl.RuntimeBuilder.DeploymentTemplates;
 using ElsaControl.PackageCatalog.Core.Compatibility;
@@ -63,6 +65,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Logging;
 using Microsoft.IdentityModel.Tokens;
 using ElsaControl.Api;
+using StripeClient = Stripe.StripeClient;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -208,6 +211,8 @@ builder.Services.AddCatalogAuthorization();
 builder.Services.AddBuilderClientAuthorization();
 builder.Services.Configure<ReleaseCatalogAdmissionOptions>(
     builder.Configuration.GetSection(ReleaseCatalogAdmissionOptions.ConfigurationSection));
+builder.Services.Configure<StripeBillingOptions>(
+    builder.Configuration.GetSection(StripeBillingOptions.ConfigurationSection));
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<AdminApiKeyValidator>();
 builder.Services.AddSingleton<BuilderClientApiKeyValidator>();
@@ -237,6 +242,22 @@ builder.Services.AddScoped<ManagedElsaHandoffService>();
 builder.Services.AddHostedService<ManagedElsaHandoffConfigurationValidator>();
 builder.Services.AddSingleton<IWorkspacePermissionContribution, ManagedElsaInstancePermissionContribution>();
 builder.Services.AddCatalogDbContext(builder.Configuration);
+builder.Services.AddScoped<IOrganizationBillingStore, OrganizationBillingStore>();
+builder.Services.AddScoped<OrganizationBillingService>();
+builder.Services.AddScoped<OrganizationBillingApiService>();
+builder.Services.AddSingleton<Func<StripeClient>>(services =>
+{
+    var options = services.GetRequiredService<IOptions<StripeBillingOptions>>().Value;
+    return () =>
+    {
+        if (!options.Enabled || string.IsNullOrWhiteSpace(options.SecretKey))
+            throw new BillingProviderUnavailableException("The Stripe billing provider is not configured.");
+        return new StripeClient(options.SecretKey);
+    };
+});
+builder.Services.AddScoped<IStripeCheckoutSessionGateway, StripeCheckoutSessionGateway>();
+builder.Services.AddScoped<IStripeCustomerPortalGateway, StripeCustomerPortalGateway>();
+builder.Services.AddScoped<IBillingProvider, StripeBillingProvider>();
 builder.Services.AddScoped<EfCoreElsaInstanceLifecycleStore>();
 builder.Services.AddScoped<IElsaInstanceLifecycleStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
 builder.Services.AddScoped<IElsaInstanceLifecycleWorkerStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
@@ -551,6 +572,7 @@ app.MapBuilderEndpoints();
 app.MapCompatibilityEndpoints();
 app.MapWorkspaceMeEndpoints();
 app.MapOrganizationWorkspaceEndpoints();
+app.MapOrganizationBillingEndpoints();
 app.MapWorkspaceSourceEndpoints();
 app.MapWorkspacePackageEndpoints();
 app.MapWorkspaceReleaseCatalogEndpoints();

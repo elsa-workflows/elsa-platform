@@ -51,6 +51,7 @@
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.16.0" />
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.13" />
     <PackageVersion Include="System.Reflection.MetadataLoadContext" Version="10.0.1" />
+    <PackageVersion Include="Stripe.net" Version="52.4.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
     <PackageVersion Include="YamlDotNet" Version="17.1.0" />

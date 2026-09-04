@@ -70,6 +70,9 @@ public sealed class OrganizationSubscriptionLifecycleTests
         public Task<BillingEventConsumptionResult> ConsumeAsync(BillingProviderEvent providerEvent, DateTimeOffset receivedAt, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
+        public Task<BillingEventConsumptionResult> RecordUnknownAsync(BillingProviderEvent providerEvent, DateTimeOffset receivedAt, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
         public Task<BillingEventConsumptionResult> StartTrialAsync(Guid organizationId, string provider, DateTimeOffset startedAt, CancellationToken cancellationToken = default)
         {
             StartedAt = startedAt;

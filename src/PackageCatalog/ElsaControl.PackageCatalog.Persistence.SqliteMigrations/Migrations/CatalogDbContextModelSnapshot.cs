@@ -98,7 +98,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("State")
-                        .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
 

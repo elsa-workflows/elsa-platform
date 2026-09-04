@@ -63,7 +63,7 @@ public sealed record BillingProviderEvent(
     string Provider,
     string ProviderEventId,
     string EventType,
-    OrganizationSubscriptionState State,
+    OrganizationSubscriptionState? State,
     DateTimeOffset OccurredAt,
     string EventHash,
     string? ProviderCustomerReference = null,
@@ -74,7 +74,8 @@ public enum BillingProviderEventProcessingStatus
     Accepted,
     Applied,
     IgnoredOutOfOrder,
-    Rejected
+    Rejected,
+    RecordedUnknown
 }
 
 /// <summary>
@@ -88,7 +89,7 @@ public sealed class BillingProviderEventInboxEntry
     public string Provider { get; set; } = "";
     public string ProviderEventId { get; set; } = "";
     public string EventType { get; set; } = "";
-    public OrganizationSubscriptionState State { get; set; }
+    public OrganizationSubscriptionState? State { get; set; }
     public string EventHash { get; set; } = "";
     public string? ProviderCustomerReference { get; set; }
     public string? ProviderSubscriptionReference { get; set; }
@@ -104,7 +105,8 @@ public enum BillingEventConsumptionOutcome
     Applied,
     Replayed,
     IgnoredOutOfOrder,
-    Rejected
+    Rejected,
+    RecordedUnknown
 }
 
 public sealed record BillingEventConsumptionResult(
@@ -119,6 +121,11 @@ public sealed class BillingProviderEventConflictException(string message) : Inva
 public interface IOrganizationBillingStore
 {
     Task<BillingEventConsumptionResult> ConsumeAsync(
+        BillingProviderEvent providerEvent,
+        DateTimeOffset receivedAt,
+        CancellationToken cancellationToken = default);
+
+    Task<BillingEventConsumptionResult> RecordUnknownAsync(
         BillingProviderEvent providerEvent,
         DateTimeOffset receivedAt,
         CancellationToken cancellationToken = default);

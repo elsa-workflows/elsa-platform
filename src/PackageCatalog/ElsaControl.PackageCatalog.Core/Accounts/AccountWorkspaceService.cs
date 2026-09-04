@@ -222,6 +222,13 @@ public sealed class AccountWorkspaceService
         return OrganizationWorkspaceMembershipResult.Removed();
     }
 
+    public Task<OrganizationAccessResult> GetOrganizationAccessAsync(
+        TrustedWorkspaceIdentity identity,
+        Guid organizationId,
+        OrganizationOperation operation,
+        CancellationToken cancellationToken = default) =>
+        ResolveOrganizationAccessAsync(identity, organizationId, operation, cancellationToken);
+
     private async Task<OrganizationAccessResult> ResolveOrganizationAccessAsync(TrustedWorkspaceIdentity identity, Guid organizationId, OrganizationOperation operation, CancellationToken cancellationToken)
     {
         var accountContext = await GetOrCreateAsync(identity, cancellationToken);
@@ -333,7 +340,8 @@ public enum OrganizationOperation
 {
     CreateWorkspace,
     ManageWorkspaces,
-    ManageWorkspaceMembers
+    ManageWorkspaceMembers,
+    ManageBilling
 }
 
 public enum OrganizationWorkspaceFailure
@@ -394,6 +402,7 @@ public static class OrganizationRolePolicy
             OrganizationOperation.CreateWorkspace => role is OrganizationRole.Owner or OrganizationRole.Administrator or OrganizationRole.WorkspaceCreator,
             OrganizationOperation.ManageWorkspaces => role is OrganizationRole.Owner or OrganizationRole.Administrator,
             OrganizationOperation.ManageWorkspaceMembers => role is OrganizationRole.Owner or OrganizationRole.Administrator,
+            OrganizationOperation.ManageBilling => role is OrganizationRole.Owner or OrganizationRole.Administrator or OrganizationRole.BillingAdmin,
             _ => false
         };
 }
