@@ -6,7 +6,7 @@ The fixture creates and migrates a fresh catalog from the checked-in Keycloak re
 
 ## Prerequisites
 
-- Docker, .NET 10, Node/npm, Playwright Chromium, `mkcert`, `openssl`, `curl`, and `lsof`.
+- Docker, .NET 10, Node/npm, Playwright Chromium, `mkcert`, `openssl`, `curl`, `grep`, `lsof`, `tee`, and `tr`.
 - The local `mkcert` root must be installed in the macOS trust store.
 - Ports 5173, 5220, 7094, 7444, and 8080 must be free.
 - Registry access for the pinned runtime image.

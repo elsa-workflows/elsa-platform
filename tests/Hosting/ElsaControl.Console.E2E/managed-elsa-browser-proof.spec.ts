@@ -138,11 +138,12 @@ function createAndExecuteBasicWorkflow(page: Page) {
 
   return page.evaluate(async ({ definitionId }) => {
     const knownWorkflowStatus = (value: unknown) => {
+      const stringStatuses = ["Running", "Finished", "Faulted", "Cancelled", "Suspended", "Interrupted"];
       if (value === 0)
         return "Running";
       if (value === 1)
         return "Finished";
-      return typeof value === "string" && ["Running", "Finished"].includes(value) ? value : undefined;
+      return typeof value === "string" && stringStatuses.includes(value) ? value : undefined;
     };
     const knownWorkflowSubStatus = (value: unknown) => {
       const numericStatuses = ["Pending", "Executing", "Suspended", "Finished", "Cancelled", "Faulted", "Interrupted"];
@@ -250,7 +251,8 @@ function createAndExecuteBasicWorkflow(page: Page) {
           executionStatus = knownWorkflowStatus(response.status) ?? knownWorkflowStatus(state.status);
           executionSubStatus = knownWorkflowSubStatus(response.subStatus) ?? knownWorkflowSubStatus(state.subStatus);
           if ((executionStatus === "Finished" && executionSubStatus === "Finished") ||
-            ["Faulted", "Cancelled", "Suspended", "Interrupted"].includes(executionSubStatus ?? ""))
+            [executionStatus, executionSubStatus].some((value) =>
+              ["Faulted", "Cancelled", "Suspended", "Interrupted"].includes(value ?? "")))
             break;
 
           await new Promise((resolve) => setTimeout(resolve, 500));
