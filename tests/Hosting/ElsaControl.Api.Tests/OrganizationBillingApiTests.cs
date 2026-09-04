@@ -58,6 +58,36 @@ public sealed class OrganizationBillingApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Checkout_rejects_a_tombstoned_subscription_before_calling_provider()
+    {
+        await _app.SeedAsync(_ => Task.CompletedTask);
+        var owner = _app.CreateControlIdentityClient(subject: "billing-terminal-owner");
+        var organizationId = (await owner.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Organizations.Single().Id;
+        await using (var scope = _app.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+            var store = new OrganizationBillingStore(db);
+            await store.StartTrialAsync(organizationId, BillingProviderNames.Stripe, DateTimeOffset.UtcNow.AddDays(-2));
+            await store.RequestDeletionAsync(organizationId, DateTimeOffset.UtcNow.AddDays(-1));
+            var work = Assert.IsType<OrganizationBillingCleanupWorkItem>(
+                await store.TryClaimCleanupAsync("test-worker", DateTimeOffset.UtcNow));
+            await store.CompleteCleanupAsync(new(
+                work.Id,
+                work.OrganizationId,
+                work.SubscriptionId,
+                work.LeaseToken,
+                OrganizationBillingCleanupOutcome.ConfirmedAbsent,
+                DateTimeOffset.UtcNow));
+        }
+
+        var response = await owner.PostControlJsonAsync($"/api/organizations/{organizationId}/billing/checkout", new { });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("billing.subscription-terminal", (await response.Content.ReadFromJsonAsync<Dictionary<string, string>>())!["code"]);
+        Assert.Null(_provider.LastCheckout);
+    }
+
+    [Fact]
     public async Task Checkout_fails_closed_before_trial_when_the_injected_provider_is_not_stripe()
     {
         await _app.SeedAsync(_ => Task.CompletedTask);

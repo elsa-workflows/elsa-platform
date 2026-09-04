@@ -172,6 +172,8 @@ public static class OrganizationBillingEndpoints
             return Results.Forbid();
         if (result.CustomerNotReady)
             return Results.Conflict(new { code = "billing.customer-not-ready" });
+        if (result.SubscriptionTerminal)
+            return Results.Conflict(new { code = "billing.subscription-terminal" });
         if (result.ProviderUnavailable)
             return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
         return Results.BadRequest(new { code = "billing.invalid" });

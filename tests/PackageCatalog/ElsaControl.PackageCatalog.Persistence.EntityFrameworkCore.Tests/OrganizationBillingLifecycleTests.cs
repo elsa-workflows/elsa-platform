@@ -129,6 +129,45 @@ public sealed class OrganizationBillingLifecycleTests
     }
 
     [Fact]
+    public async Task Provider_event_backfills_references_while_cleanup_is_leased_and_retry_preserves_them()
+    {
+        await using var fixture = await LifecycleFixture.CreateAsync();
+        await fixture.StartTrialAsync(fixture.OrganizationId, Start);
+        var requestedAt = Start.AddDays(1);
+        await fixture.Store.RequestDeletionAsync(fixture.OrganizationId, requestedAt);
+        var claimed = Assert.IsType<OrganizationBillingCleanupWorkItem>(
+            await fixture.Store.TryClaimCleanupAsync("worker", requestedAt));
+        Assert.Null(claimed.ProviderCustomerReference);
+        Assert.Null(claimed.ProviderSubscriptionReference);
+
+        var providerEvent = new BillingProviderEvent(
+            fixture.OrganizationId,
+            "stripe",
+            "evt_cleanup_refs",
+            "customer.subscription.deleted",
+            OrganizationSubscriptionState.Suspended,
+            requestedAt.AddSeconds(1),
+            "sha256:" + new string('a', 64),
+            "cus_safe",
+            "sub_safe");
+        var consumed = await fixture.Store.ConsumeAsync(providerEvent, requestedAt.AddSeconds(1));
+        Assert.Equal(BillingEventConsumptionOutcome.Applied, consumed.Outcome);
+
+        await fixture.Store.CompleteCleanupAsync(new(
+            claimed.Id,
+            claimed.OrganizationId,
+            claimed.SubscriptionId,
+            claimed.LeaseToken,
+            OrganizationBillingCleanupOutcome.RetryableFailure,
+            requestedAt.AddSeconds(2),
+            "provider.retry"));
+        var retry = Assert.IsType<OrganizationBillingCleanupWorkItem>(
+            await fixture.Store.TryClaimCleanupAsync("worker", requestedAt.AddMinutes(2)));
+        Assert.Equal("cus_safe", retry.ProviderCustomerReference);
+        Assert.Equal("sub_safe", retry.ProviderSubscriptionReference);
+    }
+
+    [Fact]
     public async Task One_pass_catches_up_every_overdue_milestone_without_skipping_notices()
     {
         await using var fixture = await LifecycleFixture.CreateAsync();

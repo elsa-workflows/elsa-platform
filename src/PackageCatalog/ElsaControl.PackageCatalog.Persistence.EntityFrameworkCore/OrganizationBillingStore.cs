@@ -266,7 +266,8 @@ public sealed partial class OrganizationBillingStore(CatalogDbContext dbContext)
             .SingleOrDefaultAsync(
                 x => x.OrganizationId == subscription.OrganizationId &&
                      x.SubscriptionId == subscription.Id &&
-                     x.State == OrganizationBillingCleanupState.Queued,
+                     (x.State == OrganizationBillingCleanupState.Queued ||
+                      x.State == OrganizationBillingCleanupState.InProgress),
                 cancellationToken);
         if (cleanup is null)
             return;

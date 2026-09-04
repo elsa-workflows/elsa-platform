@@ -54,6 +54,8 @@ public sealed class OrganizationBillingApiService(
         var subscription = trial.Subscription ?? await billing.GetSubscriptionAsync(organizationId, cancellationToken);
         if (subscription is null)
             return OrganizationBillingApiResult.Unavailable();
+        if (subscription.State is OrganizationSubscriptionState.Retained or OrganizationSubscriptionState.Deleted)
+            return OrganizationBillingApiResult.Terminal();
 
         try
         {
@@ -131,14 +133,16 @@ public sealed record OrganizationBillingApiResult(
     BillingSessionLink? Session,
     OrganizationWorkspaceFailure? Failure,
     bool ProviderUnavailable,
-    bool CustomerNotReady)
+    bool CustomerNotReady,
+    bool SubscriptionTerminal)
 {
-    public bool Succeeded => Session is not null && Failure is null && !ProviderUnavailable && !CustomerNotReady;
+    public bool Succeeded => Session is not null && Failure is null && !ProviderUnavailable && !CustomerNotReady && !SubscriptionTerminal;
 
-    public static OrganizationBillingApiResult Success(BillingSessionLink session) => new(session, null, false, false);
-    public static OrganizationBillingApiResult Denied(OrganizationWorkspaceFailure failure) => new(null, failure, false, false);
-    public static OrganizationBillingApiResult Unavailable() => new(null, null, true, false);
-    public static OrganizationBillingApiResult CustomerUnavailable() => new(null, null, false, true);
+    public static OrganizationBillingApiResult Success(BillingSessionLink session) => new(session, null, false, false, false);
+    public static OrganizationBillingApiResult Denied(OrganizationWorkspaceFailure failure) => new(null, failure, false, false, false);
+    public static OrganizationBillingApiResult Unavailable() => new(null, null, true, false, false);
+    public static OrganizationBillingApiResult CustomerUnavailable() => new(null, null, false, true, false);
+    public static OrganizationBillingApiResult Terminal() => new(null, null, false, false, true);
 }
 
 public sealed record OrganizationBillingStatusApiResult(
