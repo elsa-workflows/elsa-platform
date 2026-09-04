@@ -117,12 +117,14 @@ public sealed class OrganizationBillingLifecycleTests
             Start.AddDays(1).AddMinutes(1)));
 
         var tombstone = await fixture.SubscriptionAsync(fixture.OrganizationId);
-        Assert.Null(tombstone.EarlyDeletionRequestedAt);
+        Assert.Equal(Start.AddDays(1), tombstone.EarlyDeletionRequestedAt);
+        var deletedAt = tombstone.DeletedAt;
 
         await fixture.Store.RequestDeletionAsync(fixture.OrganizationId, Start.AddDays(2));
 
         tombstone = await fixture.SubscriptionAsync(fixture.OrganizationId);
-        Assert.Null(tombstone.EarlyDeletionRequestedAt);
+        Assert.Equal(Start.AddDays(1), tombstone.EarlyDeletionRequestedAt);
+        Assert.Equal(deletedAt, tombstone.DeletedAt);
     }
 
     [Fact]
