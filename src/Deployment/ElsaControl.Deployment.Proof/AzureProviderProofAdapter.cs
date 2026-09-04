@@ -135,7 +135,7 @@ public sealed class AzureProviderProofAdapter(
             AzureProviderOperationService.CreateOperationRequest(
                 workspaceId, submission.IdempotencyKey, templateFingerprint, submission.Plan,
                 AzureProviderOperationAction.Reconcile, submission.ProviderScopeFingerprint,
-                submission.OrganizationId, submission.InstanceId, submission.LifecycleAction),
+                submission.OrganizationId, submission.InstanceId, submission.LifecycleAction, submission.ProviderAssignmentId),
             submission.Plan,
             cancellationToken);
         if (!execution.Succeeded)
@@ -201,7 +201,7 @@ public sealed class AzureProviderProofAdapter(
             AzureProviderOperationService.CreateOperationRequest(
                 workspaceId, submission.IdempotencyKey, templateFingerprint, submission.Plan,
                 AzureProviderOperationAction.Reconcile, submission.ProviderScopeFingerprint,
-                submission.OrganizationId, submission.InstanceId, submission.LifecycleAction),
+                submission.OrganizationId, submission.InstanceId, submission.LifecycleAction, submission.ProviderAssignmentId),
             submission.Plan,
             cancellationToken);
         _operations[plan.PlanId] = execution.Operation;
@@ -230,7 +230,7 @@ public sealed class AzureProviderProofAdapter(
             AzureProviderOperationService.CreateOperationRequest(
                 workspaceId, operation.IdempotencyKey, templateFingerprint, deleteSubmission.Plan,
                 AzureProviderOperationAction.Delete, deleteSubmission.ProviderScopeFingerprint,
-                deleteSubmission.OrganizationId, deleteSubmission.InstanceId, deleteSubmission.LifecycleAction),
+                deleteSubmission.OrganizationId, deleteSubmission.InstanceId, deleteSubmission.LifecycleAction, deleteSubmission.ProviderAssignmentId),
             deleteSubmission.Plan,
             cancellationToken);
         if (!execution.Succeeded)

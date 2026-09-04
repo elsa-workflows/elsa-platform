@@ -964,7 +964,9 @@ public sealed class AzureProviderExecutor
             assignment.InstanceId != operation.InstanceId ||
             !string.Equals(assignment.ProviderScopeFingerprint, operation.ProviderScopeFingerprint, StringComparison.Ordinal) ||
             !string.Equals(assignment.WorkloadName, operation.TargetKey, StringComparison.OrdinalIgnoreCase) ||
-            assignment.State is AzureProviderAssignmentState.Unknown or AzureProviderAssignmentState.Deleting or AzureProviderAssignmentState.Deleted)
+            assignment.State == AzureProviderAssignmentState.Deleted ||
+            operation.Action != AzureProviderOperationAction.Delete &&
+            assignment.State is AzureProviderAssignmentState.Unknown or AzureProviderAssignmentState.Deleting)
             throw new InvalidOperationException("The provider assignment binding is invalid.");
         return assignment;
     }

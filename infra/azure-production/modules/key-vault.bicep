@@ -9,7 +9,7 @@ param location string
 @description('Principal ID of the workload identity that reads runtime secrets.')
 param workloadPrincipalId string
 
-@description('Interactive Entra operator object ID allowed to seed the runtime secrets.')
+@description('Managed provider identity object ID allowed to seed the runtime secrets.')
 param bootstrapObjectId string
 
 @description('Name of the SQL connection secret created by the runbook after the vault exists.')
@@ -66,7 +66,7 @@ resource bootstrapSecretsOfficer 'Microsoft.Authorization/roleAssignments@2022-0
   scope: vault
   properties: {
     principalId: bootstrapObjectId
-    principalType: 'User'
+    principalType: 'ServicePrincipal'
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', keyVaultSecretsOfficerRoleId)
   }
 }

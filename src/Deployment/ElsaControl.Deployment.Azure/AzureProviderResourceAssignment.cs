@@ -64,8 +64,15 @@ public interface IAzureProviderResourceAssignmentStore
 
 public static class AzureProviderResourceAssignmentNaming
 {
+    /// <summary>Legacy proof hosts bind the exact caller-supplied disposable group.</summary>
+    public const int ExplicitDisposableGroup = 0;
+
     public static string ResourceGroupName(string prefix, Guid instanceId, int namingVersion = 1)
     {
+        if (namingVersion == ExplicitDisposableGroup && instanceId != Guid.Empty &&
+            !string.IsNullOrWhiteSpace(prefix) && prefix.Length <= 90 &&
+            prefix.All(character => char.IsAsciiLetterOrDigit(character) || character is '.' or '_' or '(' or ')' or '-'))
+            return prefix;
         if (string.IsNullOrWhiteSpace(prefix) || prefix.Length > 50 ||
             prefix.Any(character => !char.IsAsciiLetterOrDigit(character) && character is not '-' and not '_'))
             throw new ArgumentException("The Azure resource-group prefix is unsafe.", nameof(prefix));

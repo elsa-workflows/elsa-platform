@@ -140,6 +140,8 @@ public sealed class ProofHostOptions
             SqlBootstrapLogin = SqlBootstrapLogin,
             SqlBootstrapIp = SqlBootstrapIp,
             RuntimeAdminUsername = "proof-admin",
+            DisposableProofMode = true,
+            DisposableExpiryUtc = ExpiryUtc,
             Owner = Owner,
             CommandTimeout = CommandTimeout,
             MaximumOutputCharacters = MaximumOutputCharacters,

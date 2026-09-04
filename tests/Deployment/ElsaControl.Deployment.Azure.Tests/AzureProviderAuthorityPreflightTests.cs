@@ -33,10 +33,17 @@ public sealed class AzureProviderAuthorityPreflightTests : IDisposable
 
         var roleLists = process.Calls.Where(arguments => arguments is ["role", "assignment", "list", ..]).ToArray();
         Assert.Equal(3, roleLists.Length);
+        Assert.All(roleLists, arguments =>
+        {
+            Assert.Contains("--assignee-object-id", arguments);
+            Assert.Contains("22222222-2222-2222-2222-222222222222", arguments);
+            Assert.Contains("--fill-principal-name", arguments);
+            Assert.DoesNotContain("--assignee", arguments);
+        });
         Assert.Contains(
             roleLists,
             arguments => arguments.Contains("--scope") &&
-                         arguments.Contains("/subscriptions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/resourceGroups/proof-rg"));
+                         arguments.Contains("/subscriptions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
         Assert.Contains(
             roleLists,
             arguments => arguments.Contains("--scope") &&
@@ -70,7 +77,7 @@ public sealed class AzureProviderAuthorityPreflightTests : IDisposable
     }
 
     [Fact]
-    public async Task Existing_target_group_is_authorized_at_the_resource_group_scope()
+    public async Task Existing_anchor_group_does_not_replace_subscription_authority_for_dedicated_groups()
     {
         var process = new FakeCommandProcess { TargetGroupExists = true };
         var result = await Preflight(process).ValidateAsync();
@@ -79,7 +86,9 @@ public sealed class AzureProviderAuthorityPreflightTests : IDisposable
         Assert.Contains(
             process.Calls,
             arguments => arguments is ["role", "assignment", "list", ..] &&
-                         arguments.Contains("/subscriptions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/resourceGroups/proof-rg"));
+                         arguments.Contains("/subscriptions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
+        Assert.DoesNotContain(process.Calls, arguments => arguments is ["role", "assignment", "list", ..] &&
+            arguments.Contains("/subscriptions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/resourceGroups/proof-rg"));
     }
 
     [Fact]
@@ -104,6 +113,20 @@ public sealed class AzureProviderAuthorityPreflightTests : IDisposable
         Assert.DoesNotContain(process.Calls, arguments => arguments[0] == "role");
     }
 
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("[\"33333333-3333-3333-3333-333333333333\"]")]
+    [InlineData("[\"22222222-2222-2222-2222-222222222222\",\"22222222-2222-2222-2222-222222222222\"]")]
+    public async Task Missing_ambiguous_or_mismatched_bootstrap_identity_fails_before_rbac(string observation)
+    {
+        var process = new FakeCommandProcess { PrincipalOutput = observation };
+        var result = await Preflight(process).ValidateAsync();
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("azure.preflight.observation-invalid", result.Code);
+        Assert.DoesNotContain(process.Calls, arguments => arguments[0] == "role");
+    }
+
     private AzureProviderAuthorityPreflight Preflight(FakeCommandProcess process) =>
         new(Options(), Scope(), process);
 
@@ -115,7 +138,7 @@ public sealed class AzureProviderAuthorityPreflightTests : IDisposable
         SqlCmdPath = Path.Combine(_root, "sqlcmd"),
         CurlPath = Path.Combine(_root, "curl"),
         TemplateRoot = _root,
-        SqlBootstrapObjectId = "11111111-1111-1111-1111-111111111111",
+        SqlBootstrapObjectId = "22222222-2222-2222-2222-222222222222",
         SqlBootstrapLogin = "proof-bootstrap",
         SqlBootstrapIp = "203.0.113.10",
         RuntimeAdminUsername = "runtime-admin"
@@ -140,7 +163,8 @@ public sealed class AzureProviderAuthorityPreflightTests : IDisposable
         public List<string[]> Calls { get; } = [];
         public bool FailLogin { get; init; }
         public bool TargetGroupExists { get; init; } = true;
-        public string AccountOutput { get; init; } = "{\"id\":\"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\",\"principal\":\"11111111-1111-1111-1111-111111111111\"}";
+        public string PrincipalOutput { get; init; } = "[\"22222222-2222-2222-2222-222222222222\"]";
+        public string AccountOutput { get; init; } = "{\"id\":\"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\",\"name\":\"userAssignedIdentity\",\"type\":\"servicePrincipal\",\"identity\":\"MSIClient-11111111-1111-1111-1111-111111111111\"}";
         public IReadOnlyList<string> TargetRoles { get; init; } = ["Contributor", "Role Based Access Control Administrator"];
         public IReadOnlyList<string> RegistryRoles { get; init; } = ["Contributor", "Role Based Access Control Administrator"];
 
@@ -158,6 +182,7 @@ public sealed class AzureProviderAuthorityPreflightTests : IDisposable
             var output = arguments[0] switch
             {
                 "account" when arguments[1] == "show" => AccountOutput,
+                "identity" => PrincipalOutput,
                 "group" => TargetGroupExists ? "true" : "false",
                 "role" when arguments.Contains("runtimeimages") => $"[{string.Join(',', RegistryRoles.Select(JsonString))}]",
                 "role" => $"[{string.Join(',', TargetRoles.Select(JsonString))}]",

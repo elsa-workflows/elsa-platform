@@ -116,8 +116,21 @@ public sealed class AzureProviderAuthorityPreflight : IAzureProviderAuthorityPre
             if (account is null)
                 return Failed(ObservationFailureCode, "The managed Azure identity account could not be observed.");
             if (!string.Equals(account.SubscriptionId, _scope.SubscriptionId, StringComparison.Ordinal) ||
-                !string.Equals(account.PrincipalId, _options.AzureCliClientId, StringComparison.Ordinal))
+                !string.Equals(account.ClientId, _options.AzureCliClientId, StringComparison.Ordinal))
                 return Failed(ObservationInvalidCode, "The authenticated Azure identity did not match the configured authority.");
+
+            // Resolve the ARM identity's object ID without requiring Microsoft Graph access.
+            // The bounded provider profile hosts its identity in the workload subscription.
+            var principal = await _process.ExecuteAsync(
+                Request(["identity", "list", "--subscription", _scope.SubscriptionId,
+                    "--query", $"[?clientId=='{_options.AzureCliClientId}'].principalId", "--output", "json", "--only-show-errors"]),
+                ParsePrincipal,
+                cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!principal.Succeeded || principal.Value is null ||
+                principal.Value.Value != _options.SqlBootstrapObjectId)
+                return Failed(ObservationInvalidCode, "The managed Azure identity does not match the configured bootstrap authority.");
+            var principalId = principal.Value.Value;
 
             var targetGroupExists = await RunBooleanObservationAsync(
                 ["group", "exists", "--subscription", _scope.SubscriptionId, "--name", _scope.ResourceGroupName,
@@ -129,8 +142,10 @@ public sealed class AzureProviderAuthorityPreflight : IAzureProviderAuthorityPre
             if (!targetGroupExists.Value)
                 return Failed(ObservationInvalidCode, "The governed Azure target scope does not exist.");
 
-            var targetScope = ResourceGroupScope(_scope.SubscriptionId, _scope.ResourceGroupName);
-            var targetRoles = await RunRoleObservationAsync(targetScope, account.PrincipalId, cancellationToken);
+            // Each managed instance receives a new sibling resource group. Authority on the
+            // configured anchor group alone cannot create or administer those groups.
+            var targetScope = $"/subscriptions/{_scope.SubscriptionId}";
+            var targetRoles = await RunRoleObservationAsync(targetScope, principalId, cancellationToken);
             if (targetRoles is null)
                 return Failed(ObservationFailureCode, "The configured Azure target permissions could not be observed.");
             if (!HasRequiredRoles(targetRoles))
@@ -142,14 +157,14 @@ public sealed class AzureProviderAuthorityPreflight : IAzureProviderAuthorityPre
             // role-assignment role assigned only to the group does not authorize the child scope.
             var registryGroupRoles = await RunRoleObservationAsync(
                 ResourceGroupScope(_scope.RegistrySubscriptionId, _scope.RegistryResourceGroupName),
-                account.PrincipalId,
+                principalId,
                 cancellationToken);
             if (registryGroupRoles is null)
                 return Failed(ObservationFailureCode, "The configured Azure registry resource group permissions could not be observed.");
             if (!HasMutationRole(registryGroupRoles))
                 return Failed(RbacInsufficientCode, "The managed Azure identity lacks registry deployment permissions.");
 
-            var registryResourceRoles = await RunRoleObservationAsync(RegistryScope(_scope), account.PrincipalId, cancellationToken);
+            var registryResourceRoles = await RunRoleObservationAsync(RegistryScope(_scope), principalId, cancellationToken);
             if (registryResourceRoles is null)
                 return Failed(ObservationFailureCode, "The configured Azure registry role-assignment permissions could not be observed.");
             if (!HasRoleAssignmentPermission(registryResourceRoles))
@@ -192,7 +207,7 @@ public sealed class AzureProviderAuthorityPreflight : IAzureProviderAuthorityPre
     {
         var result = await _process.ExecuteAsync(
             Request(["account", "show", "--subscription", _scope.SubscriptionId,
-                "--query", "{id:id,principal:user.name}", "--output", "json", "--only-show-errors"]),
+                "--query", "{id:id,name:user.name,type:user.type,identity:user.assignedIdentityInfo}", "--output", "json", "--only-show-errors"]),
             ParseAccount,
             cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
@@ -214,7 +229,7 @@ public sealed class AzureProviderAuthorityPreflight : IAzureProviderAuthorityPre
         CancellationToken cancellationToken)
     {
         var result = await _process.ExecuteAsync(
-            Request(["role", "assignment", "list", "--scope", scope, "--assignee", principalId,
+            Request(["role", "assignment", "list", "--scope", scope, "--assignee-object-id", principalId, "--fill-principal-name", "false",
                 "--include-inherited", "--all", "--query", "[].roleDefinitionName", "--output", "json",
                 "--only-show-errors"]),
             ParseRoles,
@@ -234,16 +249,27 @@ public sealed class AzureProviderAuthorityPreflight : IAzureProviderAuthorityPre
         var root = document.RootElement;
         if (root.ValueKind != JsonValueKind.Object ||
             !root.TryGetProperty("id", out var idElement) ||
-            !root.TryGetProperty("principal", out var principalElement) ||
+            !root.TryGetProperty("name", out var nameElement) ||
+            !root.TryGetProperty("type", out var typeElement) ||
+            !root.TryGetProperty("identity", out var identityElement) ||
             idElement.ValueKind != JsonValueKind.String ||
-            principalElement.ValueKind != JsonValueKind.String)
+            nameElement.ValueKind != JsonValueKind.String ||
+            typeElement.ValueKind != JsonValueKind.String ||
+            identityElement.ValueKind != JsonValueKind.String)
             throw new FormatException("The Azure account observation shape is invalid.");
 
         var subscriptionId = idElement.GetString();
-        var principalId = principalElement.GetString();
-        if (!IsCanonicalGuid(subscriptionId) || !IsCanonicalGuid(principalId))
+        // Azure CLI 2.77 stores --client-id logins as userAssignedIdentity plus
+        // assignedIdentityInfo = MSIClient-<client ID>, not a GUID in user.name.
+        const string prefix = "MSIClient-";
+        var identity = identityElement.GetString();
+        if (nameElement.GetString() != "userAssignedIdentity" || typeElement.GetString() != "servicePrincipal" ||
+            identity is null || !identity.StartsWith(prefix, StringComparison.Ordinal))
+            throw new FormatException("The Azure account is not the configured managed identity login kind.");
+        var clientId = identity[prefix.Length..];
+        if (!IsCanonicalGuid(subscriptionId) || !IsCanonicalGuid(clientId))
             throw new FormatException("The Azure account observation identity is invalid.");
-        return new(subscriptionId!, principalId!);
+        return new(subscriptionId!, clientId!);
     }
 
     private static SafeBoolean ParseBoolean(ReadOnlyMemory<char> output)
@@ -252,6 +278,21 @@ public sealed class AzureProviderAuthorityPreflight : IAzureProviderAuthorityPre
         return bool.TryParse(value, out var parsed)
             ? new SafeBoolean(parsed)
             : throw new FormatException("The Azure group observation is invalid.");
+    }
+
+    private static SafePrincipal ParsePrincipal(ReadOnlyMemory<char> output)
+    {
+        using var document = JsonDocument.Parse(output);
+        var root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Array || root.GetArrayLength() != 1 ||
+            root[0].ValueKind != JsonValueKind.String || !IsCanonicalGuid(root[0].GetString()))
+            throw new FormatException("The managed identity object observation is invalid.");
+        return new(root[0].GetString()!);
+    }
+
+    private sealed class SafePrincipal(string value) : AzureCommandSafeOutput
+    {
+        public string Value { get; } = value;
     }
 
     private static PreflightRoles ParseRoles(ReadOnlyMemory<char> output)
@@ -296,10 +337,10 @@ public sealed class AzureProviderAuthorityPreflight : IAzureProviderAuthorityPre
     private static AzureProviderAuthorityPreflightResult Failed(string code, string message) =>
         new(false, code, message);
 
-    private sealed class PreflightAccount(string subscriptionId, string principalId) : AzureCommandSafeOutput
+    private sealed class PreflightAccount(string subscriptionId, string clientId) : AzureCommandSafeOutput
     {
         public string SubscriptionId { get; } = subscriptionId;
-        public string PrincipalId { get; } = principalId;
+        public string ClientId { get; } = clientId;
     }
 
     private sealed class SafeBoolean(bool value) : AzureCommandSafeOutput

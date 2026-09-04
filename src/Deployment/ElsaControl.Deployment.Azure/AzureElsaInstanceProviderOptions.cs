@@ -30,6 +30,8 @@ public sealed record AzureElsaInstanceProviderOptions
             throw new ArgumentException("A valid Azure template fingerprint is required.", nameof(TemplateFingerprint));
         if (!IsFingerprint(ProviderScopeFingerprint))
             throw new ArgumentException("The Azure provider scope fingerprint is invalid.", nameof(ProviderScopeFingerprint));
+        if (ResourceGroupNamingVersion != 1)
+            throw new ArgumentException("Managed instances require dedicated resource-group naming.", nameof(ResourceGroupNamingVersion));
         if (!Guid.TryParseExact(SubscriptionId, "D", out _) ||
             !string.Equals(SubscriptionId, SubscriptionId.ToLowerInvariant(), StringComparison.Ordinal))
             throw new ArgumentException("The Azure subscription ID is invalid.", nameof(SubscriptionId));

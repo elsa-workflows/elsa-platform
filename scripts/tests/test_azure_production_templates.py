@@ -66,6 +66,11 @@ class AzureProductionTemplateTests(unittest.TestCase):
             for line in output_lines:
                 self.assertFalse(any(token in line for token in ("secret", "password", "connectionstring")))
 
+    def test_vault_bootstrap_uses_a_managed_service_principal(self) -> None:
+        vault = (PRODUCTION / "modules/key-vault.bicep").read_text()
+        self.assertNotIn("principalType: 'User'", vault)
+        self.assertEqual(2, vault.count("principalType: 'ServicePrincipal'"))
+
     def test_runner_files_preserve_immutable_image_and_sql_bootstrap_contract(self) -> None:
         main = MAIN.read_text()
         acr = (PRODUCTION / "acr-pull-role.bicep").read_text()

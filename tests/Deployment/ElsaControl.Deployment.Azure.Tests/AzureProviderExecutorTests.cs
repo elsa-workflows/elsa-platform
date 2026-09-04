@@ -703,8 +703,11 @@ public sealed class AzureProviderExecutorTests
         Assert.Equal(store.LatestReconcileResources, runner.Commands.Single().Resources);
     }
 
-    [Fact]
-    public async Task Bound_delete_uses_assignment_resources_instead_of_latest_reconcile_history()
+    [Theory]
+    [InlineData(AzureProviderAssignmentState.Active)]
+    [InlineData(AzureProviderAssignmentState.Unknown)]
+    [InlineData(AzureProviderAssignmentState.Deleting)]
+    public async Task Bound_delete_uses_assignment_resources_instead_of_latest_reconcile_history(AzureProviderAssignmentState state)
     {
         var historical = new AzureProviderResourceReferences(ResourceGroupName: "historical-rg");
         var assigned = new AzureProviderResourceReferences(
@@ -716,7 +719,7 @@ public sealed class AzureProviderExecutorTests
             LifecycleAction = ElsaInstanceOperationAction.Delete
         };
         var runner = new RecordingRunner { CleanupResources = new(ResourceGroupName: "still-present") };
-        var assignmentStore = new FixedAssignmentStore(assigned, request.ProviderScopeFingerprint!);
+        var assignmentStore = new FixedAssignmentStore(assigned, request.ProviderScopeFingerprint!, state);
         var commercialGate = new ToggleCommercialGate { Allowed = true };
         var executor = new AzureProviderExecutor(
             store,
@@ -884,7 +887,8 @@ public sealed class AzureProviderExecutorTests
         public override DateTimeOffset GetUtcNow() => now;
     }
 
-    private sealed class FixedAssignmentStore(AzureProviderResourceReferences resources, string providerScopeFingerprint) : IAzureProviderResourceAssignmentStore
+    private sealed class FixedAssignmentStore(AzureProviderResourceReferences resources, string providerScopeFingerprint,
+        AzureProviderAssignmentState state = AzureProviderAssignmentState.Active) : IAzureProviderResourceAssignmentStore
     {
         public Task<AzureProviderResourceAssignment> CreateOrGetAsync(
             AzureProviderResourceAssignmentRequest request,
@@ -906,7 +910,7 @@ public sealed class AzureProviderExecutorTests
                 "workload-a",
                 new string('a', 64),
                 "westeurope",
-                AzureProviderAssignmentState.Active,
+                state,
                 resources,
                 null,
                 1,

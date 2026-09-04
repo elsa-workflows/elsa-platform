@@ -12,6 +12,41 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     private readonly RunnerFixture _fixture = new();
 
     [Fact]
+    public async Task Disposable_foundation_preserves_the_proof_template_and_ownership_contract()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args is ["group", "exists", ..], "false");
+        process.Success(args => args is ["group", "create", ..]);
+        process.Success(args => args.Contains("deployment") && args.Contains("create"), FoundationOutputs());
+        var options = _fixture.Options with
+        {
+            DisposableProofMode = true,
+            DisposableExpiryUtc = new DateOnly(2026, 9, 30),
+            AzureCliClientId = null,
+            RuntimeAdminUsername = "proof-admin"
+        };
+        var command = _fixture.Command(AzureProviderRunnerStep.Foundation) with
+        {
+            Context = _fixture.Context with { ProviderScopeFingerprint = options.ComputeProviderScopeFingerprint(_fixture.Scope) }
+        };
+        var runner = new AzureBicepProviderRunner(options, _fixture.Scope, process);
+
+        var result = await runner.RunAsync(command);
+
+        Assert.Equal(AzureProviderRunnerOutcome.Completed, result.Outcome);
+        var create = process.Calls.Single(call => call is ["group", "create", ..]);
+        Assert.Contains("proof=108", create);
+        Assert.Contains("proof-name=proof", create);
+        Assert.Contains("expiry=2026-09-30", create);
+        var deployment = process.Calls.Single(call => call.Contains("deployment"));
+        Assert.Contains("proofName=proof", deployment);
+        Assert.Contains("expiryUtc=2026-09-30", deployment);
+        Assert.Contains("adminUsername=proof-admin", deployment);
+        Assert.DoesNotContain(deployment, value => value.StartsWith("workloadName=", StringComparison.Ordinal) || value.StartsWith("releaseLine=", StringComparison.Ordinal));
+        Assert.Contains("/elsa108-", result.Resources.FoundationDeploymentId);
+    }
+
+    [Fact]
     public async Task Foundation_projects_only_exact_resource_references()
     {
         var process = new FakeCommandProcess();
@@ -516,6 +551,10 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.Equal(AzureProviderRunnerOutcome.Completed, result.Outcome);
         Assert.NotNull(scriptPath);
         Assert.False(File.Exists(scriptPath));
+        var bootstrap = Assert.Single(process.Calls, arguments => arguments.Contains("-i"));
+        Assert.Contains("ActiveDirectoryManagedIdentity", bootstrap);
+        Assert.Equal(_fixture.Options.AzureCliClientId, bootstrap[Array.IndexOf(bootstrap, "-U") + 1]);
+        Assert.DoesNotContain("ActiveDirectoryDefault", bootstrap);
     }
 
     [Fact]

@@ -42,6 +42,20 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
     }
 
     [Fact]
+    public void Disposable_mode_requires_expiry_and_is_bound_into_the_authority()
+    {
+        var production = ValidOptions();
+        var expiry = new DateOnly(2026, 9, 30);
+        Assert.Throws<ArgumentException>(() => (production with { DisposableProofMode = true }).Validate());
+        Assert.Throws<ArgumentException>(() => (production with { DisposableExpiryUtc = expiry }).Validate());
+        var proof = production with { DisposableProofMode = true, DisposableExpiryUtc = expiry, AzureCliClientId = null };
+        proof.Validate();
+        Assert.NotEqual(production.ComputeProviderScopeFingerprint(ValidScope()), proof.ComputeProviderScopeFingerprint(ValidScope()));
+        Assert.NotEqual(proof.ComputeProviderScopeFingerprint(ValidScope()),
+            (proof with { DisposableExpiryUtc = expiry.AddDays(1) }).ComputeProviderScopeFingerprint(ValidScope()));
+    }
+
+    [Fact]
     public void Rejects_a_symbolic_link_as_template_authority()
     {
         if (OperatingSystem.IsWindows())

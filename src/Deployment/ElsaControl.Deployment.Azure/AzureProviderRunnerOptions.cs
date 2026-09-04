@@ -80,6 +80,10 @@ public sealed record AzureProviderRunnerOptions
     public string SqlBootstrapLogin { get; init; } = "";
     public string SqlBootstrapIp { get; init; } = "";
     public string RuntimeAdminUsername { get; init; } = "";
+    /// <summary>Selects the legacy disposable-proof template and ownership dialect.</summary>
+    public bool DisposableProofMode { get; init; }
+    /// <summary>Expiry bound to disposable-proof ownership. Production deployments omit it.</summary>
+    public DateOnly? DisposableExpiryUtc { get; init; }
     public string Owner { get; init; } = "elsa-control";
     public TimeSpan CommandTimeout { get; init; } = TimeSpan.FromMinutes(15);
     public int MaximumOutputCharacters { get; init; } = 1_048_576;
@@ -111,6 +115,8 @@ public sealed record AzureProviderRunnerOptions
             sqlBootstrapLogin = SqlBootstrapLogin,
             sqlBootstrapIp = SqlBootstrapIp,
             runtimeAdminUsername = RuntimeAdminUsername,
+            disposableProofMode = DisposableProofMode,
+            disposableExpiryUtc = DisposableExpiryUtc?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
             owner = Owner.ToLowerInvariant()
         });
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
@@ -139,8 +145,8 @@ public sealed record AzureProviderRunnerOptions
         if (!Enabled)
             throw new InvalidOperationException("The concrete Azure provider runner is not enabled.");
         ValidateExecutable(AzureCliPath, nameof(AzureCliPath));
-        if (!Guid.TryParseExact(AzureCliClientId, "D", out _) ||
-            !string.Equals(AzureCliClientId, AzureCliClientId?.ToLowerInvariant(), StringComparison.Ordinal))
+        if (!DisposableProofMode && (!Guid.TryParseExact(AzureCliClientId, "D", out _) ||
+            !string.Equals(AzureCliClientId, AzureCliClientId?.ToLowerInvariant(), StringComparison.Ordinal)))
             throw new ArgumentException("The Azure CLI managed identity client ID must be a canonical GUID.", nameof(AzureCliClientId));
         ValidateExecutable(SqlCmdPath, nameof(SqlCmdPath));
         ValidateExecutable(CurlPath, nameof(CurlPath));
@@ -160,6 +166,8 @@ public sealed record AzureProviderRunnerOptions
             throw new ArgumentException("The SQL bootstrap login is unsafe.", nameof(SqlBootstrapLogin));
         if (!Regex.IsMatch(RuntimeAdminUsername ?? "", "^[A-Za-z0-9._@#-]{1,128}\\z", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking))
             throw new ArgumentException("The runtime administrator username is unsafe.", nameof(RuntimeAdminUsername));
+        if (DisposableProofMode != DisposableExpiryUtc.HasValue)
+            throw new ArgumentException("Disposable proof mode requires one explicit expiry, and production mode must not carry one.", nameof(DisposableExpiryUtc));
         if (!System.Net.IPAddress.TryParse(SqlBootstrapIp, out var ip) ||
             ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork ||
             SqlBootstrapIp == "0.0.0.0" ||

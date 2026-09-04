@@ -34,13 +34,18 @@ public sealed class AzureProofHostExecutor(TextWriter output, TextWriter error) 
             var runnerOptions = options.CreateRunnerOptions();
             var targetScope = options.CreateTargetScope();
             var runner = new AzureBicepProviderRunner(runnerOptions, targetScope, secrets);
-            var executor = new AzureProviderExecutor(store, runner, workerId: $"proof-host-{options.ProofName}");
+            var executor = new AzureProviderExecutor(store, runner, workerId: $"proof-host-{options.ProofName}", assignmentStore: store);
             var resolution = Elsa38CombinedProofResolutionFactory.Create(options.CreateAdmission());
             var templateFingerprint = runnerOptions.ComputeTemplateAuthorityFingerprint();
             var scopeFingerprint = runnerOptions.ComputeProviderScopeFingerprint(targetScope);
+            var assignment = await ((IAzureProviderResourceAssignmentStore)store).CreateOrGetAsync(
+                new(options.WorkspaceId, ProofOrganizationId, ProofInstanceId, scopeFingerprint,
+                    options.SubscriptionId, options.ResourceGroupName, options.ProofName, options.Location,
+                    AzureProviderResourceAssignmentNaming.ExplicitDisposableGroup),
+                DateTimeOffset.UtcNow, cancellationToken);
             var planFactory = new AdmittedAzureProofPlanFactory(
                 resolution, new(options.ProofName, options.Location), templateFingerprint, scopeFingerprint, options.Features,
-                ProofOrganizationId, ProofInstanceId);
+                ProofOrganizationId, ProofInstanceId, assignment.Id);
 
             return options.Mode switch
             {
@@ -109,7 +114,7 @@ public sealed class AzureProofHostExecutor(TextWriter output, TextWriter error) 
         var request = AzureProviderOperationService.CreateOperationRequest(
             options.WorkspaceId, operation.IdempotencyKey, templateFingerprint, submission.Plan,
             AzureProviderOperationAction.Delete, submission.ProviderScopeFingerprint,
-            submission.OrganizationId, submission.InstanceId, submission.LifecycleAction);
+            submission.OrganizationId, submission.InstanceId, submission.LifecycleAction, submission.ProviderAssignmentId);
         using var cleanupCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cleanupCts.CancelAfter(options.CleanupTimeout);
         var execution = await executor.DeleteAsync(request, submission.Plan, cleanupCts.Token);
