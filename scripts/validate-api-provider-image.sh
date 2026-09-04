@@ -19,29 +19,35 @@ image="$1"
 command -v docker >/dev/null 2>&1 || fail "docker is unavailable"
 command -v openssl >/dev/null 2>&1 || fail "openssl is unavailable"
 
-api_key="$(openssl rand -hex 32 2>/dev/null)" || fail "could not generate an ephemeral API key"
-[[ "$api_key" =~ ^[[:xdigit:]]{64}$ ]] || fail "generated API key had an unexpected format"
+Authentication__ApiKey="$(openssl rand -hex 32 2>/dev/null)" || fail "could not generate an ephemeral API key"
+[[ "$Authentication__ApiKey" =~ ^[[:xdigit:]]{64}$ ]] || fail "generated API key had an unexpected format"
+export Authentication__ApiKey
 
 container_id=""
 # shellcheck disable=SC2329 # cleanup is invoked indirectly by the EXIT trap.
 cleanup() {
   if [[ -n "$container_id" ]]; then
-    docker rm --force "$container_id" >/dev/null 2>&1 || true
+    if ! docker rm --force "$container_id" >/dev/null 2>&1; then
+      echo "API provider image smoke cleanup failed; the test container was retained." >&2
+      exit 1
+    fi
   fi
 }
 trap cleanup EXIT
 
-if ! container_id="$(docker create \
+if ! created_id="$(docker create \
   --network none \
   --env ASPNETCORE_ENVIRONMENT=Production \
   --env Database__Provider=Sqlite \
-  --env 'ConnectionStrings__Catalog=Data Source=/tmp/elsa-image-smoke/catalog.db' \
-  --env DataProtection__KeysPath=/tmp/elsa-image-smoke/keys \
-  --env "Authentication__ApiKey=$api_key" \
+  --env 'ConnectionStrings__Catalog=Data Source=/tmp/elsa-image-smoke.db' \
+  --env DataProtection__KeysPath=/tmp/elsa-image-smoke-keys \
+  --env Authentication__ApiKey \
   "$image" 2>/dev/null)"; then
   fail "container could not be created"
 fi
-[[ "$container_id" =~ ^[[:alnum:]_.-]+$ ]] || fail "container creation returned an invalid identifier"
+[[ "$created_id" =~ ^[a-f0-9]{64}$ ]] || fail "container creation returned an invalid identifier"
+container_id="$created_id"
+unset Authentication__ApiKey
 
 if ! docker start "$container_id" >/dev/null 2>&1; then
   fail "container failed to start"

@@ -12,103 +12,81 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "validate-api-provider-image.sh"
+CONTAINER_ID = "a" * 64
 
 
 class ValidateApiProviderImageTests(unittest.TestCase):
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.temp = Path(temporary.name)
+        self.log = self.temp / "docker.log"
+        fake = self.temp / "docker"
+        fake.write_text("""#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "${FAKE_DOCKER_LOG:?}"
+case "$1" in
+  create)
+    [[ "${Authentication__ApiKey:-}" =~ ^[0-9a-f]{64}$ ]] || exit 90
+    printf '%s\\n' "${FAKE_ID:?}" ;;
+  start) ;;
+  inspect)
+    printf '%s\\n' "${FAKE_STATE:-running}"
+    echo 'untrusted raw container detail' >&2 ;;
+  exec) printf '%s\\n' '{"status":"ok"}' ;;
+  rm) exit "${FAKE_CLEANUP_EXIT:-0}" ;;
+  *) exit 91 ;;
+esac
+""")
+        fake.chmod(0o755)
+
+    def run_smoke(self, **overrides: str) -> subprocess.CompletedProcess[str]:
+        environment = os.environ.copy()
+        environment.update(PATH=f"{self.temp}:{environment['PATH']}",
+                           FAKE_DOCKER_LOG=str(self.log), FAKE_ID=CONTAINER_ID)
+        environment.update(overrides)
+        return subprocess.run(["bash", str(SCRIPT), "api-image:test"], env=environment,
+                              capture_output=True, text=True, check=False, timeout=10)
+
     def test_script_uses_a_private_bounded_container_probe(self) -> None:
         source = SCRIPT.read_text()
-        self.assertIn("docker create", source)
-        self.assertIn("--network none", source)
-        self.assertIn("ASPNETCORE_ENVIRONMENT=Production", source)
-        self.assertIn("ConnectionStrings__Catalog=Data Source=/tmp/elsa-image-smoke/catalog.db", source)
-        self.assertIn("DataProtection__KeysPath=/tmp/elsa-image-smoke/keys", source)
-        self.assertIn("Authentication__ApiKey=$api_key", source)
-        self.assertIn("docker exec", source)
-        self.assertIn("curl --fail --silent --max-time 2", source)
-        self.assertIn("deadline=$((SECONDS + 60))", source)
-        self.assertIn('docker rm --force "$container_id"', source)
-        self.assertNotIn("--publish", source)
-        self.assertNotIn("--volume", source)
-        self.assertNotIn("docker logs", source)
+        for required in ("--network none", "ASPNETCORE_ENVIRONMENT=Production",
+                         "ConnectionStrings__Catalog=Data Source=/tmp/elsa-image-smoke.db",
+                         "DataProtection__KeysPath=/tmp/elsa-image-smoke-keys",
+                         "--env Authentication__ApiKey", "docker exec",
+                         "curl --fail --silent --max-time 2", "deadline=$((SECONDS + 60))",
+                         'docker rm --force "$container_id"'):
+            self.assertIn(required, source)
+        for forbidden in ("--publish", "--volume", "docker logs"):
+            self.assertNotIn(forbidden, source)
 
-    def test_fake_docker_success_does_not_leak_key_and_cleans_exact_container(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp = Path(temp_dir)
-            docker_log = temp / "docker.log"
-            fake_docker = temp / "docker"
-            fake_docker.write_text(
-                """#!/usr/bin/env bash
-set -euo pipefail
-log_file="${FAKE_DOCKER_LOG:?}"
-printf '%s\n' "$*" >> "$log_file"
-case "$1" in
-  create) printf '%s\n' fake-container ;;
-  start) ;;
-  inspect) printf '%s\n' running ;;
-  exec) printf '%s\n' '{"status":"ok"}' ;;
-  rm) ;;
-  *) exit 91 ;;
-esac
-"""
-            )
-            fake_docker.chmod(0o755)
-            environment = os.environ.copy()
-            environment.update(
-                {
-                    "PATH": f"{temp}:{environment['PATH']}",
-                    "FAKE_DOCKER_LOG": str(docker_log),
-                }
-            )
+    def test_success_keeps_key_out_of_arguments_and_cleans_exact_container(self) -> None:
+        result = self.run_smoke()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("API provider image smoke check passed.\n", result.stdout)
+        self.assertNotRegex(result.stdout + result.stderr, r"[0-9a-f]{64}")
+        calls = self.log.read_text().splitlines()
+        self.assertIn("--env Authentication__ApiKey api-image:test", calls[0])
+        self.assertNotRegex(calls[0], r"Authentication__ApiKey=")
+        self.assertEqual(f"rm --force {CONTAINER_ID}", calls[-1])
 
-            result = subprocess.run(
-                ["bash", str(SCRIPT), "api-image:test"],
-                env=environment,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+    def test_crash_fails_without_emitting_container_output_and_still_cleans(self) -> None:
+        result = self.run_smoke(FAKE_STATE="exited")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("container exited before /health became ready", result.stderr)
+        self.assertNotIn("untrusted raw container detail", result.stdout + result.stderr)
+        self.assertEqual(f"rm --force {CONTAINER_ID}", self.log.read_text().splitlines()[-1])
 
-            self.assertEqual(0, result.returncode, result.stderr)
-            self.assertEqual("API provider image smoke check passed.\n", result.stdout)
-            self.assertNotRegex(result.stdout + result.stderr, r"[0-9a-f]{64}")
-            docker_calls = docker_log.read_text().splitlines()
-            self.assertRegex(docker_calls[0], r"--network none")
-            self.assertRegex(docker_calls[0], r"Authentication__ApiKey=[0-9a-f]{64}")
-            self.assertNotRegex(docker_calls[0], r"--(?:publish|volume)")
-            self.assertIn("exec fake-container curl --fail --silent --max-time 2", docker_calls[3])
-            self.assertEqual("rm --force fake-container", docker_calls[-1])
+    def test_untrusted_container_identifier_cannot_select_cleanup_targets(self) -> None:
+        result = self.run_smoke(FAKE_ID="--all")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("invalid identifier", result.stderr)
+        self.assertEqual(1, len(self.log.read_text().splitlines()))
 
-    def test_fake_docker_crash_fails_without_emitting_container_output(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp = Path(temp_dir)
-            fake_docker = temp / "docker"
-            fake_docker.write_text(
-                """#!/usr/bin/env bash
-set -euo pipefail
-case "$1" in
-  create) printf '%s\n' fake-container ;;
-  start) ;;
-  inspect) printf '%s\n' exited; echo 'untrusted raw container detail' >&2 ;;
-  rm) ;;
-  *) exit 91 ;;
-esac
-"""
-            )
-            fake_docker.chmod(0o755)
-            environment = os.environ.copy()
-            environment["PATH"] = f"{temp}:{environment['PATH']}"
-
-            result = subprocess.run(
-                ["bash", str(SCRIPT), "api-image:test"],
-                env=environment,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-
-            self.assertNotEqual(0, result.returncode)
-            self.assertIn("container exited before /health became ready", result.stderr)
-            self.assertNotIn("untrusted raw container detail", result.stdout + result.stderr)
+    def test_cleanup_failure_fails_the_gate(self) -> None:
+        result = self.run_smoke(FAKE_CLEANUP_EXIT="1")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("cleanup failed", result.stderr)
 
 
 if __name__ == "__main__":
