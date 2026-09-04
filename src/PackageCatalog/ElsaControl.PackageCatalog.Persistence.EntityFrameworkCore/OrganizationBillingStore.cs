@@ -399,10 +399,22 @@ public sealed class OrganizationBillingStore(CatalogDbContext dbContext) : IOrga
         RequireSha256(providerEvent.EventHash, nameof(providerEvent.EventHash));
         RequireSafeReference(providerEvent.ProviderCustomerReference, nameof(providerEvent.ProviderCustomerReference));
         RequireSafeReference(providerEvent.ProviderSubscriptionReference, nameof(providerEvent.ProviderSubscriptionReference));
-        if ((!allowUnknown && (!providerEvent.State.HasValue || !Enum.IsDefined(providerEvent.State.Value))) ||
-            (allowUnknown && providerEvent.State.HasValue) ||
-            providerEvent.OccurredAt == default)
-            throw new ArgumentException("Billing event state and UTC occurrence timestamp are required.", nameof(providerEvent));
+        if (providerEvent.OccurredAt == default)
+            throw new ArgumentException("Billing event occurrence timestamp is required.", nameof(providerEvent));
+
+        if (allowUnknown)
+        {
+            if (providerEvent.State.HasValue)
+                throw new ArgumentException("Unknown billing events must not contain a lifecycle state.", nameof(providerEvent));
+        }
+        else if (!providerEvent.State.HasValue)
+        {
+            throw new ArgumentException("Known billing events require a lifecycle state.", nameof(providerEvent));
+        }
+        else if (!Enum.IsDefined(providerEvent.State.Value))
+        {
+            throw new ArgumentException("Billing event lifecycle state is invalid.", nameof(providerEvent));
+        }
     }
 
     private static BillingProviderEvent NormalizeEvent(BillingProviderEvent providerEvent)

@@ -101,12 +101,37 @@ public sealed class OrganizationBillingPersistenceTests
             Now,
             "sha256:" + new string('b', 64));
 
-        await Assert.ThrowsAsync<ArgumentException>(() =>
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
             new OrganizationBillingStore(db).RecordUnknownAsync(providerEvent, Now.AddMinutes(1)));
+
+        Assert.StartsWith("Unknown billing events must not contain a lifecycle state.", exception.Message);
 
         Assert.Equal(0, await db.BillingProviderEvents.CountAsync());
         Assert.Equal(0, await db.OrganizationAuditRecords.CountAsync());
         Assert.Null(await db.OrganizationSubscriptions.SingleOrDefaultAsync(x => x.OrganizationId == OrganizationId));
+    }
+
+    [Fact]
+    public async Task Known_event_without_lifecycle_state_is_rejected_with_a_distinct_validation_message()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateDb(connection);
+        await db.Database.EnsureCreatedAsync();
+
+        var providerEvent = new BillingProviderEvent(
+            OrganizationId,
+            "stripe",
+            "evt-missing-state",
+            "customer.subscription.updated",
+            null,
+            Now,
+            "sha256:" + new string('c', 64));
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+            new OrganizationBillingStore(db).ConsumeAsync(providerEvent, Now.AddMinutes(1)));
+
+        Assert.StartsWith("Known billing events require a lifecycle state.", exception.Message);
     }
 
     [Fact]
@@ -703,6 +728,38 @@ public sealed class OrganizationBillingPersistenceTests
         Assert.Null(snapshot.SubscriptionId);
         Assert.True(snapshot.CanCreateCustomSources);
         Assert.Equal(10, snapshot.MaxSources);
+    }
+
+    [Fact]
+    public async Task Rolling_back_unknown_event_state_migration_restores_null_rows_to_suspended()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedDb(connection);
+        await db.Database.MigrateAsync();
+
+        db.Organizations.Add(new Organization { Id = OrganizationId, Name = "Acme" });
+        db.BillingProviderEvents.Add(new BillingProviderEventInboxEntry
+        {
+            OrganizationId = OrganizationId,
+            Provider = "stripe",
+            ProviderEventId = "evt-rollback-null-state",
+            EventType = "checkout.session.completed",
+            State = null,
+            EventHash = "sha256:" + new string('d', 64),
+            OccurredAt = Now,
+            ReceivedAt = Now,
+            ProcessedAt = Now,
+            ProcessingStatus = BillingProviderEventProcessingStatus.RecordedUnknown,
+            RejectionCode = "provider.event.unknown"
+        });
+        await db.SaveChangesAsync();
+
+        await db.Database.MigrateAsync("20260904013824_AddOrganizationBillingLifecycle");
+
+        db.ChangeTracker.Clear();
+        var restored = await db.BillingProviderEvents.SingleAsync();
+        Assert.Equal(OrganizationSubscriptionState.Suspended, restored.State);
     }
 
     private static BillingProviderEvent Event(string id, OrganizationSubscriptionState state, DateTimeOffset occurredAt) =>

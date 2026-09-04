@@ -24,13 +24,18 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // Unknown events intentionally persist a null lifecycle state. A
+            // rollback must preserve the non-null enum-backed column contract;
+            // use the fail-safe terminal state before tightening nullability.
+            migrationBuilder.Sql("UPDATE \"BillingProviderEvents\" SET \"State\" = 'Suspended' WHERE \"State\" IS NULL;");
+
             migrationBuilder.AlterColumn<string>(
                 name: "State",
                 table: "BillingProviderEvents",
                 type: "TEXT",
                 maxLength: 32,
                 nullable: false,
-                defaultValue: "",
+                defaultValue: "Suspended",
                 oldClrType: typeof(string),
                 oldType: "TEXT",
                 oldMaxLength: 32,
