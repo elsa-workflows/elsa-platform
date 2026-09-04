@@ -40,6 +40,7 @@ import { WeaverSessionPage } from "@/features/weaver/WeaverSessionPage";
 import { ConsoleLogsPage } from "@/features/console/ConsoleLogsPage";
 import { ManagedElsaInstancesPage } from "@/features/managed-elsa/ManagedElsaInstancesPage";
 import { ManagedElsaOperationsPage } from "@/features/managed-elsa/ManagedElsaOperationsPage";
+import { OrganizationBillingPage } from "@/features/billing/OrganizationBillingPage";
 
 function PlaceholderPage({ title }: { title: string }) {
   return (
@@ -121,6 +122,7 @@ export const router = createBrowserRouter([
         element: <RequireCustomerAuth><Outlet /></RequireCustomerAuth>,
         children: [
           { path: "overview", element: <OverviewPage /> },
+          { path: "billing", element: <OrganizationBillingPage /> },
           { path: "sources", element: <SourcesPage /> },
           { path: "sources/new", element: <NewSourcePage /> },
           { path: "sources/:sourceId", element: <SourceDetailsPage /> },

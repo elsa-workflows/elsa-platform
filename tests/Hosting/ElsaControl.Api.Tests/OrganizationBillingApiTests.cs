@@ -126,6 +126,74 @@ public sealed class OrganizationBillingApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Billing_status_is_tenant_safe_and_redacts_provider_metadata()
+    {
+        await _app.SeedAsync(_ => Task.CompletedTask);
+        var owner = _app.CreateControlIdentityClient(subject: "billing-status-owner");
+        var organizationId = (await owner.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Organizations.Single().Id;
+        await AddEntitlementAsync(organizationId);
+
+        var response = await owner.GetAsync($"/api/organizations/{organizationId}/billing/");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(response.Headers.CacheControl?.Private);
+        Assert.True(response.Headers.CacheControl?.NoStore);
+        var status = await response.Content.ReadControlJsonAsync<OrganizationBillingStatusResponse>();
+        Assert.NotNull(status);
+        Assert.Equal(organizationId, status!.OrganizationId);
+        Assert.Null(status.Subscription);
+        Assert.True(status.Entitlements!.ManagedHostingEnabled);
+        Assert.Equal(3, status.Entitlements.MaxWorkspaces);
+        Assert.Equal(2, status.Entitlements.MaxInstances);
+        Assert.True(status.Capacity.WorkspacesUsed > 0);
+        Assert.Equal(2, status.Capacity.ManagedInstancesLimit);
+        Assert.Equal(3, status.Capacity.WorkspacesLimit);
+        Assert.Contains("managed-hosting", status.Capabilities);
+
+        var serialized = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("provider", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("customer", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("sk_test_fake", serialized, StringComparison.Ordinal);
+        Assert.DoesNotContain("checkout.fake.test", serialized, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Billing_status_allows_organization_member_without_allowing_billing_mutation()
+    {
+        await _app.SeedAsync(_ => Task.CompletedTask);
+        var owner = _app.CreateControlIdentityClient(subject: "billing-status-owner-member-check");
+        var organizationId = (await owner.GetControlJsonAsync<MeWorkspacesResponse>("/api/me/workspaces"))!.Organizations.Single().Id;
+        await AddMemberAsync(organizationId, "billing-status-member");
+
+        var member = _app.CreateControlIdentityClient(subject: "billing-status-member");
+        var response = await member.GetAsync($"/api/organizations/{organizationId}/billing/");
+        var checkout = await member.PostAsJsonAsync(
+            $"/api/organizations/{organizationId}/billing/checkout",
+            new { });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, checkout.StatusCode);
+    }
+
+    [Fact]
+    public async Task Billing_status_does_not_disclose_another_organization()
+    {
+        await _app.SeedAsync(_ => Task.CompletedTask);
+        var owner = _app.CreateControlIdentityClient(subject: "billing-status-tenant-owner");
+        var organizationId = Guid.NewGuid();
+
+        var response = await owner.GetAsync($"/api/organizations/{organizationId}/billing/");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.True(response.Headers.CacheControl?.Private);
+        Assert.True(response.Headers.CacheControl?.NoStore);
+        Assert.Contains("no-cache", response.Headers.Pragma.Select(x => x.Name), StringComparer.OrdinalIgnoreCase);
+        var body = await response.Content.ReadControlJsonAsync<Dictionary<string, string>>();
+        Assert.Equal("organization.not-found", body!["code"]);
+        Assert.DoesNotContain(organizationId.ToString("D"), await response.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Supported_webhook_replay_and_out_of_order_are_deterministic()
     {
         await _app.SeedAsync(_ => Task.CompletedTask);
@@ -305,6 +373,24 @@ public sealed class OrganizationBillingApiTests : IAsyncLifetime
             Account = account,
             OrganizationId = organizationId,
             Role = OrganizationRole.Member
+        });
+        await db.SaveChangesAsync();
+    }
+
+    private async Task AddEntitlementAsync(Guid organizationId)
+    {
+        await using var scope = _app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+        db.OrganizationEntitlementSnapshots.Add(new OrganizationEntitlementSnapshot
+        {
+            OrganizationId = organizationId,
+            CanCreateCustomSources = true,
+            MaxSources = 10,
+            MaxWorkspaces = 3,
+            MaxInstances = 2,
+            ManagedHostingEnabled = true,
+            DeploymentTargetsEnabled = true,
+            PrivateFeedsEnabled = true
         });
         await db.SaveChangesAsync();
     }

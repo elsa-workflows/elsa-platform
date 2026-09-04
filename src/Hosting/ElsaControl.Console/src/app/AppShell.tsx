@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   Sun,
   Terminal,
+  WalletCards,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
@@ -44,7 +45,8 @@ const navSections: Array<{ label: string; items: NavItem[] }> = [
   {
     label: "Control",
     items: [
-      { to: "/admin/overview", label: "Overview", icon: Home }
+      { to: "/admin/overview", label: "Overview", icon: Home },
+      { to: "/admin/billing", label: "Billing", icon: WalletCards }
     ]
   },
   {
