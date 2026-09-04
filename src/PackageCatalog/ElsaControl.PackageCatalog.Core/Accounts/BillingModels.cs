@@ -1,6 +1,15 @@
 namespace ElsaControl.PackageCatalog.Core.Accounts;
 
 /// <summary>
+/// Shared bounds for provider-neutral billing references. The limit keeps
+/// provider and reference pairs within SQL Server's composite index key size.
+/// </summary>
+public static class OrganizationBillingLimits
+{
+    public const int ProviderReferenceMaxLength = 256;
+}
+
+/// <summary>
 /// Provider-neutral lifecycle owned by Elsa Control at the organization
 /// boundary. Provider-specific plans and price names deliberately do not
 /// appear in this model.

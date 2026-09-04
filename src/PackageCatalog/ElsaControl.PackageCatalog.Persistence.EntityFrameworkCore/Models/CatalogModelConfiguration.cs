@@ -239,8 +239,8 @@ internal sealed class OrganizationSubscriptionConfiguration : IEntityTypeConfigu
     {
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Provider).HasMaxLength(128).IsRequired();
-        builder.Property(x => x.ProviderCustomerReference).HasMaxLength(512);
-        builder.Property(x => x.ProviderSubscriptionReference).HasMaxLength(512);
+        builder.Property(x => x.ProviderCustomerReference).HasMaxLength(OrganizationBillingLimits.ProviderReferenceMaxLength);
+        builder.Property(x => x.ProviderSubscriptionReference).HasMaxLength(OrganizationBillingLimits.ProviderReferenceMaxLength);
         builder.Property(x => x.State).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.LastProviderEventId).HasMaxLength(256);
         builder.Property(x => x.TrialStartedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
@@ -276,8 +276,8 @@ internal sealed class BillingProviderEventInboxEntryConfiguration : IEntityTypeC
         builder.Property(x => x.EventType).HasMaxLength(128).IsRequired();
         builder.Property(x => x.State).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.EventHash).HasMaxLength(71).IsRequired();
-        builder.Property(x => x.ProviderCustomerReference).HasMaxLength(512);
-        builder.Property(x => x.ProviderSubscriptionReference).HasMaxLength(512);
+        builder.Property(x => x.ProviderCustomerReference).HasMaxLength(OrganizationBillingLimits.ProviderReferenceMaxLength);
+        builder.Property(x => x.ProviderSubscriptionReference).HasMaxLength(OrganizationBillingLimits.ProviderReferenceMaxLength);
         builder.Property(x => x.ProcessingStatus).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.RejectionCode).HasMaxLength(128);
         builder.Property(x => x.OccurredAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));

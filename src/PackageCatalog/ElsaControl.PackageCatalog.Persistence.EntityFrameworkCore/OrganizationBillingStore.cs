@@ -370,7 +370,7 @@ public sealed class OrganizationBillingStore(CatalogDbContext dbContext) : IOrga
     {
         if (string.IsNullOrWhiteSpace(value))
             return;
-        if (value.Length > 512 || value.Any(ch => !(char.IsAsciiLetterOrDigit(ch) || ch is '.' or '-' or '_' or ':' or '/' or '+')))
+        if (value.Length > OrganizationBillingLimits.ProviderReferenceMaxLength || value.Any(ch => !(char.IsAsciiLetterOrDigit(ch) || ch is '.' or '-' or '_' or ':' or '/' or '+')))
             throw new ArgumentException($"{name} must be a safe reference.", name);
     }
 

@@ -81,7 +81,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ProviderCustomerReference")
-                        .HasMaxLength(512)
+                        .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ProviderEventId")
@@ -90,7 +90,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ProviderSubscriptionReference")
-                        .HasMaxLength(512)
+                        .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
                     b.Property<long>("ReceivedAt")
@@ -382,11 +382,11 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ProviderCustomerReference")
-                        .HasMaxLength(512)
+                        .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ProviderSubscriptionReference")
-                        .HasMaxLength(512)
+                        .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
                     b.Property<long?>("RetainedAt")

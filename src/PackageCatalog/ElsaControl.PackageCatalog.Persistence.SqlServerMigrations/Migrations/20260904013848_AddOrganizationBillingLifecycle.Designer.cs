@@ -87,8 +87,8 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .UseCollation("Latin1_General_100_BIN2");
 
                     b.Property<string>("ProviderCustomerReference")
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
                         .UseCollation("Latin1_General_100_BIN2");
 
                     b.Property<string>("ProviderEventId")
@@ -98,8 +98,8 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .UseCollation("Latin1_General_100_BIN2");
 
                     b.Property<string>("ProviderSubscriptionReference")
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
                         .UseCollation("Latin1_General_100_BIN2");
 
                     b.Property<long>("ReceivedAt")
@@ -393,13 +393,13 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .UseCollation("Latin1_General_100_BIN2");
 
                     b.Property<string>("ProviderCustomerReference")
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
                         .UseCollation("Latin1_General_100_BIN2");
 
                     b.Property<string>("ProviderSubscriptionReference")
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)")
                         .UseCollation("Latin1_General_100_BIN2");
 
                     b.Property<long?>("RetainedAt")

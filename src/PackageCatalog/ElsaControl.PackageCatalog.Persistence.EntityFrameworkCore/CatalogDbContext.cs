@@ -239,8 +239,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             if (subscription.Id == Guid.Empty || subscription.OrganizationId == Guid.Empty)
                 throw new InvalidOperationException("A subscription requires stable organization identifiers.");
             subscription.Provider = RequireSafeCode(subscription.Provider, nameof(subscription.Provider));
-            subscription.ProviderCustomerReference = OptionalSafeReference(subscription.ProviderCustomerReference, nameof(subscription.ProviderCustomerReference), 512);
-            subscription.ProviderSubscriptionReference = OptionalSafeReference(subscription.ProviderSubscriptionReference, nameof(subscription.ProviderSubscriptionReference), 512);
+            subscription.ProviderCustomerReference = OptionalSafeReference(subscription.ProviderCustomerReference, nameof(subscription.ProviderCustomerReference), OrganizationBillingLimits.ProviderReferenceMaxLength);
+            subscription.ProviderSubscriptionReference = OptionalSafeReference(subscription.ProviderSubscriptionReference, nameof(subscription.ProviderSubscriptionReference), OrganizationBillingLimits.ProviderReferenceMaxLength);
             subscription.LastProviderEventId = OptionalSafeToken(subscription.LastProviderEventId, nameof(subscription.LastProviderEventId), 256);
             EnsureDefined(subscription.State, nameof(subscription.State));
             subscription.TrialStartedAt = subscription.TrialStartedAt.ToUniversalTime();
@@ -269,8 +269,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             billingEvent.ProviderEventId = RequireSafeToken(billingEvent.ProviderEventId, nameof(billingEvent.ProviderEventId), 256);
             billingEvent.EventType = RequireSafeCode(billingEvent.EventType, nameof(billingEvent.EventType));
             billingEvent.EventHash = RequireSha256Digest(billingEvent.EventHash, nameof(billingEvent.EventHash));
-            billingEvent.ProviderCustomerReference = OptionalSafeReference(billingEvent.ProviderCustomerReference, nameof(billingEvent.ProviderCustomerReference), 512);
-            billingEvent.ProviderSubscriptionReference = OptionalSafeReference(billingEvent.ProviderSubscriptionReference, nameof(billingEvent.ProviderSubscriptionReference), 512);
+            billingEvent.ProviderCustomerReference = OptionalSafeReference(billingEvent.ProviderCustomerReference, nameof(billingEvent.ProviderCustomerReference), OrganizationBillingLimits.ProviderReferenceMaxLength);
+            billingEvent.ProviderSubscriptionReference = OptionalSafeReference(billingEvent.ProviderSubscriptionReference, nameof(billingEvent.ProviderSubscriptionReference), OrganizationBillingLimits.ProviderReferenceMaxLength);
             billingEvent.RejectionCode = OptionalSafeCode(billingEvent.RejectionCode, nameof(billingEvent.RejectionCode));
             EnsureDefined(billingEvent.State, nameof(billingEvent.State));
             EnsureDefined(billingEvent.ProcessingStatus, nameof(billingEvent.ProcessingStatus));

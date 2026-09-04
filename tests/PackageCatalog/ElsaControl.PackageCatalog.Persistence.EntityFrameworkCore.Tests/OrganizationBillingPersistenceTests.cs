@@ -95,6 +95,40 @@ public sealed class OrganizationBillingPersistenceTests
     }
 
     [Fact]
+    public async Task Provider_binding_references_allow_256_characters_and_reject_257()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateDb(connection);
+        await db.Database.EnsureCreatedAsync();
+        db.Organizations.Add(new Organization { Id = OrganizationId, Name = "Acme" });
+        await db.SaveChangesAsync();
+        var store = new OrganizationBillingStore(db);
+        var acceptedCustomerReference = new string('c', OrganizationBillingLimits.ProviderReferenceMaxLength);
+        var acceptedSubscriptionReference = new string('s', OrganizationBillingLimits.ProviderReferenceMaxLength);
+
+        var accepted = await store.ConsumeAsync(
+            Event(OrganizationId, "evt-reference-limit", OrganizationSubscriptionState.Active, Now.AddMinutes(1), acceptedCustomerReference, acceptedSubscriptionReference),
+            Now.AddMinutes(2));
+
+        Assert.Equal(BillingEventConsumptionOutcome.Applied, accepted.Outcome);
+        Assert.Equal(OrganizationBillingLimits.ProviderReferenceMaxLength, accepted.Subscription!.ProviderCustomerReference!.Length);
+        Assert.Equal(OrganizationBillingLimits.ProviderReferenceMaxLength, accepted.Subscription.ProviderSubscriptionReference!.Length);
+
+        var oversized = Event(
+            OrganizationId,
+            "evt-reference-too-long",
+            OrganizationSubscriptionState.PastDue,
+            Now.AddMinutes(3),
+            new string('c', OrganizationBillingLimits.ProviderReferenceMaxLength + 1),
+            acceptedSubscriptionReference);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => store.ConsumeAsync(oversized, Now.AddMinutes(4)));
+        Assert.Equal(1, await db.BillingProviderEvents.CountAsync());
+        Assert.Equal(1, await db.OrganizationAuditRecords.CountAsync());
+    }
+
+    [Fact]
     public async Task Billing_provider_event_inbox_is_append_only()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -467,6 +501,10 @@ public sealed class OrganizationBillingPersistenceTests
         Assert.Equal(expected, model.FindEntityType(typeof(OrganizationSubscription))!.FindProperty(nameof(OrganizationSubscription.Provider))!.GetCollation());
         Assert.Equal(expected, model.FindEntityType(typeof(OrganizationSubscription))!.FindProperty(nameof(OrganizationSubscription.LastProviderEventId))!.GetCollation());
         Assert.Equal(expected, model.FindEntityType(typeof(BillingProviderEventInboxEntry))!.FindProperty(nameof(BillingProviderEventInboxEntry.ProviderEventId))!.GetCollation());
+        Assert.Equal(OrganizationBillingLimits.ProviderReferenceMaxLength, model.FindEntityType(typeof(OrganizationSubscription))!.FindProperty(nameof(OrganizationSubscription.ProviderCustomerReference))!.GetMaxLength());
+        Assert.Equal(OrganizationBillingLimits.ProviderReferenceMaxLength, model.FindEntityType(typeof(OrganizationSubscription))!.FindProperty(nameof(OrganizationSubscription.ProviderSubscriptionReference))!.GetMaxLength());
+        Assert.Equal(OrganizationBillingLimits.ProviderReferenceMaxLength, model.FindEntityType(typeof(BillingProviderEventInboxEntry))!.FindProperty(nameof(BillingProviderEventInboxEntry.ProviderCustomerReference))!.GetMaxLength());
+        Assert.Equal(OrganizationBillingLimits.ProviderReferenceMaxLength, model.FindEntityType(typeof(BillingProviderEventInboxEntry))!.FindProperty(nameof(BillingProviderEventInboxEntry.ProviderSubscriptionReference))!.GetMaxLength());
     }
 
     [Fact]
