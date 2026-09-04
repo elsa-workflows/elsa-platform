@@ -1,7 +1,8 @@
 # Spike 127 — Managed Elsa identity handoff
 
-**Status:** Contract implemented; the real local browser journey passes against the
-published immutable Combined image. Azure/public-TLS browser proof remains pending.
+**Status:** Contract implemented; the real local and Azure/public-TLS handoff journeys
+pass against the published immutable Combined image. Workflow execution is proven by
+the separate isolated managed-runtime browser harness under #249.
 
 ## Decision
 
@@ -164,7 +165,9 @@ redirect mismatch, strict token type/key ID and audit outcomes.
 
 The repository now includes durable replay/audit persistence, the Elsa Instance
 identity binding and production authorizer, and the Combined-runtime callback and
-local-session hook. Distributed signing-key operations and executable real-browser
-evidence remain deployment concerns. Task #185 records the local and Azure browser
-journeys, immutable release/image identity, failure paths and safe evidence without
-retaining codes, verifiers, cookies, tokens or workflow payloads.
+local-session hook. #185 records accepted local and Azure browser journeys, immutable
+release/image identity, failure paths and safe evidence without retaining codes,
+verifiers, cookies, tokens or workflow payloads. #249 extends that proof through
+workflow creation, publication and successful execution while preserving the same
+evidence boundary. Distributed signing-key operations remain a production deployment
+concern.

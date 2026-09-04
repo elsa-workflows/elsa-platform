@@ -1,21 +1,22 @@
 # Elsa Commercial Platform Current-State Assessment
 
-Date: 2026-09-01
+Date: 2026-09-04
 
 ## Executive Assessment
 
 Elsa Control is a meaningful modular control plane, not a prototype shell. Since the
 initial assessment it has gained a durable Elsa Instance lifecycle/API, a provider-
 neutral Azure reconciliation boundary, an executable Azure 3.8 Combined provider
-proof, strict admission of the producer's signed schema 2.0 release manifest, managed
-handoff/session behavior and a real local browser proof.
+proof, strict admission of the producer's signed schema 2.0 release manifest and
+managed handoff/session behavior. The accepted composed evidence covers local and
+public-TLS Azure browser journeys, with workflow creation, publication and execution
+proven through the isolated managed-runtime browser harness.
 
-The shortest remaining walking-skeleton gap is narrower: complete the same browser
-journey against the public-TLS Azure deployment, then package the runtime integration
-behind declared capability and immutable compatibility metadata for arbitrary
-supported release lines and applicable topologies. The production API still registers
-an unconfigured Azure runner by default, so proof-host success is not being presented
-as a production stamp service.
+The walking skeleton is accepted. Runtime integration is selected through declared
+capability and immutable compatibility metadata for an arbitrary number of supported
+release lines and applicable topologies; 3.8 remains the only producer-published line
+proven live so far. The production API still registers an unconfigured Azure runner by
+default, so proof-host success is not being presented as a production stamp service.
 
 ## Capability Matrix
 
@@ -30,10 +31,10 @@ as a production stamp service.
 | Identity/tenancy | OIDC/JWT/cookie identity, organizations, workspaces, memberships and permission grants | substantial; SaaS signup/invitations/federation lifecycle incomplete |
 | Entitlements | workspace/organization snapshots and limits used for feed/workspace policy | reusable primitive; subscription/billing lifecycle incomplete |
 | Secrets | secret-store and credential-reference APIs/UI; protected local values | useful engine-credential capability, not yet complete app configuration/secrets product |
-| Console | shared React shell with packages, builder, deployments, credentials, logs, restored artifact routes and managed-instance open/retry UX | build health restored; complete signup/onboarding and final Azure browser proof remain |
+| Console | shared React shell with packages, builder, deployments, credentials, logs, restored artifact routes and managed-instance open/retry UX | composed walking-skeleton evidence accepts onboarding and Azure open, with workflow execution proven in the isolated managed-runtime harness; broader billing and operations work remains |
 | Observability | health checks, OTel dependencies, engine verification and console logs | operational baseline, not customer/SRE product completeness |
-| Backups/DR | restore-to-new consistency contract, ADR, fault-injection harness and live Azure proof are in PR #205 | evidence is in review; no production backup API/SLA claim |
-| Commercial images | signed immutable schema 2.0 release manifest, signature, SBOM, provenance and vulnerability evidence are admitted and persisted as safe catalog facts | arbitrary release-line cardinality is implemented; 3.8 is the proven producer release and runtime integration still needs capability-driven generalization |
+| Backups/DR | restore-to-new consistency contract, ADR, fault-injection harness and accepted live Azure proof were delivered through #129 and PR #205 | recovery contract proven; no production backup API/SLA claim |
+| Commercial images | signed immutable schema 2.0 release manifest, signature, SBOM, provenance and vulnerability evidence are admitted and persisted as safe catalog facts | arbitrary release-line cardinality and capability-driven integration are implemented; 3.8 is the producer release proven live |
 
 ## Current Runtime and Deployment Flow
 
@@ -68,9 +69,10 @@ stamp, capacity and customer-routing composition are therefore still product wor
 
 ## Architectural Gaps
 
-1. Governed catalog ingestion and queries are durable, but managed-instance selection
-   and runtime integration are not yet proven end to end across producer-published
-   release lines and applicable topologies beyond the 3.8 Combined proof.
+1. Governed catalog ingestion, queries and capability-driven managed-instance runtime
+   selection are durable. Additional producer-published release lines and applicable
+   topologies still require their own immutable evidence and live compatibility proof;
+   3.8 Combined is the current proven release.
 2. Legacy API configuration may remain as a compatibility surface, but it is no
    longer authoritative release-selection data.
 3. The Azure provider vertical slice is not yet configured as the production API's
@@ -79,16 +81,19 @@ stamp, capacity and customer-routing composition are therefore still product wor
    completed threat model and proof-specific controls.
 5. No subscription/billing lifecycle, trial/grace/retention policy or usage/cost
    attribution exists.
-6. The backup/restore-to-new proof is in review; production backup operations,
-   customer domains, release rings and traffic-transition flows remain incomplete.
+6. The backup/restore-to-new contract and proof are accepted; production backup
+   operations, customer domains, release rings and traffic-transition flows remain
+   incomplete.
 7. Customer-facing observability and SRE control across organizations/stamps are
    incomplete.
 8. Arbitrary package provenance/build/isolation is not implemented.
-9. The console has managed-instance lifecycle/open UX, but the public-TLS Azure browser
-   journey and full SaaS signup/onboarding journey are not yet accepted.
-10. Runtime handoff integration is proven for Elsa 3.8 Combined but is not yet packaged
-    for capability-driven selection across arbitrary supported release lines and
-    applicable Server/Combined topologies.
+9. The console walking-skeleton is accepted from composed evidence: public-TLS Azure
+   sign-in, provisioning and seamless open under #185, plus real workflow execution in
+   the isolated managed-runtime harness under #249. Billing, invitations and broader
+   operations UX remain incomplete.
+10. Runtime handoff integration is capability-driven for arbitrary supported release
+    lines and applicable Server/Combined topologies, but every new producer release
+    still requires immutable admission and compatibility evidence before use.
 11. Nuplane is not integrated in production code; current references are
     presentation/configuration hints rather than package reconciliation.
 
@@ -112,11 +117,13 @@ stamp, capacity and customer-routing composition are therefore still product wor
 
 ## Immediate Recommendation
 
-Complete #185's public-TLS Azure browser proof with the account owner's normal Entra/MFA
-interaction. Then unblock [elsa-production-image#35](https://github.com/valence-works/elsa-production-image/issues/35) and generalize the
-proven runtime integration through declared capability and immutable compatibility
-metadata, without a finite Elsa-version switch. Keep #129's recovery proof as an
-independent review lane and do not infer a production backup service from it.
+Milestone D's managed browser-to-workflow journey is accepted through #185, #249 and
+the capability-based multi-release integration delivered by
+[elsa-production-image#35](https://github.com/valence-works/elsa-production-image/issues/35).
+Begin the MVP by decomposing #120 into independently reviewable entitlement,
+billing-provider, enforcement and retention slices. Keep #122 as the explicit public
+launch gate, and do not infer a production backup service from #129's accepted
+recovery contract and proof.
 
 ## Evidence
 
