@@ -198,7 +198,7 @@ if ! MANAGED_ELSA_BROWSER_PROOF=1 \
 fi
 
 playwright_summary=$(tr -d '\r' <"$playwright_output")
-if printf '%s\n' "$playwright_summary" | grep -Eiq '([0-9]+ (failed|flaky|skipped|interrupted)|did not run)'; then
+if printf '%s\n' "$playwright_summary" | grep -Eiq '([1-9][0-9]* (failed|flaky|skipped|interrupted)|did not run)'; then
   echo "Managed Elsa local browser proof did not complete every discovered scenario." >&2
   exit 1
 fi
