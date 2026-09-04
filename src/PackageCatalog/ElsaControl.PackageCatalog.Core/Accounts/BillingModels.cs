@@ -365,14 +365,14 @@ public static class OrganizationSubscriptionLifecycle
                 break;
             case OrganizationSubscriptionState.PastDue:
                 subscription.PastDueAt ??= timestamp;
-                subscription.GraceEndsAt ??= timestamp.Add(PaymentGracePeriod);
+                subscription.GraceEndsAt ??= subscription.PastDueAt.Value.Add(PaymentGracePeriod);
                 break;
             case OrganizationSubscriptionState.Constrained:
                 subscription.ConstrainedAt ??= timestamp;
                 break;
             case OrganizationSubscriptionState.Suspended:
                 subscription.SuspendedAt ??= timestamp;
-                subscription.RetentionEndsAt ??= timestamp.Add(FinalRetentionPeriod);
+                subscription.RetentionEndsAt ??= subscription.SuspendedAt.Value.Add(FinalRetentionPeriod);
                 break;
             case OrganizationSubscriptionState.Retained:
                 subscription.RetainedAt ??= timestamp;

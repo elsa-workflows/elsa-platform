@@ -11,6 +11,7 @@ namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 /// </summary>
 public sealed partial class OrganizationBillingStore
 {
+    private const int LifecycleBatchSize = 100;
     private static readonly TimeSpan CleanupLeaseDuration = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan CleanupRetryDelay = TimeSpan.FromMinutes(1);
 
@@ -19,10 +20,24 @@ public sealed partial class OrganizationBillingStore
         CancellationToken cancellationToken = default)
     {
         now = RequireUtc(now, nameof(now));
+        var graceCutoff = now.Subtract(OrganizationSubscriptionLifecycle.PaymentGracePeriod);
+        var constraintCutoff = now.Subtract(OrganizationSubscriptionLifecycle.ConstraintPeriod);
+        var retentionCutoff = now.Subtract(OrganizationSubscriptionLifecycle.FinalRetentionPeriod);
         var candidates = await dbContext.OrganizationSubscriptions
             .AsNoTracking()
-            .Where(x => x.State != OrganizationSubscriptionState.Deleted)
+            .Where(x =>
+                (x.State == OrganizationSubscriptionState.Trial && x.TrialEndsAt <= now) ||
+                (x.State == OrganizationSubscriptionState.PastDue &&
+                 ((x.GraceEndsAt != null && x.GraceEndsAt <= now) ||
+                  (x.GraceEndsAt == null && x.PastDueAt != null && x.PastDueAt <= graceCutoff))) ||
+                (x.State == OrganizationSubscriptionState.Constrained &&
+                 x.ConstrainedAt != null && x.ConstrainedAt <= constraintCutoff) ||
+                (x.State == OrganizationSubscriptionState.Suspended &&
+                 ((x.RetentionEndsAt != null && x.RetentionEndsAt <= now) ||
+                  (x.RetentionEndsAt == null && x.SuspendedAt != null && x.SuspendedAt <= retentionCutoff))) ||
+                x.State == OrganizationSubscriptionState.Retained)
             .OrderBy(x => x.OrganizationId)
+            .Take(LifecycleBatchSize)
             .Select(x => new
             {
                 x.OrganizationId,

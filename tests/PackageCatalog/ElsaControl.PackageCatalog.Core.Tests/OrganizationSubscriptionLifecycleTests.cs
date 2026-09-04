@@ -58,6 +58,30 @@ public sealed class OrganizationSubscriptionLifecycleTests
     }
 
     [Fact]
+    public void Same_state_event_backfills_grace_from_the_canonical_past_due_timestamp()
+    {
+        var subscription = OrganizationSubscriptionLifecycle.CreateTrial(Guid.NewGuid(), "stripe", StartedAt);
+        OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.PastDue, StartedAt.AddDays(14));
+        subscription.GraceEndsAt = null;
+
+        OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.PastDue, StartedAt.AddDays(16));
+
+        Assert.Equal(subscription.PastDueAt!.Value.Add(OrganizationSubscriptionLifecycle.PaymentGracePeriod), subscription.GraceEndsAt);
+    }
+
+    [Fact]
+    public void Same_state_event_backfills_retention_from_the_canonical_suspension_timestamp()
+    {
+        var subscription = OrganizationSubscriptionLifecycle.CreateTrial(Guid.NewGuid(), "stripe", StartedAt);
+        OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.Suspended, StartedAt.AddDays(14));
+        subscription.RetentionEndsAt = null;
+
+        OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.Suspended, StartedAt.AddDays(20));
+
+        Assert.Equal(subscription.SuspendedAt!.Value.Add(OrganizationSubscriptionLifecycle.FinalRetentionPeriod), subscription.RetentionEndsAt);
+    }
+
+    [Fact]
     public async Task Billing_service_uses_the_supplied_time_provider_for_trial_start()
     {
         var clock = new FixedTimeProvider(StartedAt.AddHours(3));
