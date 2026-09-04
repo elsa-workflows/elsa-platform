@@ -42,7 +42,6 @@ internal sealed class ConfiguredAzureSecretResolver : IAzureSecretResolver
             var name = child["Name"]?.Trim();
             var reference = child["Reference"]?.Trim();
             if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(reference) ||
-                !IsSafeConfiguredValue(child["Value"]) ||
                 !references.TryAdd(name, reference) ||
                 !referencesByLocator.Add(reference))
                 throw new InvalidOperationException("Azure provider named secret references are invalid or duplicated.");

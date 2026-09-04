@@ -80,10 +80,8 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
             {
                 ["Deployment:AzureProvider:Secrets:0:Name"] = "database:connectionstring",
                 ["Deployment:AzureProvider:Secrets:0:Reference"] = "secret://vault/database",
-                ["Deployment:AzureProvider:Secrets:0:Value"] = "runtime-only-secret",
                 ["Deployment:AzureProvider:Secrets:1:Name"] = "identity:signingkey",
                 ["Deployment:AzureProvider:Secrets:1:Reference"] = "secret://vault/identity-signing-key",
-                ["Deployment:AzureProvider:Secrets:1:Value"] = "runtime-only-signing-key",
                 ["Deployment:AzureProvider:Secrets:2:Name"] = "admin:password",
                 ["Deployment:AzureProvider:Secrets:2:Reference"] = "secret://vault/admin-password",
                 ["Deployment:AzureProvider:Secrets:2:Value"] = "runtime-only-admin-password"
@@ -107,9 +105,9 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
     }
 
     [Fact]
-    public void Named_secret_references_fail_closed_when_a_value_binding_is_missing()
+    public void Named_secret_references_need_no_raw_value_binding()
     {
-        Assert.Throws<InvalidOperationException>(() => ConfiguredAzureSecretResolver.ReadNamedReferences(
+        var references = ConfiguredAzureSecretResolver.ReadNamedReferences(
             Configuration(new Dictionary<string, string?>
             {
                 ["Deployment:AzureProvider:Secrets:0:Name"] = "database:connectionstring",
@@ -120,7 +118,9 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
                 ["Deployment:AzureProvider:Secrets:1:Value"] = "runtime-only-signing-key",
                 ["Deployment:AzureProvider:Secrets:2:Name"] = "admin:password",
                 ["Deployment:AzureProvider:Secrets:2:Reference"] = "secret://vault/admin-password"
-            })));
+            }));
+
+        Assert.Equal(3, references.Count);
     }
 
     [Fact]
