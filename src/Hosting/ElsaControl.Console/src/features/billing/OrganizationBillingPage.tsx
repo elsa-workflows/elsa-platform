@@ -4,6 +4,7 @@ import { RequestStateView } from "@/components/states/RequestStateViews";
 import { Badge, Button, EmptyState, SecondaryButton } from "@/components/ui";
 import { useWorkspaceContext } from "@/app/WorkspaceContextProvider";
 import { createOrganizationBillingPortal, createOrganizationCheckout, getOrganizationBillingStatus } from "@/features/billing/billingApi";
+import { openBillingSession } from "@/features/billing/billingNavigation";
 import { getBillingStateMeta, type OrganizationBillingCapacity, type OrganizationBillingEntitlements, type OrganizationBillingState, type OrganizationBillingStatus } from "@/features/billing/billingModels";
 import { ApiError } from "@/lib/api/httpClient";
 import { queryKeys } from "@/lib/query/queryClient";
@@ -124,11 +125,11 @@ function LifecycleRail({ status }: { status: OrganizationBillingStatus }) {
       </div>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{meta.description}</p>
 
-      <div className="mt-6 grid gap-3 border-t border-border pt-4 sm:grid-cols-3">
+      <dl className="mt-6 grid gap-3 border-t border-border pt-4 sm:grid-cols-3">
         <LifecycleFact label="Current state" value={meta.label} />
         <LifecycleFact label={deadlineLabel} value={deadlineValue} />
         <LifecycleFact label="Last updated" value={subscription ? formatDate(subscription.updatedAt) : "Not initialized"} />
-      </div>
+      </dl>
       <LifecycleTrack state={state} />
     </article>
   );
@@ -348,23 +349,4 @@ function formatDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Not available";
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
-}
-
-function openBillingSession(url: string) {
-  // The link exists only at the response boundary. It is never logged, put in
-  // application state, or persisted in browser storage.
-  window.location.assign(trustedBillingSessionUrl(url).toString());
-}
-
-export function trustedBillingSessionUrl(value: string) {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new Error("The billing session URL is unavailable.");
-  }
-  const localHttp = url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]", "::1"].includes(url.hostname);
-  if ((url.protocol !== "https:" && !localHttp) || url.username || url.password)
-    throw new Error("The billing session URL is unavailable.");
-  return url;
 }

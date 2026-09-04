@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getBillingStateMeta } from "@/features/billing/billingModels";
-import { trustedBillingSessionUrl } from "@/features/billing/OrganizationBillingPage";
+import { trustedBillingSessionUrl } from "@/features/billing/billingNavigation";
 
 describe("billing lifecycle presentation", () => {
   it.each([

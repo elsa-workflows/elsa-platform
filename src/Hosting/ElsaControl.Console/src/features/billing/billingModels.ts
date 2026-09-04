@@ -64,7 +64,7 @@ type BillingStateMeta = {
 export const billingStateMeta: Record<string, BillingStateMeta> = {
   Trial: {
     label: "Trial",
-    title: "Your Elsa workspace is ready to grow",
+    title: "Your Elsa organization is ready to grow",
     description: "The organization is using its included trial window. Add billing before the trial deadline to keep commercial access uninterrupted.",
     tone: "active"
   },
