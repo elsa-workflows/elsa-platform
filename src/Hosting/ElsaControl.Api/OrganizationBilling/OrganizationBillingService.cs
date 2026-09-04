@@ -54,7 +54,9 @@ public sealed class OrganizationBillingApiService(
         var subscription = trial.Subscription ?? await billing.GetSubscriptionAsync(organizationId, cancellationToken);
         if (subscription is null)
             return OrganizationBillingApiResult.Unavailable();
-        if (subscription.State is OrganizationSubscriptionState.Retained or OrganizationSubscriptionState.Deleted)
+        if (subscription.State != OrganizationSubscriptionState.Trial ||
+            subscription.EarlyDeletionRequestedAt is not null ||
+            !string.IsNullOrWhiteSpace(subscription.ProviderSubscriptionReference))
             return OrganizationBillingApiResult.Terminal();
 
         try

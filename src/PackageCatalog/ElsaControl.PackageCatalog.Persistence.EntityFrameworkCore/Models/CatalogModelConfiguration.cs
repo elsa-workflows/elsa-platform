@@ -282,7 +282,7 @@ internal sealed class OrganizationBillingLifecycleNoticeConfiguration : IEntityT
         builder.Property(x => x.DeliveredAt).HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null, value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
         builder.Property(x => x.LastFailureCode).HasMaxLength(128);
         builder.HasIndex(x => new { x.OrganizationId, x.SubscriptionId, x.Kind }).IsUnique();
-        builder.HasOne(x => x.Organization).WithMany(x => x.BillingLifecycleNotices).HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne(x => x.Organization).WithMany(x => x.BillingLifecycleNotices).HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.NoAction);
         builder.HasOne(x => x.Subscription).WithMany().HasForeignKey(x => new { x.OrganizationId, x.SubscriptionId }).HasPrincipalKey(x => new { x.OrganizationId, x.Id }).OnDelete(DeleteBehavior.Cascade);
     }
 }
@@ -307,7 +307,7 @@ internal sealed class OrganizationBillingCleanupConfiguration : IEntityTypeConfi
         builder.Property(x => x.LeaseToken).HasMaxLength(128);
         builder.HasIndex(x => x.SubscriptionId).IsUnique();
         builder.HasIndex(x => new { x.State, x.NotBeforeAt, x.LeaseExpiresAt });
-        builder.HasOne(x => x.Organization).WithMany(x => x.BillingCleanups).HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne(x => x.Organization).WithMany(x => x.BillingCleanups).HasForeignKey(x => x.OrganizationId).OnDelete(DeleteBehavior.NoAction);
         builder.HasOne(x => x.Subscription).WithMany().HasForeignKey(x => new { x.OrganizationId, x.SubscriptionId }).HasPrincipalKey(x => new { x.OrganizationId, x.Id }).OnDelete(DeleteBehavior.Cascade);
     }
 }

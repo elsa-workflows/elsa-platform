@@ -68,9 +68,10 @@ public sealed class StripeBillingProvider(
         OrganizationBillingCleanupRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (!string.Equals(request.Provider, Provider, StringComparison.Ordinal) ||
-            string.IsNullOrWhiteSpace(request.ProviderSubscriptionReference))
+        if (!string.Equals(request.Provider, Provider, StringComparison.Ordinal))
             return OrganizationBillingCleanupOutcome.Unknown;
+        if (string.IsNullOrWhiteSpace(request.ProviderSubscriptionReference))
+            return OrganizationBillingCleanupOutcome.ConfirmedAbsent;
 
         try
         {

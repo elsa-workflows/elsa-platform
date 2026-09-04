@@ -66,13 +66,13 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         columns: x => new { x.OrganizationId, x.SubscriptionId },
                         principalTable: "OrganizationSubscriptions",
                         principalColumns: new[] { "OrganizationId", "Id" },
-                        onDelete: ReferentialAction.Cascade);
+                        onDelete: ReferentialAction.NoAction);
                     table.ForeignKey(
                         name: "FK_OrganizationBillingCleanups_Organizations_OrganizationId",
                         column: x => x.OrganizationId,
                         principalTable: "Organizations",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
+                        onDelete: ReferentialAction.NoAction);
                 });
 
             migrationBuilder.CreateTable(

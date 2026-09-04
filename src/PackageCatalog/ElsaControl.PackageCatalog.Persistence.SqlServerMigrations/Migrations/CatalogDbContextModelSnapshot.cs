@@ -4855,7 +4855,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                     b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Organization", "Organization")
                         .WithMany("BillingCleanups")
                         .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
                     b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.OrganizationSubscription", "Subscription")
@@ -4875,7 +4875,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                     b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Organization", "Organization")
                         .WithMany("BillingLifecycleNotices")
                         .HasForeignKey("OrganizationId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
                     b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.OrganizationSubscription", "Subscription")
