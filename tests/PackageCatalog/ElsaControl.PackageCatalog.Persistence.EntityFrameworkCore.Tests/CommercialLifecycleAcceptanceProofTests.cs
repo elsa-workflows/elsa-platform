@@ -98,14 +98,22 @@ public sealed class CommercialLifecycleAcceptanceProofTests
         Assert.All(notices, x => Assert.Equal(organization.Id, x.OrganizationId));
         Assert.DoesNotContain(notices, x => x.LastFailureCode is not null);
 
-        var cleanupProvider = new RecordingCleanupProvider();
+        var cleanupProvider = new RecordingCleanupProvider(
+            OrganizationBillingCleanupOutcome.RetryableFailure,
+            OrganizationBillingCleanupOutcome.ConfirmedAbsent);
+        var cleanupClock = new MutableTimeProvider(retentionEndsAt.AddTicks(1));
         var worker = new OrganizationBillingLifecycleWorker(
             store,
-            new FixedTimeProvider(retentionEndsAt.AddTicks(1)),
+            cleanupClock,
             cleanupProvider);
-        var workerResult = await worker.ProcessAvailableAsync("proof-worker");
-        Assert.Equal(1, workerResult.CleanupAttempts);
-        var cleanupRequest = Assert.Single(cleanupProvider.Requests);
+        var firstWorkerResult = await worker.ProcessAvailableAsync("proof-worker");
+        Assert.Equal(1, firstWorkerResult.CleanupAttempts);
+        Assert.Equal(OrganizationSubscriptionState.Retained, (await CurrentEntitlementAsync(db)).SubscriptionState);
+        cleanupClock.UtcNow = cleanupClock.UtcNow.AddSeconds(59);
+        Assert.Equal(0, (await worker.ProcessAvailableAsync("proof-worker")).CleanupAttempts);
+        cleanupClock.UtcNow = cleanupClock.UtcNow.AddSeconds(1);
+        Assert.Equal(1, (await worker.ProcessAvailableAsync("proof-worker")).CleanupAttempts);
+        var cleanupRequest = Assert.Single(cleanupProvider.Requests.DistinctBy(x => x.SubscriptionId));
         Assert.Equal(organization.Id, cleanupRequest.OrganizationId);
         Assert.Equal("cus_proof", cleanupRequest.ProviderCustomerReference);
         Assert.Equal("sub_proof", cleanupRequest.ProviderSubscriptionReference);
@@ -129,6 +137,42 @@ public sealed class CommercialLifecycleAcceptanceProofTests
         Assert.DoesNotContain("secret", persistedEvidence, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task Early_deletion_atomically_suspends_the_commercial_gate()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new CatalogDbContext(new DbContextOptionsBuilder<CatalogDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+        var organization = new Organization { Name = "Early deletion proof" };
+        db.Organizations.Add(organization);
+        db.OrganizationEntitlementSnapshots.Add(new OrganizationEntitlementSnapshot
+        {
+            OrganizationId = organization.Id,
+            ManagedHostingEnabled = true,
+            MaxInstances = 1,
+            CreatedAt = Start,
+            UpdatedAt = Start,
+            SyncedAt = Start
+        });
+        await db.SaveChangesAsync();
+        var store = new OrganizationBillingStore(db);
+        await store.StartTrialAsync(organization.Id, "stripe", Start);
+        await store.ConsumeAsync(
+            Event(organization.Id, "evt_active_delete", OrganizationSubscriptionState.Active, Start.AddHours(1)),
+            Start.AddHours(1));
+        db.ChangeTracker.Clear();
+
+        await store.RequestDeletionAsync(organization.Id, Start.AddHours(2));
+        db.ChangeTracker.Clear();
+
+        Assert.Equal(OrganizationSubscriptionState.Suspended, (await CurrentEntitlementAsync(db)).SubscriptionState);
+        var gate = new EfCoreElsaInstanceCommercialGate(db);
+        Assert.False((await gate.EvaluateAsync(organization.Id, ElsaInstanceOperationAction.Create, 0)).Allowed);
+        Assert.True((await gate.EvaluateAsync(organization.Id, ElsaInstanceOperationAction.Stop)).Allowed);
+        Assert.True((await gate.EvaluateAsync(organization.Id, ElsaInstanceOperationAction.Delete)).Allowed);
+    }
+
     private static BillingProviderEvent Event(Guid organizationId, string id, OrganizationSubscriptionState state, DateTimeOffset occurredAt) =>
         new(organizationId, "stripe", id, "customer.subscription.updated", state, occurredAt,
             "sha256:" + new string('a', 64), "cus_proof", "sub_proof");
@@ -145,13 +189,15 @@ public sealed class CommercialLifecycleAcceptanceProofTests
         return await db.OrganizationEntitlementSnapshots.AsNoTracking().SingleAsync();
     }
 
-    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
     {
-        public override DateTimeOffset GetUtcNow() => now;
+        public DateTimeOffset UtcNow { get; set; } = now;
+        public override DateTimeOffset GetUtcNow() => UtcNow;
     }
 
-    private sealed class RecordingCleanupProvider : IOrganizationBillingCleanupProvider
+    private sealed class RecordingCleanupProvider(params OrganizationBillingCleanupOutcome[] outcomes) : IOrganizationBillingCleanupProvider
     {
+        private readonly Queue<OrganizationBillingCleanupOutcome> _outcomes = new(outcomes);
         public string Provider => "stripe";
         public List<OrganizationBillingCleanupRequest> Requests { get; } = [];
 
@@ -160,7 +206,7 @@ public sealed class CommercialLifecycleAcceptanceProofTests
             CancellationToken cancellationToken = default)
         {
             Requests.Add(request);
-            return Task.FromResult(OrganizationBillingCleanupOutcome.ConfirmedAbsent);
+            return Task.FromResult(_outcomes.Dequeue());
         }
     }
 }
