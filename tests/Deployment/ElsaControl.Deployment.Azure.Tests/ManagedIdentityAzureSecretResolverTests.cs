@@ -113,6 +113,21 @@ public sealed class ManagedIdentityAzureSecretResolverTests
         Assert.Equal(0, reader.Calls);
     }
 
+    [Theory]
+    [InlineData("secret://source.vault.azure.net/secrets/SQL-CONNECTION/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("secret://source.vault.azure.net/secrets/sql-connection/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")]
+    public async Task Rejects_an_alternate_locator_casing_or_version_against_the_exact_persisted_reference(string reference)
+    {
+        var reader = new FakeReader();
+        var resolver = CreateResolver(reader);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await resolver.ResolveAsync(Request() with { Reference = reference }));
+
+        Assert.Equal("The requested Azure secret is not authorized.", exception.Message);
+        Assert.Equal(0, reader.Calls);
+    }
+
     [Fact]
     public async Task Materializes_the_provider_owned_sql_connection_from_the_assignment_without_key_vault()
     {

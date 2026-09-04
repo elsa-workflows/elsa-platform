@@ -1,5 +1,6 @@
 using ElsaControl.Api.Workspace;
 using ElsaControl.Deployment.Azure;
+using ElsaControl.RuntimeBuilder.Abstractions.Plans;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
@@ -89,8 +90,7 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
 
         Assert.Equal(3, references.Count);
         Assert.Equal(CanonicalKeyVaultReference("sql-connection"), references["database:connectionstring"]);
-        Assert.All(references.Values.Where(value => value != AzureManagedSecretReferences.SqlConnection),
-            value => Assert.StartsWith("secret://", value, StringComparison.Ordinal));
+        Assert.All(references.Values, value => Assert.True(SecretReferencePolicy.IsSafe(value)));
         Assert.DoesNotContain(references.Values, value => value.Contains("runtime-only", StringComparison.Ordinal));
         Assert.Throws<NotSupportedException>(() => ((IDictionary<string, string>)references).Add("extra", KeyVaultReference("extra")));
     }
