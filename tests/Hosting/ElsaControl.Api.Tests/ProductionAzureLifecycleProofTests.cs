@@ -1,0 +1,608 @@
+using System.Diagnostics;
+using System.Text.Json;
+using ElsaControl.Deployment.Abstractions.Instances;
+using ElsaControl.Deployment.Azure;
+using ElsaControl.Deployment.Core.Instances;
+using ElsaControl.Deployment.Core.Workspace;
+using ElsaControl.PackageCatalog.Core.Accounts;
+using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
+using ElsaControl.RuntimeBuilder.Abstractions.ReleaseCatalog;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit.Abstractions;
+using Xunit.Sdk;
+
+namespace ElsaControl.Api.Tests;
+
+/// <summary>
+/// Opt-in live proof for the production Azure composition. The default test run must never
+/// contact Azure: this test has no fallback or mock path when its gate is absent.
+/// </summary>
+public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
+{
+    private const string Gate = "ELSA_CONTROL_LIVE_AZURE_LIFECYCLE_PROOF";
+    private const string ConfigurationPath = "ELSA_CONTROL_LIVE_AZURE_LIFECYCLE_PROOF_CONFIG";
+    private const string DefaultActorIssuer = "https://elsa-control-live-proof.example.test";
+    private const int MinimumTimeoutSeconds = 30;
+    private const int MaximumTimeoutSeconds = 7_200;
+    private const int MinimumPollSeconds = 1;
+    private const int MaximumPollSeconds = 30;
+
+    [ProductionAzureFact]
+    public async Task Production_composition_applies_reconciles_reloads_and_deletes_one_instance()
+    {
+        var inputs = LoadInputs();
+        ProductionAzureLifecycleProofApplication? application = null;
+        ProofState? state = null;
+        var cleanupAttempted = false;
+        var cleanupSucceeded = false;
+        var stage = "startup";
+        using var runTimeout = new CancellationTokenSource(inputs.Timeout);
+        var cancellationToken = runTimeout.Token;
+
+        try
+        {
+            application = StartApplication(inputs.ConfigPath, cancellationToken);
+            stage = "seed";
+            state = await SeedAsync(application.Services, inputs, cancellationToken);
+
+            stage = "create";
+            var created = await CreateAsync(application.Services, inputs, state, cancellationToken);
+            state = state with { CreateOperationId = created.Operation.Id };
+
+            stage = "apply";
+            state = await WaitForReadyAsync(application.Services, inputs, state, created.Operation.Id, cancellationToken);
+
+            var previousApplication = application ?? throw new ProofFailureException();
+            application = null;
+            await previousApplication.DisposeAsync();
+
+            stage = "reload";
+            application = StartApplication(inputs.ConfigPath, cancellationToken);
+            state = await ReconcileAsync(application.Services, inputs, state, cancellationToken);
+
+            stage = "reconcile-after-reload";
+            state = await WaitForReadyAsync(application.Services, inputs, state, state.ReconcileOperationId!.Value, cancellationToken);
+            Ensure(state.AssignmentId is not null, "The reloaded reconcile did not retain the provider assignment.");
+            Ensure(state.AssignmentId == state.InitialAssignmentId, "The reloaded reconcile changed the provider assignment.");
+
+            stage = "delete";
+            var deleted = await DeleteAsync(application.Services, inputs, state, cancellationToken);
+            state = state with { DeleteOperationId = deleted.Operation.Id };
+
+            stage = "cleanup";
+            cleanupAttempted = true;
+            await WaitForDeletedAsync(application.Services, inputs, state, deleted.Operation.Id, cancellationToken);
+            cleanupSucceeded = true;
+            await WriteEvidenceAsync(inputs, state, "succeeded", cleanupAttempted, cleanupSucceeded, stage);
+        }
+        catch (Exception)
+        {
+            if (state is not null)
+            {
+                cleanupAttempted = true;
+                cleanupSucceeded = await TryCleanupAsync(application, inputs, state);
+            }
+
+            await WriteEvidenceAsync(inputs, state, "failed", cleanupAttempted, cleanupSucceeded, stage);
+            throw new XunitException(
+                "The opt-in production Azure lifecycle proof failed. Safe proof identifiers were preserved for investigation.");
+        }
+        finally
+        {
+            if (application is not null)
+            {
+                try
+                {
+                    await application.DisposeAsync();
+                }
+                catch (Exception)
+                {
+                    // The product cleanup result is recorded separately. Do not surface host
+                    // disposal diagnostics, which may contain provider or secret details.
+                }
+            }
+        }
+    }
+
+    private static bool IsEnabled() =>
+        string.Equals(Environment.GetEnvironmentVariable(Gate), "1", StringComparison.Ordinal) ||
+        string.Equals(Environment.GetEnvironmentVariable(Gate), "true", StringComparison.OrdinalIgnoreCase);
+
+    private static LiveProofInputs LoadInputs()
+    {
+        var configPath = Environment.GetEnvironmentVariable(ConfigurationPath);
+        if (string.IsNullOrWhiteSpace(configPath))
+            throw new ProofConfigurationException();
+
+        configPath = Path.GetFullPath(configPath);
+        if (!File.Exists(configPath))
+            throw new ProofConfigurationException();
+
+        var configuration = new ConfigurationBuilder()
+            .AddJsonFile(configPath, optional: false, reloadOnChange: false)
+            .Build();
+        var baseDirectory = Path.GetDirectoryName(configPath)!;
+        var fixturePath = configuration["LiveProof:CatalogEntryPath"];
+        if (string.IsNullOrWhiteSpace(fixturePath))
+            throw new ProofConfigurationException();
+        fixturePath = Path.GetFullPath(fixturePath, baseDirectory);
+        if (!File.Exists(fixturePath))
+            throw new ProofConfigurationException();
+
+        var instanceId = ParseGuid(configuration["LiveProof:InstanceId"]) ?? Guid.NewGuid();
+        var actorSubject = SafeToken(configuration["LiveProof:ActorSubject"]) ?? $"live-proof-{instanceId:N}";
+        var slug = SafeToken(configuration["LiveProof:InstanceSlug"]) ?? $"live-proof-{instanceId:N}";
+        var name = configuration["LiveProof:InstanceName"]?.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+            name = "Live Azure lifecycle proof";
+
+        var actorIssuer = configuration["LiveProof:ActorIssuer"]?.Trim();
+        if (string.IsNullOrWhiteSpace(actorIssuer))
+            actorIssuer = DefaultActorIssuer;
+        var actorEmail = configuration["LiveProof:ActorEmail"]?.Trim();
+        if (string.IsNullOrWhiteSpace(actorEmail))
+            actorEmail = $"{actorSubject}@example.test";
+        var evidenceDirectory = configuration["LiveProof:EvidenceDirectory"]?.Trim();
+        if (string.IsNullOrWhiteSpace(evidenceDirectory))
+            evidenceDirectory = Path.Combine(Path.GetTempPath(), "elsa-control-live-proof");
+        evidenceDirectory = Path.GetFullPath(evidenceDirectory);
+
+        var timeout = BoundedSeconds(configuration["LiveProof:TimeoutSeconds"], 1_800, MinimumTimeoutSeconds, MaximumTimeoutSeconds);
+        var poll = BoundedSeconds(configuration["LiveProof:PollSeconds"], 5, MinimumPollSeconds, MaximumPollSeconds);
+        return new(
+            configPath,
+            fixturePath,
+            instanceId,
+            actorIssuer,
+            actorSubject,
+            actorEmail,
+            name,
+            slug,
+            TimeSpan.FromSeconds(timeout),
+            TimeSpan.FromSeconds(poll),
+            evidenceDirectory);
+    }
+
+    private static ProductionAzureLifecycleProofApplication StartApplication(string configPath, CancellationToken cancellationToken)
+    {
+        var application = new ProductionAzureLifecycleProofApplication(configPath);
+        try
+        {
+            using var client = application.CreateClient();
+            using var response = client.GetAsync("/health", cancellationToken).GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+                throw new ProofFailureException();
+            return application;
+        }
+        catch
+        {
+            application.Dispose();
+            throw;
+        }
+    }
+
+    private static async Task<ProofState> SeedAsync(
+        IServiceProvider services,
+        LiveProofInputs inputs,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+        var catalogEntry = await LoadCatalogEntryAsync(inputs.CatalogEntryPath, cancellationToken);
+        var catalog = scope.ServiceProvider.GetRequiredService<IGovernedReleaseCatalogStore>();
+        var stored = await catalog.StoreAsync([catalogEntry], cancellationToken);
+        if (stored.Status == GovernedReleaseCatalogWriteStatus.Conflict)
+            throw new ProofFailureException();
+
+        var accounts = scope.ServiceProvider.GetRequiredService<AccountWorkspaceService>();
+        var account = await accounts.GetOrCreateAsync(
+            new TrustedWorkspaceIdentity(inputs.ActorIssuer, inputs.ActorSubject, inputs.ActorSubject, inputs.ActorEmail),
+            cancellationToken);
+        var workspace = account.Workspaces.SingleOrDefault();
+        if (workspace is null || workspace.OrganizationId == Guid.Empty)
+            throw new ProofFailureException();
+
+        var entitlement = await db.OrganizationEntitlementSnapshots
+            .Where(x => x.OrganizationId == workspace.OrganizationId)
+            .OrderByDescending(x => x.SyncedAt)
+            .ThenByDescending(x => x.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (entitlement is null)
+        {
+            entitlement = new OrganizationEntitlementSnapshot
+            {
+                OrganizationId = workspace.OrganizationId
+            };
+            db.OrganizationEntitlementSnapshots.Add(entitlement);
+        }
+
+        entitlement.ManagedHostingEnabled = true;
+        entitlement.DeploymentTargetsEnabled = true;
+        entitlement.MaxInstances = int.MaxValue;
+        entitlement.MaxSources = Math.Max(entitlement.MaxSources, 5);
+        entitlement.MaxWorkspaces = Math.Max(entitlement.MaxWorkspaces, 1);
+        entitlement.SubscriptionState = OrganizationSubscriptionState.Active;
+        entitlement.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+
+        // Use the application's actual permission composition and persistence, rather than
+        // trusted headers or a test-only permission store.
+        var permissions = scope.ServiceProvider.GetRequiredService<WorkspacePermissionService>();
+        await permissions.BootstrapOwnerPermissionsAsync(workspace.Id, account.Account.Id, cancellationToken);
+
+        return new(
+            workspace.OrganizationId,
+            workspace.Id,
+            account.Account.Id,
+            inputs.InstanceId,
+            catalogEntry,
+            InitialAssignmentId: null,
+            CreateOperationId: null,
+            ReconcileOperationId: null,
+            DeleteOperationId: null,
+            AssignmentId: null,
+            ProviderOperationId: null);
+    }
+
+    private static async Task<ElsaInstanceLifecycleAcceptance> CreateAsync(
+        IServiceProvider services,
+        LiveProofInputs inputs,
+        ProofState state,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = services.CreateAsyncScope();
+        var lifecycle = scope.ServiceProvider.GetRequiredService<ElsaInstanceLifecycleService>();
+        return await lifecycle.CreateAsync(new ElsaInstanceCreateRequest(
+            state.OrganizationId,
+            state.WorkspaceId,
+            inputs.Name,
+            inputs.Slug,
+            Intent(state.CatalogEntry),
+            $"live-proof-create-{state.InstanceId:N}",
+            state.InstanceId,
+            state.AccountId), cancellationToken);
+    }
+
+    private static async Task<ProofState> ReconcileAsync(
+        IServiceProvider services,
+        LiveProofInputs inputs,
+        ProofState state,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IElsaInstanceLifecycleStore>();
+        var instance = await store.GetInstanceAsync(state.WorkspaceId, state.InstanceId, cancellationToken)
+            ?? throw new ProofFailureException();
+        var lifecycle = scope.ServiceProvider.GetRequiredService<ElsaInstanceLifecycleService>();
+        var accepted = await lifecycle.ReconcileAsync(new ElsaInstanceLifecycleRequest(
+            state.WorkspaceId,
+            state.InstanceId,
+            instance.Version,
+            $"live-proof-reconcile-{state.InstanceId:N}",
+            ActorAccountId: state.AccountId), cancellationToken);
+        return state with { ReconcileOperationId = accepted.Operation.Id };
+    }
+
+    private static async Task<ElsaInstanceLifecycleAcceptance> DeleteAsync(
+        IServiceProvider services,
+        LiveProofInputs inputs,
+        ProofState state,
+        CancellationToken cancellationToken)
+    {
+        await using var scope = services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IElsaInstanceLifecycleStore>();
+        var instance = await store.GetInstanceAsync(state.WorkspaceId, state.InstanceId, cancellationToken)
+            ?? throw new ProofFailureException();
+        var confirmations = scope.ServiceProvider.GetRequiredService<ConfirmationService>();
+        var confirmation = await confirmations.CreateConfirmationAsync(
+            state.WorkspaceId,
+            new CreateActionConfirmationRequest(
+                ConfirmationActionType.DeleteManagedInstance,
+                state.InstanceId.ToString("D"),
+                state.AccountId),
+            cancellationToken);
+        var lifecycle = scope.ServiceProvider.GetRequiredService<ElsaInstanceLifecycleService>();
+        return await lifecycle.DeleteAsync(new ElsaInstanceLifecycleRequest(
+            state.WorkspaceId,
+            state.InstanceId,
+            instance.Version,
+            $"live-proof-delete-{state.InstanceId:N}",
+            DeleteConfirmationId: confirmation.Id,
+            ActorAccountId: state.AccountId), cancellationToken);
+    }
+
+    private static async Task<ProofState> WaitForReadyAsync(
+        IServiceProvider services,
+        LiveProofInputs inputs,
+        ProofState state,
+        Guid operationId,
+        CancellationToken cancellationToken)
+    {
+        var deadline = Stopwatch.GetTimestamp() + (long)(inputs.Timeout.TotalSeconds * Stopwatch.Frequency);
+        while (Stopwatch.GetTimestamp() < deadline)
+        {
+            await using var scope = services.CreateAsyncScope();
+            var lifecycleStore = scope.ServiceProvider.GetRequiredService<IElsaInstanceLifecycleStore>();
+            var instance = await lifecycleStore.GetInstanceAsync(state.WorkspaceId, state.InstanceId, cancellationToken);
+            var apiStore = scope.ServiceProvider.GetRequiredService<IManagedElsaInstanceApiStore>();
+            var operation = await apiStore.GetOperationAsync(state.WorkspaceId, state.InstanceId, operationId, cancellationToken);
+            if (instance is not null && operation is not null)
+            {
+                if (operation.State is ElsaInstanceOperationState.Failed or ElsaInstanceOperationState.RecoveryRequired)
+                    throw new ProofFailureException();
+                if (operation.State == ElsaInstanceOperationState.Succeeded &&
+                    instance.ObservedLifecycle == ElsaObservedLifecycle.Ready &&
+                    instance.Health == ElsaInstanceHealth.Healthy)
+                {
+                    var assignmentReference = instance.PlacementAssignmentReference?.AssignmentId;
+                    if (!Guid.TryParseExact(assignmentReference, "D", out var assignmentId))
+                        throw new ProofFailureException();
+                    var assignmentStore = scope.ServiceProvider.GetRequiredService<IAzureProviderResourceAssignmentStore>();
+                    var assignment = await assignmentStore.GetAsync(state.WorkspaceId, assignmentId, cancellationToken);
+                    if (assignment is null || assignment.State != AzureProviderAssignmentState.Active ||
+                        assignment.NamingVersion != 1 || assignment.InstanceId != state.InstanceId ||
+                        assignment.LastOperationId is null)
+                        throw new ProofFailureException();
+                    var providerOperations = scope.ServiceProvider.GetRequiredService<IAzureProviderOperationStore>();
+                    var providerOperation = await providerOperations.GetAsync(
+                        state.WorkspaceId, assignment.LastOperationId.Value, cancellationToken);
+                    if (providerOperation is null || providerOperation.Status != AzureProviderOperationStatus.Succeeded ||
+                        providerOperation.WorkspaceId != state.WorkspaceId ||
+                        providerOperation.InstanceId != state.InstanceId ||
+                        providerOperation.ProviderAssignmentId != assignmentId)
+                        throw new ProofFailureException();
+
+                    return state with
+                    {
+                        InitialAssignmentId = state.InitialAssignmentId ?? assignmentId,
+                        AssignmentId = assignmentId,
+                        ProviderOperationId = assignment.LastOperationId
+                    };
+                }
+            }
+
+            await Task.Delay(inputs.PollInterval, cancellationToken);
+        }
+
+        throw new ProofFailureException();
+    }
+
+    private static async Task WaitForDeletedAsync(
+        IServiceProvider services,
+        LiveProofInputs inputs,
+        ProofState state,
+        Guid operationId,
+        CancellationToken cancellationToken)
+    {
+        var deadline = Stopwatch.GetTimestamp() + (long)(inputs.Timeout.TotalSeconds * Stopwatch.Frequency);
+        while (Stopwatch.GetTimestamp() < deadline)
+        {
+            await using var scope = services.CreateAsyncScope();
+            var lifecycleStore = scope.ServiceProvider.GetRequiredService<IElsaInstanceLifecycleStore>();
+            var instance = await lifecycleStore.GetInstanceAsync(state.WorkspaceId, state.InstanceId, cancellationToken);
+            var apiStore = scope.ServiceProvider.GetRequiredService<IManagedElsaInstanceApiStore>();
+            var operation = await apiStore.GetOperationAsync(state.WorkspaceId, state.InstanceId, operationId, cancellationToken);
+            if (instance is not null && operation is not null)
+            {
+                if (operation.State is ElsaInstanceOperationState.Failed or ElsaInstanceOperationState.RecoveryRequired)
+                    throw new ProofFailureException();
+                if (operation.State == ElsaInstanceOperationState.Succeeded &&
+                    instance.ObservedLifecycle == ElsaObservedLifecycle.Deleted)
+                {
+                    if (state.AssignmentId is not { } assignmentId)
+                        throw new ProofFailureException();
+                    var assignmentStore = scope.ServiceProvider.GetRequiredService<IAzureProviderResourceAssignmentStore>();
+                    var assignment = await assignmentStore.GetAsync(state.WorkspaceId, assignmentId, cancellationToken);
+                    if (assignment is null || assignment.State != AzureProviderAssignmentState.Deleted ||
+                        assignment.Resources != new AzureProviderResourceReferences())
+                        throw new ProofFailureException();
+                    return;
+                }
+            }
+
+            await Task.Delay(inputs.PollInterval, cancellationToken);
+        }
+
+        throw new ProofFailureException();
+    }
+
+    private static async Task<bool> TryCleanupAsync(
+        ProductionAzureLifecycleProofApplication? existingApplication,
+        LiveProofInputs inputs,
+        ProofState state)
+    {
+        ProductionAzureLifecycleProofApplication? application = existingApplication;
+        var ownsApplication = false;
+        try
+        {
+            if (application is null)
+            {
+                using var cleanupTimeout = new CancellationTokenSource(inputs.Timeout);
+                application = StartApplication(inputs.ConfigPath, cleanupTimeout.Token);
+                ownsApplication = true;
+            }
+
+            using var timeout = new CancellationTokenSource(inputs.Timeout);
+            var cancellationToken = timeout.Token;
+
+            await using var scope = application.Services.CreateAsyncScope();
+            var store = scope.ServiceProvider.GetRequiredService<IElsaInstanceLifecycleStore>();
+            var instance = await store.GetInstanceAsync(state.WorkspaceId, state.InstanceId, cancellationToken);
+            if (instance is null || instance.ObservedLifecycle == ElsaObservedLifecycle.Deleted)
+                return true;
+
+            var active = await store.GetActiveOperationAsync(state.WorkspaceId, state.InstanceId, cancellationToken);
+            var deleteOperation = active?.Action == ElsaInstanceOperationAction.Delete
+                ? active.Id
+                : (await DeleteAsync(application.Services, inputs, state, cancellationToken)).Operation.Id;
+            await WaitForDeletedAsync(application.Services, inputs, state, deleteOperation, cancellationToken);
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+        finally
+        {
+            if (ownsApplication && application is not null)
+            {
+                try
+                {
+                    await application.DisposeAsync();
+                }
+                catch (Exception)
+                {
+                    // Preserve the original safe failure result.
+                }
+            }
+        }
+    }
+
+    private async Task WriteEvidenceAsync(
+        LiveProofInputs inputs,
+        ProofState? state,
+        string outcome,
+        bool cleanupAttempted,
+        bool cleanupSucceeded,
+        string stage)
+    {
+        try
+        {
+            Directory.CreateDirectory(inputs.EvidenceDirectory);
+            var path = Path.Combine(
+                inputs.EvidenceDirectory,
+                $"live-azure-lifecycle-proof-{inputs.InstanceId:N}-{DateTimeOffset.UtcNow:yyyyMMddTHHmmssZ}.json");
+            var evidence = new
+            {
+                outcome,
+                stage,
+                cleanupAttempted,
+                cleanupSucceeded,
+                organizationId = state?.OrganizationId,
+                workspaceId = state?.WorkspaceId,
+                accountId = state?.AccountId,
+                instanceId = state?.InstanceId,
+                createOperationId = state?.CreateOperationId,
+                reconcileOperationId = state?.ReconcileOperationId,
+                deleteOperationId = state?.DeleteOperationId,
+                assignmentId = state?.AssignmentId,
+                providerOperationId = state?.ProviderOperationId
+            };
+            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(evidence), CancellationToken.None);
+            output.WriteLine($"Live Azure lifecycle proof safe evidence: {path}");
+        }
+        catch (Exception)
+        {
+            // Evidence persistence must never expose an exception or mask the lifecycle result.
+        }
+    }
+
+    private static async Task<GovernedReleaseCatalogEntry> LoadCatalogEntryAsync(
+        string path,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var stream = File.OpenRead(path);
+            return await JsonSerializer.DeserializeAsync<GovernedReleaseCatalogEntry>(stream, cancellationToken: cancellationToken)
+                ?? throw new ProofFailureException();
+        }
+        catch (JsonException)
+        {
+            throw new ProofConfigurationException();
+        }
+    }
+
+    private static ElsaInstanceIntent Intent(GovernedReleaseCatalogEntry entry) => new(
+        new ElsaReleaseIntent(
+            entry.Distribution.Id,
+            entry.Distribution.ReleaseLine,
+            entry.Distribution.ReleaseVersion,
+            entry.Distribution.Channel),
+        new ElsaApplicationIntent(entry.Topology.Id),
+        new ElsaPlacementIntent(
+            "managed",
+            "westeurope",
+            "dedicated",
+            "standard-small",
+            "public",
+            "managed"));
+
+    private static Guid? ParseGuid(string? value) =>
+        Guid.TryParseExact(value, "D", out var parsed) ? parsed : null;
+
+    private static string? SafeToken(string? value)
+    {
+        value = value?.Trim();
+        return value is { Length: > 0 } && value.All(character =>
+            char.IsAsciiLetterOrDigit(character) || character is '-' or '_' or '.')
+            ? value
+            : null;
+    }
+
+    private static int BoundedSeconds(string? value, int fallback, int minimum, int maximum) =>
+        string.IsNullOrWhiteSpace(value)
+            ? fallback
+            : int.TryParse(value, out var parsed) && parsed >= minimum && parsed <= maximum
+                ? parsed
+                : throw new ProofConfigurationException();
+
+    private static void Ensure(bool condition, string _)
+    {
+        if (!condition)
+            throw new ProofFailureException();
+    }
+
+    private sealed class ProductionAzureLifecycleProofApplication(string configPath) : WebApplicationFactory<Program>
+    {
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            builder.UseEnvironment("Production");
+            builder.ConfigureAppConfiguration((_, configuration) =>
+                configuration.AddJsonFile(configPath, optional: false, reloadOnChange: false));
+        }
+    }
+
+    private sealed record LiveProofInputs(
+        string ConfigPath,
+        string CatalogEntryPath,
+        Guid InstanceId,
+        string ActorIssuer,
+        string ActorSubject,
+        string ActorEmail,
+        string Name,
+        string Slug,
+        TimeSpan Timeout,
+        TimeSpan PollInterval,
+        string EvidenceDirectory);
+
+    private sealed record ProofState(
+        Guid OrganizationId,
+        Guid WorkspaceId,
+        Guid AccountId,
+        Guid InstanceId,
+        GovernedReleaseCatalogEntry CatalogEntry,
+        Guid? InitialAssignmentId,
+        Guid? CreateOperationId,
+        Guid? ReconcileOperationId,
+        Guid? DeleteOperationId,
+        Guid? AssignmentId,
+        Guid? ProviderOperationId);
+
+    private sealed class ProofConfigurationException : Exception;
+
+    private sealed class ProofFailureException : Exception;
+
+    private sealed class ProductionAzureFactAttribute : FactAttribute
+    {
+        public ProductionAzureFactAttribute()
+        {
+            if (!IsEnabled())
+                Skip = $"{Gate} is not enabled; the live Azure proof was explicitly skipped.";
+        }
+    }
+}
