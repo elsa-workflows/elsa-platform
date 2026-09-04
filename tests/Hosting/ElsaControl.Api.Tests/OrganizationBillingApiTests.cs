@@ -185,6 +185,9 @@ public sealed class OrganizationBillingApiTests : IAsyncLifetime
         var response = await owner.GetAsync($"/api/organizations/{organizationId}/billing/");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.True(response.Headers.CacheControl?.Private);
+        Assert.True(response.Headers.CacheControl?.NoStore);
+        Assert.Contains("no-cache", response.Headers.Pragma.Select(x => x.Name), StringComparer.OrdinalIgnoreCase);
         var body = await response.Content.ReadControlJsonAsync<Dictionary<string, string>>();
         Assert.Equal("organization.not-found", body!["code"]);
         Assert.DoesNotContain(organizationId.ToString("D"), await response.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);

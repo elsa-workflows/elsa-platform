@@ -12,6 +12,12 @@ public static class OrganizationBillingEndpoints
     {
         var group = endpoints.MapGroup("/api/organizations/{organizationId:guid}/billing")
             .WithTags("Organization Billing");
+        group.AddEndpointFilter(async (context, next) =>
+        {
+            context.HttpContext.Response.Headers.CacheControl = "private, no-store";
+            context.HttpContext.Response.Headers.Pragma = "no-cache";
+            return await next(context);
+        });
 
         group.MapGet("/", async (
             Guid organizationId,
@@ -26,11 +32,7 @@ public static class OrganizationBillingEndpoints
 
             var result = await billing.GetStatusAsync(identity, organizationId, cancellationToken);
             if (result.Succeeded)
-            {
-                context.Response.Headers.CacheControl = "private, no-store";
-                context.Response.Headers.Pragma = "no-cache";
                 return Results.Ok(result.Status);
-            }
 
             return result.Failure is OrganizationWorkspaceFailure.OrganizationNotAllowed
                 ? Results.NotFound(new { code = "organization.not-found" })
