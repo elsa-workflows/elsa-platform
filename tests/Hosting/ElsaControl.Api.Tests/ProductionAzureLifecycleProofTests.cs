@@ -225,6 +225,8 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
             stage = "cleanup";
             cleanupAttempted = true;
             cleanupScope = await WaitForDeletedAsync(application.Services, inputs, state, deleted.Operation.Id, cancellationToken);
+            if (cleanupScope != CleanupScope.Provider)
+                throw new ProofFailureException();
             cleanupSucceeded = true;
             await WriteEvidenceAsync(inputs, state, "succeeded", cleanupAttempted, cleanupSucceeded, cleanupScope, stage, null);
         }
@@ -556,6 +558,7 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
                         var assignmentStore = scope.ServiceProvider.GetRequiredService<IAzureProviderResourceAssignmentStore>();
                         var assignment = await assignmentStore.GetAsync(state.WorkspaceId, assignmentId, cancellationToken);
                         providerCleanupVerified = assignment is not null &&
+                            assignment.InstanceId == state.InstanceId &&
                             assignment.State == AzureProviderAssignmentState.Deleted &&
                             assignment.Resources == new AzureProviderResourceReferences(assignment.ResourceGroupName);
                     }
