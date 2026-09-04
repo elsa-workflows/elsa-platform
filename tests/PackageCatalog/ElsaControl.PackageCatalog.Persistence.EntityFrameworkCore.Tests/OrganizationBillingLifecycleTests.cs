@@ -128,6 +128,31 @@ public sealed class OrganizationBillingLifecycleTests
         Assert.All(provider.Requests, request => Assert.Equal(subscription.Id, request.SubscriptionId));
     }
 
+    [Fact]
+    public async Task One_pass_catches_up_every_overdue_milestone_without_skipping_notices()
+    {
+        await using var fixture = await LifecycleFixture.CreateAsync();
+        var subscription = await fixture.StartTrialAsync(fixture.OrganizationId, Start);
+        var overdueAt = subscription.TrialEndsAt
+            .Add(OrganizationSubscriptionLifecycle.PaymentGracePeriod)
+            .Add(OrganizationSubscriptionLifecycle.ConstraintPeriod)
+            .Add(OrganizationSubscriptionLifecycle.FinalRetentionPeriod);
+
+        var advances = await fixture.Store.AdvanceDueAsync(overdueAt);
+
+        Assert.Equal(
+            [
+                OrganizationSubscriptionState.PastDue,
+                OrganizationSubscriptionState.Constrained,
+                OrganizationSubscriptionState.Suspended,
+                OrganizationSubscriptionState.Retained
+            ],
+            advances.Select(x => x.CurrentState));
+        Assert.Equal(OrganizationSubscriptionState.Retained, await fixture.StateAsync(fixture.OrganizationId));
+        Assert.Equal(5, await fixture.Db.OrganizationBillingLifecycleNotices.CountAsync());
+        Assert.Single(await fixture.Db.OrganizationBillingCleanups.ToListAsync());
+    }
+
     private sealed class LifecycleFixture(SqliteConnection connection, CatalogDbContext db) : IAsyncDisposable
     {
         public Guid OrganizationId { get; } = Guid.NewGuid();

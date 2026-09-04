@@ -44,9 +44,15 @@ public sealed partial class OrganizationBillingStore
                 candidate.State != OrganizationSubscriptionState.Retained)
                 continue;
 
-            var result = await AdvanceOneAsync(candidate.OrganizationId, candidate.Id, now, cancellationToken);
-            if (result is not null)
+            while (true)
+            {
+                var result = await AdvanceOneAsync(candidate.OrganizationId, candidate.Id, now, cancellationToken);
+                if (result is null)
+                    break;
                 results.Add(result);
+                if (result.CurrentState is OrganizationSubscriptionState.Retained or OrganizationSubscriptionState.Deleted)
+                    break;
+            }
         }
 
         return results;
