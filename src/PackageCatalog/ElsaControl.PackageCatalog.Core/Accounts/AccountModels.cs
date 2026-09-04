@@ -56,6 +56,8 @@ public sealed class Organization
     public List<OrganizationAuditRecord> AuditRecords { get; set; } = [];
     public List<OrganizationSubscription> Subscriptions { get; set; } = [];
     public List<BillingProviderEventInboxEntry> BillingProviderEvents { get; set; } = [];
+    public List<OrganizationBillingLifecycleNotice> BillingLifecycleNotices { get; set; } = [];
+    public List<OrganizationBillingCleanup> BillingCleanups { get; set; } = [];
 }
 
 public sealed class OrganizationMembership
@@ -172,7 +174,10 @@ public enum OrganizationAuditAction
     EntitlementChanged,
     RoleChanged,
     SubscriptionChanged,
-    BillingEventConsumed
+    BillingEventConsumed,
+    BillingLifecycleNoticeIssued,
+    BillingCleanupRequested,
+    BillingCleanupCompleted
 }
 
 public enum WorkspaceKind

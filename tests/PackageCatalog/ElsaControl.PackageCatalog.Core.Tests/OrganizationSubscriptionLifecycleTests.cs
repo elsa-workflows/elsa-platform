@@ -44,6 +44,41 @@ public sealed class OrganizationSubscriptionLifecycleTests
 
         Assert.Equal(OrganizationSubscriptionState.Active, subscription.State);
         Assert.Equal(occurredAt.ToUniversalTime(), subscription.ActivatedAt);
+        Assert.Equal(0, subscription.LifecycleVersion);
+    }
+
+    [Fact]
+    public void Control_plane_transition_advances_the_lifecycle_version_once()
+    {
+        var subscription = OrganizationSubscriptionLifecycle.CreateTrial(Guid.NewGuid(), "stripe", StartedAt);
+
+        OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.PastDue, StartedAt.AddDays(14), advanceLifecycleVersion: true);
+
+        Assert.Equal(1, subscription.LifecycleVersion);
+    }
+
+    [Fact]
+    public void Same_state_event_backfills_grace_from_the_canonical_past_due_timestamp()
+    {
+        var subscription = OrganizationSubscriptionLifecycle.CreateTrial(Guid.NewGuid(), "stripe", StartedAt);
+        OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.PastDue, StartedAt.AddDays(14));
+        subscription.GraceEndsAt = null;
+
+        OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.PastDue, StartedAt.AddDays(16));
+
+        Assert.Equal(subscription.PastDueAt!.Value.Add(OrganizationSubscriptionLifecycle.PaymentGracePeriod), subscription.GraceEndsAt);
+    }
+
+    [Fact]
+    public void Same_state_event_backfills_retention_from_the_canonical_suspension_timestamp()
+    {
+        var subscription = OrganizationSubscriptionLifecycle.CreateTrial(Guid.NewGuid(), "stripe", StartedAt);
+        OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.Suspended, StartedAt.AddDays(14));
+        subscription.RetentionEndsAt = null;
+
+        OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.Suspended, StartedAt.AddDays(20));
+
+        Assert.Equal(subscription.SuspendedAt!.Value.Add(OrganizationSubscriptionLifecycle.FinalRetentionPeriod), subscription.RetentionEndsAt);
     }
 
     [Fact]

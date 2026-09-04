@@ -240,6 +240,131 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.ToTable("OrganizationAuditRecords");
                 });
 
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Core.Accounts.OrganizationBillingCleanup", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CleanupKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("CompletedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("LastAttemptAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("LastFailureCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("LeaseExpiresAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("LeaseOwner")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LeaseToken")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("NotBeforeAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProviderCustomerReference")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProviderSubscriptionReference")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("RequestedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SubscriptionId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SubscriptionId")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "SubscriptionId");
+
+                    b.HasIndex("State", "NotBeforeAt", "LeaseExpiresAt");
+
+                    b.ToTable("OrganizationBillingCleanups");
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Core.Accounts.OrganizationBillingLifecycleNotice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("DeliveredAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("DeliveryAttemptCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("DeliveryStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastFailureCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SubscriptionId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "SubscriptionId", "Kind")
+                        .IsUnique();
+
+                    b.ToTable("OrganizationBillingLifecycleNotices");
+                });
+
             modelBuilder.Entity("ElsaControl.PackageCatalog.Core.Accounts.OrganizationEntitlementSnapshot", b =>
                 {
                     b.Property<Guid>("Id")
@@ -362,11 +487,20 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.Property<long?>("DeletedAt")
                         .HasColumnType("INTEGER");
 
+                    b.Property<long?>("EarlyDeletionRequestedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("GraceEndsAt")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("LastProviderEventId")
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
                     b.Property<long>("LastProviderEventOccurredAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("LifecycleVersion")
                         .HasColumnType("INTEGER");
 
                     b.Property<Guid>("OrganizationId")
@@ -389,6 +523,9 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<long?>("RetainedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("RetentionEndsAt")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("State")
@@ -1122,10 +1259,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.Property<Guid?>("InstanceId")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("LifecycleAction")
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("Isolation")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -1143,6 +1276,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("LeaseTokenHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LifecycleAction")
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
@@ -4699,6 +4836,46 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.Navigation("Organization");
                 });
 
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Core.Accounts.OrganizationBillingCleanup", b =>
+                {
+                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Organization", "Organization")
+                        .WithMany("BillingCleanups")
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.OrganizationSubscription", "Subscription")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "SubscriptionId")
+                        .HasPrincipalKey("OrganizationId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+
+                    b.Navigation("Subscription");
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Core.Accounts.OrganizationBillingLifecycleNotice", b =>
+                {
+                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Organization", "Organization")
+                        .WithMany("BillingLifecycleNotices")
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.OrganizationSubscription", "Subscription")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "SubscriptionId")
+                        .HasPrincipalKey("OrganizationId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Organization");
+
+                    b.Navigation("Subscription");
+                });
+
             modelBuilder.Entity("ElsaControl.PackageCatalog.Core.Accounts.OrganizationEntitlementSnapshot", b =>
                 {
                     b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Organization", "Organization")
@@ -5575,6 +5752,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
             modelBuilder.Entity("ElsaControl.PackageCatalog.Core.Accounts.Organization", b =>
                 {
                     b.Navigation("AuditRecords");
+
+                    b.Navigation("BillingCleanups");
+
+                    b.Navigation("BillingLifecycleNotices");
 
                     b.Navigation("BillingProviderEvents");
 

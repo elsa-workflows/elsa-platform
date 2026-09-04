@@ -19,6 +19,11 @@ public interface IStripeCustomerPortalGateway
     Task<global::Stripe.BillingPortal.Session> CreateAsync(global::Stripe.BillingPortal.SessionCreateOptions options, RequestOptions requestOptions, CancellationToken cancellationToken);
 }
 
+public interface IStripeSubscriptionCleanupGateway
+{
+    Task<bool> CancelOrConfirmAbsentAsync(string subscriptionReference, RequestOptions requestOptions, CancellationToken cancellationToken);
+}
+
 public sealed class StripeCheckoutSessionGateway(Func<StripeClient> clientFactory) : IStripeCheckoutSessionGateway
 {
     public Task<global::Stripe.Checkout.Session> CreateAsync(global::Stripe.Checkout.SessionCreateOptions options, RequestOptions requestOptions, CancellationToken cancellationToken) =>
@@ -31,16 +36,64 @@ public sealed class StripeCustomerPortalGateway(Func<StripeClient> clientFactory
         new global::Stripe.BillingPortal.SessionService(clientFactory()).CreateAsync(options, requestOptions, cancellationToken);
 }
 
+public sealed class StripeSubscriptionCleanupGateway(Func<StripeClient> clientFactory) : IStripeSubscriptionCleanupGateway
+{
+    public async Task<bool> CancelOrConfirmAbsentAsync(string subscriptionReference, RequestOptions requestOptions, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await new SubscriptionService(clientFactory()).CancelAsync(subscriptionReference, null, requestOptions, cancellationToken);
+            return true;
+        }
+        catch (StripeException exception) when (exception.HttpStatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return true;
+        }
+    }
+}
+
 public sealed class StripeBillingProvider(
     IOptions<StripeBillingOptions> options,
     IStripeCheckoutSessionGateway checkoutGateway,
-    IStripeCustomerPortalGateway portalGateway) : IBillingProvider
+    IStripeCustomerPortalGateway portalGateway,
+    IStripeSubscriptionCleanupGateway cleanupGateway) : IBillingProvider, IOrganizationBillingCleanupProvider
 {
     private const long SignatureToleranceSeconds = 300;
     private const string OrganizationMetadataKey = "elsa_control_organization_id";
     private readonly StripeBillingOptions _options = options.Value;
 
     public string Provider => BillingProviderNames.Stripe;
+
+    public async Task<OrganizationBillingCleanupOutcome> CleanupAsync(
+        OrganizationBillingCleanupRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!string.Equals(request.Provider, Provider, StringComparison.Ordinal))
+            return OrganizationBillingCleanupOutcome.Unknown;
+        if (string.IsNullOrWhiteSpace(request.ProviderSubscriptionReference))
+            return OrganizationBillingCleanupOutcome.Unknown;
+
+        try
+        {
+            var confirmed = await cleanupGateway.CancelOrConfirmAbsentAsync(
+                request.ProviderSubscriptionReference,
+                new RequestOptions { IdempotencyKey = request.CleanupKey },
+                cancellationToken);
+            return confirmed ? OrganizationBillingCleanupOutcome.ConfirmedAbsent : OrganizationBillingCleanupOutcome.RetryableFailure;
+        }
+        catch (StripeException)
+        {
+            return OrganizationBillingCleanupOutcome.RetryableFailure;
+        }
+        catch (HttpRequestException)
+        {
+            return OrganizationBillingCleanupOutcome.RetryableFailure;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return OrganizationBillingCleanupOutcome.RetryableFailure;
+        }
+    }
 
     public async Task<BillingSessionLink> CreateCheckoutSessionAsync(
         BillingCheckoutSessionRequest request,

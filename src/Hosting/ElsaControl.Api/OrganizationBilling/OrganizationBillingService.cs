@@ -54,6 +54,10 @@ public sealed class OrganizationBillingApiService(
         var subscription = trial.Subscription ?? await billing.GetSubscriptionAsync(organizationId, cancellationToken);
         if (subscription is null)
             return OrganizationBillingApiResult.Unavailable();
+        if (subscription.State != OrganizationSubscriptionState.Trial ||
+            subscription.EarlyDeletionRequestedAt is not null ||
+            !string.IsNullOrWhiteSpace(subscription.ProviderSubscriptionReference))
+            return OrganizationBillingApiResult.Terminal();
 
         try
         {
@@ -109,6 +113,21 @@ public sealed class OrganizationBillingApiService(
         }
     }
 
+    public async Task<OrganizationBillingDeletionApiResult> RequestDeletionAsync(
+        TrustedWorkspaceIdentity identity,
+        Guid organizationId,
+        CancellationToken cancellationToken)
+    {
+        var access = await accounts.GetOrganizationAccessAsync(identity, organizationId, OrganizationOperation.ManageBilling, cancellationToken);
+        if (!access.Succeeded)
+            return OrganizationBillingDeletionApiResult.Denied(access.Failure!.Value);
+
+        var result = await billing.RequestDeletionAsync(organizationId, cancellationToken);
+        return result is null
+            ? OrganizationBillingDeletionApiResult.NotFound()
+            : OrganizationBillingDeletionApiResult.Accepted(result);
+    }
+
     private bool IsStripeProvider => string.Equals(provider.Provider, BillingProviderNames.Stripe, StringComparison.Ordinal);
 }
 
@@ -116,14 +135,16 @@ public sealed record OrganizationBillingApiResult(
     BillingSessionLink? Session,
     OrganizationWorkspaceFailure? Failure,
     bool ProviderUnavailable,
-    bool CustomerNotReady)
+    bool CustomerNotReady,
+    bool SubscriptionTerminal)
 {
-    public bool Succeeded => Session is not null && Failure is null && !ProviderUnavailable && !CustomerNotReady;
+    public bool Succeeded => Session is not null && Failure is null && !ProviderUnavailable && !CustomerNotReady && !SubscriptionTerminal;
 
-    public static OrganizationBillingApiResult Success(BillingSessionLink session) => new(session, null, false, false);
-    public static OrganizationBillingApiResult Denied(OrganizationWorkspaceFailure failure) => new(null, failure, false, false);
-    public static OrganizationBillingApiResult Unavailable() => new(null, null, true, false);
-    public static OrganizationBillingApiResult CustomerUnavailable() => new(null, null, false, true);
+    public static OrganizationBillingApiResult Success(BillingSessionLink session) => new(session, null, false, false, false);
+    public static OrganizationBillingApiResult Denied(OrganizationWorkspaceFailure failure) => new(null, failure, false, false, false);
+    public static OrganizationBillingApiResult Unavailable() => new(null, null, true, false, false);
+    public static OrganizationBillingApiResult CustomerUnavailable() => new(null, null, false, true, false);
+    public static OrganizationBillingApiResult Terminal() => new(null, null, false, false, true);
 }
 
 public sealed record OrganizationBillingStatusApiResult(
@@ -134,4 +155,16 @@ public sealed record OrganizationBillingStatusApiResult(
 
     public static OrganizationBillingStatusApiResult Success(OrganizationBillingStatusResponse status) => new(status, null);
     public static OrganizationBillingStatusApiResult Denied(OrganizationWorkspaceFailure failure) => new(null, failure);
+}
+
+public sealed record OrganizationBillingDeletionApiResult(
+    OrganizationBillingLifecycleAdvance? Advance,
+    OrganizationWorkspaceFailure? Failure,
+    bool OrganizationUnavailable)
+{
+    public bool Succeeded => Advance is not null && Failure is null && !OrganizationUnavailable;
+
+    public static OrganizationBillingDeletionApiResult Accepted(OrganizationBillingLifecycleAdvance advance) => new(advance, null, false);
+    public static OrganizationBillingDeletionApiResult Denied(OrganizationWorkspaceFailure failure) => new(null, failure, false);
+    public static OrganizationBillingDeletionApiResult NotFound() => new(null, null, true);
 }
