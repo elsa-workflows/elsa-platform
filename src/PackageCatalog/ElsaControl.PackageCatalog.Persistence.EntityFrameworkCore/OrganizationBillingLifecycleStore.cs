@@ -133,7 +133,9 @@ public sealed partial class OrganizationBillingStore
         {
             subscription.UpdatedAt = now;
             if (NoticeFor(subscription.State) is { } noticeKind)
-            noticeCreated |= await AddNoticeAsync(subscription, noticeKind, now, cancellationToken);
+            {
+                noticeCreated |= await AddNoticeAsync(subscription, noticeKind, now, cancellationToken);
+            }
             if (subscription.State == OrganizationSubscriptionState.Suspended)
                 noticeCreated |= await AddNoticeAsync(subscription, OrganizationBillingLifecycleNoticeKind.ExportAvailable, now, cancellationToken);
             AddLifecycleAudit(
