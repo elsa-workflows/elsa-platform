@@ -157,6 +157,7 @@ public sealed partial class OrganizationBillingStore
             if (changed)
             {
                 subscription.UpdatedAt = now;
+                await ProjectEntitlementAsync(subscription, now, cancellationToken);
                 if (NoticeFor(subscription.State) is { } noticeKind)
                 {
                     noticeCreated |= await AddNoticeAsync(subscription, noticeKind, now, cancellationToken);
