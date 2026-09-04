@@ -41,9 +41,9 @@ SQLite WAL/SHM sidecars), so an accidental rerun cannot attach to an existing ca
 It also requires
 `DataProtection:KeysPath` on durable storage, all lifecycle and
 provider workers enabled, the v1 instance-provider scope, pinned CLI/sqlcmd/curl/template paths,
-and three versioned source Key Vault references. The database slot uses the provider-owned
-`secret://azure-managed/sql-connection` sentinel; signing-key and admin-password slots remain
-versioned Key Vault locators. Raw secret values are not accepted.
+and two versioned source Key Vault references plus the provider-owned SQL sentinel. The database
+slot uses the provider-owned `secret://azure-managed/sql-connection` sentinel; signing-key and
+admin-password slots remain versioned Key Vault locators. Raw secret values are not accepted.
 
 ## Azure prerequisites
 
@@ -53,7 +53,7 @@ attached to the host. It needs:
 - subscription-level permission to create/delete the generated v1 sibling resource group and
   mutate its descendants;
 - the governed ACR resource-group permissions, including the exact `AcrPull` role assignment;
-- read access to the source Key Vault's three versioned secrets;
+- read access to the source Key Vault's two versioned secrets;
 - SQL Entra bootstrap permission, with `Runner:SqlBootstrapObjectId` and the approved bootstrap
   login matching the identity;
 - access to the immutable runtime image and its governed catalog projection.
