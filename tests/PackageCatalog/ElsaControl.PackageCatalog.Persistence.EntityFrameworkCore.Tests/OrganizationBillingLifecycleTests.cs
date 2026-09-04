@@ -153,6 +153,18 @@ public sealed class OrganizationBillingLifecycleTests
         Assert.Single(await fixture.Db.OrganizationBillingCleanups.ToListAsync());
     }
 
+    [Fact]
+    public async Task Unrelated_state_cannot_bind_a_future_lifecycle_deadline()
+    {
+        await using var fixture = await LifecycleFixture.CreateAsync();
+        var subscription = await fixture.StartTrialAsync(fixture.OrganizationId, Start);
+        subscription.GraceEndsAt = Start.AddDays(30);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Db.SaveChangesAsync());
+
+        Assert.Equal("Subscription GraceEndsAt must match its lifecycle event.", error.Message);
+    }
+
     private sealed class LifecycleFixture(SqliteConnection connection, CatalogDbContext db) : IAsyncDisposable
     {
         public Guid OrganizationId { get; } = Guid.NewGuid();

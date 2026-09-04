@@ -29,7 +29,8 @@ public sealed class OrganizationBillingLifecycleWorker(
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var item = await store.TryClaimCleanupAsync(workerId, now, cancellationToken);
+            var attemptNow = _timeProvider.GetUtcNow().ToUniversalTime();
+            var item = await store.TryClaimCleanupAsync(workerId, attemptNow, cancellationToken);
             if (item is null)
                 break;
 
@@ -74,7 +75,7 @@ public sealed class OrganizationBillingLifecycleWorker(
                     item.SubscriptionId,
                     item.LeaseToken,
                     outcome,
-                    now,
+                    _timeProvider.GetUtcNow().ToUniversalTime(),
                     failureCode),
                 cancellationToken);
         }

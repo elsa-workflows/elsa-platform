@@ -90,7 +90,7 @@ public sealed partial class OrganizationBillingStore
         {
             case OrganizationSubscriptionState.Trial when subscription.TrialEndsAt <= now:
                 transitionAt = subscription.TrialEndsAt.ToUniversalTime();
-                OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.PastDue, transitionAt);
+                OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.PastDue, transitionAt, advanceLifecycleVersion: true);
                 changed = true;
                 break;
             case OrganizationSubscriptionState.PastDue:
@@ -100,7 +100,7 @@ public sealed partial class OrganizationBillingStore
                     break;
                 transitionAt = graceEndsAt.Value;
                 subscription.GraceEndsAt ??= transitionAt;
-                OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.Constrained, transitionAt);
+                OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.Constrained, transitionAt, advanceLifecycleVersion: true);
                 changed = true;
                 break;
             }
@@ -110,7 +110,7 @@ public sealed partial class OrganizationBillingStore
                 if (suspensionAt is null || suspensionAt > now)
                     break;
                 transitionAt = suspensionAt.Value;
-                OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.Suspended, transitionAt);
+                OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.Suspended, transitionAt, advanceLifecycleVersion: true);
                 changed = true;
                 break;
             }
@@ -121,7 +121,7 @@ public sealed partial class OrganizationBillingStore
                     break;
                 transitionAt = retentionEndsAt.Value;
                 subscription.RetentionEndsAt ??= transitionAt;
-                OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.Retained, transitionAt);
+                OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.Retained, transitionAt, advanceLifecycleVersion: true);
                 changed = true;
                 break;
             }
@@ -133,9 +133,9 @@ public sealed partial class OrganizationBillingStore
         {
             subscription.UpdatedAt = now;
             if (NoticeFor(subscription.State) is { } noticeKind)
-                noticeCreated |= AddNotice(subscription, noticeKind, now);
+            noticeCreated |= await AddNoticeAsync(subscription, noticeKind, now, cancellationToken);
             if (subscription.State == OrganizationSubscriptionState.Suspended)
-                noticeCreated |= AddNotice(subscription, OrganizationBillingLifecycleNoticeKind.ExportAvailable, now);
+                noticeCreated |= await AddNoticeAsync(subscription, OrganizationBillingLifecycleNoticeKind.ExportAvailable, now, cancellationToken);
             AddLifecycleAudit(
                 subscription,
                 OrganizationAuditAction.SubscriptionChanged,
@@ -145,8 +145,8 @@ public sealed partial class OrganizationBillingStore
 
         if (subscription.State == OrganizationSubscriptionState.Retained)
         {
-            noticeCreated |= AddNotice(subscription, OrganizationBillingLifecycleNoticeKind.DeletionScheduled, now);
-            cleanupQueued = EnsureCleanup(subscription, now, early: false);
+            noticeCreated |= await AddNoticeAsync(subscription, OrganizationBillingLifecycleNoticeKind.DeletionScheduled, now, cancellationToken);
+            cleanupQueued = await EnsureCleanupAsync(subscription, now, early: false, cancellationToken);
         }
 
         if (!changed && !noticeCreated && !cleanupQueued)
@@ -184,7 +184,7 @@ public sealed partial class OrganizationBillingStore
                 not OrganizationSubscriptionState.Retained and
                 not OrganizationSubscriptionState.Deleted)
             {
-                OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.Suspended, requestedAt);
+                OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.Suspended, requestedAt, advanceLifecycleVersion: true);
                 changed = true;
             }
 
@@ -195,13 +195,13 @@ public sealed partial class OrganizationBillingStore
             }
 
             subscription.UpdatedAt = requestedAt;
-            var noticeCreated = NoticeFor(subscription.State) is { } noticeKind && AddNotice(subscription, noticeKind, requestedAt);
+            var noticeCreated = NoticeFor(subscription.State) is { } noticeKind && await AddNoticeAsync(subscription, noticeKind, requestedAt, cancellationToken);
             if (subscription.State == OrganizationSubscriptionState.Suspended)
-                noticeCreated |= AddNotice(subscription, OrganizationBillingLifecycleNoticeKind.ExportAvailable, requestedAt);
-            noticeCreated |= AddNotice(subscription, OrganizationBillingLifecycleNoticeKind.DeletionScheduled, requestedAt);
+                noticeCreated |= await AddNoticeAsync(subscription, OrganizationBillingLifecycleNoticeKind.ExportAvailable, requestedAt, cancellationToken);
+            noticeCreated |= await AddNoticeAsync(subscription, OrganizationBillingLifecycleNoticeKind.DeletionScheduled, requestedAt, cancellationToken);
             if (changed)
                 AddLifecycleAudit(subscription, OrganizationAuditAction.SubscriptionChanged, $"Customer requested early deletion; subscription advanced from {previous} to Suspended.", requestedAt);
-            var cleanupQueued = EnsureCleanup(subscription, requestedAt, early: true);
+            var cleanupQueued = await EnsureCleanupAsync(subscription, requestedAt, early: true, cancellationToken);
             if (cleanupQueued || changed)
                 AddLifecycleAudit(subscription, OrganizationAuditAction.BillingCleanupRequested, "Provider-neutral billing cleanup was queued.", requestedAt);
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -297,7 +297,7 @@ public sealed partial class OrganizationBillingStore
                     .SingleOrDefaultAsync(x => x.OrganizationId == completion.OrganizationId && x.Id == completion.SubscriptionId, cancellationToken);
                 if (subscription is not null && subscription.State != OrganizationSubscriptionState.Deleted)
                 {
-                    OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.Deleted, completedAt);
+                    OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.Deleted, completedAt, advanceLifecycleVersion: true);
                     subscription.ProviderCustomerReference = null;
                     subscription.ProviderSubscriptionReference = null;
                     subscription.LastProviderEventId = null;
@@ -340,13 +340,14 @@ public sealed partial class OrganizationBillingStore
             _ => false
         };
 
-    private bool AddNotice(
+    private async Task<bool> AddNoticeAsync(
         OrganizationSubscription subscription,
         OrganizationBillingLifecycleNoticeKind kind,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
     {
         if (dbContext.OrganizationBillingLifecycleNotices.Local.Any(x => x.OrganizationId == subscription.OrganizationId && x.SubscriptionId == subscription.Id && x.Kind == kind) ||
-            dbContext.OrganizationBillingLifecycleNotices.Any(x => x.OrganizationId == subscription.OrganizationId && x.SubscriptionId == subscription.Id && x.Kind == kind))
+            await dbContext.OrganizationBillingLifecycleNotices.AnyAsync(x => x.OrganizationId == subscription.OrganizationId && x.SubscriptionId == subscription.Id && x.Kind == kind, cancellationToken))
             return false;
 
         var notice = new OrganizationBillingLifecycleNotice
@@ -362,10 +363,10 @@ public sealed partial class OrganizationBillingStore
         return true;
     }
 
-    private bool EnsureCleanup(OrganizationSubscription subscription, DateTimeOffset now, bool early)
+    private async Task<bool> EnsureCleanupAsync(OrganizationSubscription subscription, DateTimeOffset now, bool early, CancellationToken cancellationToken)
     {
         var cleanup = dbContext.OrganizationBillingCleanups.Local.FirstOrDefault(x => x.SubscriptionId == subscription.Id) ??
-            dbContext.OrganizationBillingCleanups.FirstOrDefault(x => x.SubscriptionId == subscription.Id);
+            await dbContext.OrganizationBillingCleanups.FirstOrDefaultAsync(x => x.SubscriptionId == subscription.Id, cancellationToken);
         if (cleanup is null)
         {
             cleanup = new OrganizationBillingCleanup

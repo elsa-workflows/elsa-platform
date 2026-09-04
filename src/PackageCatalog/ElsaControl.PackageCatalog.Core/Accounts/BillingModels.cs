@@ -350,11 +350,12 @@ public static class OrganizationSubscriptionLifecycle
         };
     }
 
-    public static void ApplyState(OrganizationSubscription subscription, OrganizationSubscriptionState next, DateTimeOffset occurredAt)
+    public static void ApplyState(OrganizationSubscription subscription, OrganizationSubscriptionState next, DateTimeOffset occurredAt, bool advanceLifecycleVersion = false)
     {
         if (!CanTransition(subscription, next))
             throw new InvalidOperationException($"Subscription cannot transition from {subscription.State} to {next}.");
 
+        var stateChanged = subscription.State != next;
         var timestamp = occurredAt.ToUniversalTime();
         subscription.State = next;
         switch (next)
@@ -381,6 +382,7 @@ public static class OrganizationSubscriptionLifecycle
                 break;
         }
 
-        subscription.LifecycleVersion++;
+        if (advanceLifecycleVersion && stateChanged)
+            subscription.LifecycleVersion++;
     }
 }

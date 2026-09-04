@@ -398,7 +398,10 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
                   string.CompareOrdinal(subscription.LastProviderEventId, originalEventId) > 0));
             if (subscription.State != originalState)
             {
-                if (!OrganizationSubscriptionLifecycle.CanTransition(subscription, subscription.State))
+                if (!OrganizationSubscriptionLifecycle.CanTransition(originalState, subscription.State) &&
+                    !(originalState == OrganizationSubscriptionState.Suspended &&
+                      subscription.State == OrganizationSubscriptionState.Deleted &&
+                      subscription.EarlyDeletionRequestedAt is not null))
                     throw new InvalidOperationException("Subscription state transition is not allowed.");
                 var originalLifecycleVersion = entry.Property<int>(nameof(OrganizationSubscription.LifecycleVersion)).OriginalValue;
                 var lifecycleAdvanced = subscription.LifecycleVersion == originalLifecycleVersion + 1;
@@ -464,8 +467,9 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         if (currentValue is null)
             return;
 
-        if ((!allowFuture && !lifecycleTransition && currentState != expectedState) ||
-            (!allowFuture && !lifecycleTransition && currentValue.Value.ToUniversalTime() != currentCursor.ToUniversalTime()))
+        if (!lifecycleTransition && currentState != expectedState ||
+            !lifecycleTransition && !allowFuture && currentValue.Value.ToUniversalTime() != currentCursor.ToUniversalTime() ||
+            !lifecycleTransition && allowFuture && currentValue.Value.ToUniversalTime() < currentCursor.ToUniversalTime())
             throw new InvalidOperationException($"Subscription {propertyName} must match its lifecycle event.");
     }
 

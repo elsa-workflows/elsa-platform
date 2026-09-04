@@ -44,6 +44,17 @@ public sealed class OrganizationSubscriptionLifecycleTests
 
         Assert.Equal(OrganizationSubscriptionState.Active, subscription.State);
         Assert.Equal(occurredAt.ToUniversalTime(), subscription.ActivatedAt);
+        Assert.Equal(0, subscription.LifecycleVersion);
+    }
+
+    [Fact]
+    public void Control_plane_transition_advances_the_lifecycle_version_once()
+    {
+        var subscription = OrganizationSubscriptionLifecycle.CreateTrial(Guid.NewGuid(), "stripe", StartedAt);
+
+        OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.PastDue, StartedAt.AddDays(14), advanceLifecycleVersion: true);
+
+        Assert.Equal(1, subscription.LifecycleVersion);
     }
 
     [Fact]
