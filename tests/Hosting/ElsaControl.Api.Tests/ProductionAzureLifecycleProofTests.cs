@@ -82,6 +82,21 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
         Assert.Equal("combined", entry.Topology.Id);
     }
 
+    [Fact]
+    public void Failure_evidence_excludes_exception_payload()
+    {
+        var baseException = new InvalidOperationException("message-secret");
+        baseException.Data["secret"] = "data-secret";
+        var exception = new Exception("outer-secret", baseException);
+
+        var json = JsonSerializer.Serialize(ExceptionEvidence(exception));
+
+        Assert.DoesNotContain("message-secret", json);
+        Assert.DoesNotContain("outer-secret", json);
+        Assert.DoesNotContain("data-secret", json);
+        Assert.Contains(nameof(InvalidOperationException), json);
+    }
+
     [ProductionAzureFact]
     public async Task Production_composition_applies_reconciles_reloads_and_deletes_one_instance()
     {
@@ -128,9 +143,9 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
             cleanupAttempted = true;
             await WaitForDeletedAsync(application.Services, inputs, state, deleted.Operation.Id, cancellationToken);
             cleanupSucceeded = true;
-            await WriteEvidenceAsync(inputs, state, "succeeded", cleanupAttempted, cleanupSucceeded, stage);
+            await WriteEvidenceAsync(inputs, state, "succeeded", cleanupAttempted, cleanupSucceeded, stage, null);
         }
-        catch (Exception)
+        catch (Exception exception)
         {
             if (state is not null)
             {
@@ -140,7 +155,7 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
                 cleanupSucceeded = cleanup.Succeeded;
             }
 
-            await WriteEvidenceAsync(inputs, state, "failed", cleanupAttempted, cleanupSucceeded, stage);
+            await WriteEvidenceAsync(inputs, state, "failed", cleanupAttempted, cleanupSucceeded, stage, exception);
             throw new XunitException(
                 "The opt-in production Azure lifecycle proof failed. Safe proof identifiers were preserved for investigation.");
         }
@@ -539,7 +554,8 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
         string outcome,
         bool cleanupAttempted,
         bool cleanupSucceeded,
-        string stage)
+        string stage,
+        Exception? failure)
     {
         try
         {
@@ -561,7 +577,8 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
                 reconcileOperationId = state?.ReconcileOperationId,
                 deleteOperationId = state?.DeleteOperationId,
                 assignmentId = state?.AssignmentId,
-                providerOperationId = state?.ProviderOperationId
+                providerOperationId = state?.ProviderOperationId,
+                exception = ExceptionEvidence(failure)
             };
             await File.WriteAllTextAsync(path, JsonSerializer.Serialize(evidence), CancellationToken.None);
             output.WriteLine($"Live Azure lifecycle proof safe evidence: {path}");
@@ -605,6 +622,24 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
 
     private static Guid? ParseGuid(string? value) =>
         Guid.TryParseExact(value, "D", out var parsed) ? parsed : null;
+
+    private static SafeExceptionEvidence? ExceptionEvidence(Exception? exception)
+    {
+        if (exception is null)
+            return null;
+
+        var baseException = exception.GetBaseException();
+        return new(
+            SafeSymbol(baseException.GetType().FullName),
+            SafeSymbol(baseException.TargetSite?.DeclaringType?.FullName),
+            SafeSymbol(baseException.TargetSite?.Name));
+    }
+
+    private static string? SafeSymbol(string? value) =>
+        value is { Length: > 0 and <= 256 } && value.All(character =>
+            char.IsAsciiLetterOrDigit(character) || character is '.' or '+' or '_' or '<' or '>' or '`' or '[' or ']' or ',')
+            ? value
+            : null;
 
     private static void ValidateIsolatedSqliteDatabase(IConfiguration configuration, string baseDirectory)
     {
@@ -701,6 +736,11 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
         Guid? ProviderOperationId);
 
     private sealed record CleanupResult(ProofState State, bool Succeeded);
+
+    private sealed record SafeExceptionEvidence(
+        string? Type,
+        string? TargetDeclaringType,
+        string? TargetMethod);
 
     private sealed class ProofConfigurationException : Exception;
 
