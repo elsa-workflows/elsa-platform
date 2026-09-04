@@ -242,6 +242,7 @@ public sealed partial class OrganizationBillingStore(CatalogDbContext dbContext)
         OrganizationSubscriptionLifecycle.ApplyState(subscription, providerEvent.State.Value, occurrence);
         subscription.ProviderCustomerReference ??= providerEvent.ProviderCustomerReference;
         subscription.ProviderSubscriptionReference ??= providerEvent.ProviderSubscriptionReference;
+        await BackfillQueuedCleanupReferencesAsync(subscription, cancellationToken);
         if (isNewSubscription)
             dbContext.OrganizationSubscriptions.Add(subscription);
         subscription.LastProviderEventOccurredAt = occurrence;
@@ -255,6 +256,23 @@ public sealed partial class OrganizationBillingStore(CatalogDbContext dbContext)
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return new(BillingEventConsumptionOutcome.Applied, subscription, entitlement, inbox);
+    }
+
+    private async Task BackfillQueuedCleanupReferencesAsync(
+        OrganizationSubscription subscription,
+        CancellationToken cancellationToken)
+    {
+        var cleanup = await dbContext.OrganizationBillingCleanups
+            .SingleOrDefaultAsync(
+                x => x.OrganizationId == subscription.OrganizationId &&
+                     x.SubscriptionId == subscription.Id &&
+                     x.State == OrganizationBillingCleanupState.Queued,
+                cancellationToken);
+        if (cleanup is null)
+            return;
+
+        cleanup.ProviderCustomerReference ??= subscription.ProviderCustomerReference;
+        cleanup.ProviderSubscriptionReference ??= subscription.ProviderSubscriptionReference;
     }
 
     public async Task<BillingEventConsumptionResult> StartTrialAsync(

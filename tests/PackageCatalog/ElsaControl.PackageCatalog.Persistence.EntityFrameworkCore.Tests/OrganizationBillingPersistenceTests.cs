@@ -53,6 +53,38 @@ public sealed class OrganizationBillingPersistenceTests
     }
 
     [Fact]
+    public async Task Suspended_provider_event_backfills_references_on_queued_cleanup()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateDb(connection);
+        await db.Database.EnsureCreatedAsync();
+        db.Organizations.Add(new Organization { Id = OrganizationId, Name = "Acme" });
+        await db.SaveChangesAsync();
+
+        var store = new OrganizationBillingStore(db);
+        await store.StartTrialAsync(OrganizationId, "stripe", Now);
+        await store.RequestDeletionAsync(OrganizationId, Now.AddMinutes(1));
+
+        await store.ConsumeAsync(
+            new BillingProviderEvent(
+                OrganizationId,
+                "stripe",
+                "evt-suspended",
+                "customer.subscription.deleted",
+                OrganizationSubscriptionState.Suspended,
+                Now.AddMinutes(2),
+                "sha256:" + new string('f', 64),
+                "cus_123",
+                "sub_123"),
+            Now.AddMinutes(3));
+
+        var cleanup = await db.OrganizationBillingCleanups.SingleAsync();
+        Assert.Equal("cus_123", cleanup.ProviderCustomerReference);
+        Assert.Equal("sub_123", cleanup.ProviderSubscriptionReference);
+    }
+
+    [Fact]
     public async Task Correlated_unknown_event_is_recorded_without_subscription_or_entitlement_projection()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
