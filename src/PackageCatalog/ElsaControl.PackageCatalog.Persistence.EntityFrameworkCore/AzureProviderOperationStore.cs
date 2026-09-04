@@ -532,6 +532,15 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
         var entity = await db.AzureProviderOperations.SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == operationId, cancellationToken);
         if (entity is null || entity.Status != AzureProviderOperationStatus.Running || !LeaseMatches(entity, leaseToken, now) || expectedVersion.HasValue && entity.Version != expectedVersion.Value) return null;
         if ((long)checkpoint.Phase < (long)entity.Phase) throw new InvalidOperationException("Checkpoint phase cannot move backwards.");
+        AzureProviderResourceAssignmentEntity? assignment = null;
+        if (entity.ProviderAssignmentId is { } assignmentId)
+        {
+            assignment = await db.AzureProviderResourceAssignments.SingleOrDefaultAsync(
+                x => x.Id == assignmentId && x.WorkspaceId == workspaceId,
+                cancellationToken);
+            if (assignment is null || assignment.OrganizationId != entity.OrganizationId || assignment.InstanceId != entity.InstanceId)
+                throw new InvalidOperationException("The Azure provider assignment binding is invalid.");
+        }
         var safeDiagnostics = checkpoint.Diagnostics
             .Select(x => new AzureProviderDiagnostic(x.Code, x.Code))
             .ToArray();
@@ -539,6 +548,16 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
         var resources = checkpoint.ReplaceResources
             ? checkpoint.Resources
             : MergeResources(entity, checkpoint.Resources);
+        if (assignment is not null)
+        {
+            if (resources.ResourceGroupName is not null &&
+                !string.Equals(resources.ResourceGroupName, assignment.ResourceGroupName, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("The Azure provider assignment binding is invalid.");
+
+            // The assignment is the immutable resource-group authority. Preserve its original
+            // spelling in operation snapshots, including when cleanup replaces the inventory.
+            resources = resources with { ResourceGroupName = assignment.ResourceGroupName };
+        }
         var lastTransitionCode = await db.AzureProviderOperationTransitions.AsNoTracking()
             .Where(x => x.OperationId == entity.Id)
             .OrderByDescending(x => x.Sequence)
@@ -567,13 +586,8 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
         entity.AcrPullRoleAssignmentId = resources.AcrPullRoleAssignmentId;
         entity.Endpoint = endpoint; entity.Health = health;
         entity.DiagnosticsJson = diagnosticsJson;
-        if (entity.ProviderAssignmentId is { } assignmentId)
+        if (assignment is not null)
         {
-            var assignment = await db.AzureProviderResourceAssignments.SingleOrDefaultAsync(
-                x => x.Id == assignmentId && x.WorkspaceId == workspaceId,
-                cancellationToken);
-            if (assignment is null || assignment.OrganizationId != entity.OrganizationId || assignment.InstanceId != entity.InstanceId)
-                throw new InvalidOperationException("The Azure provider assignment binding is invalid.");
             ApplyAssignmentResources(assignment, resources);
             assignment.LastOperationId = entity.Id;
             assignment.State = checkpoint.Phase == AzureProviderOperationPhase.CleanupVerified
@@ -853,7 +867,6 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
         AzureProviderResourceAssignmentEntity assignment,
         AzureProviderResourceReferences resources)
     {
-        assignment.ResourceGroupName = resources.ResourceGroupName ?? assignment.ResourceGroupName;
         assignment.FoundationDeploymentId = resources.FoundationDeploymentId;
         assignment.WorkloadDeploymentId = resources.WorkloadDeploymentId;
         assignment.WorkloadResourceId = resources.WorkloadResourceId;
