@@ -14,6 +14,7 @@
     <ProjectReference Include="..\..\RuntimeBuilder\ElsaControl.RuntimeBuilder.Core\ElsaControl.RuntimeBuilder.Core.csproj" />
     <ProjectReference Include="..\..\RuntimeBuilder\ElsaControl.RuntimeBuilder.DeploymentTemplates\ElsaControl.RuntimeBuilder.DeploymentTemplates.csproj" />
     <ProjectReference Include="..\..\Weaver\ElsaControl.Weaver.Core\ElsaControl.Weaver.Core.csproj" />
+    <ProjectReference Include="..\..\Billing\ElsaControl.Billing.Stripe\ElsaControl.Billing.Stripe.csproj" />
   </ItemGroup>
 
   <ItemGroup>

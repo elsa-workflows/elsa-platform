@@ -272,8 +272,11 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             billingEvent.ProviderCustomerReference = OptionalSafeReference(billingEvent.ProviderCustomerReference, nameof(billingEvent.ProviderCustomerReference), OrganizationBillingLimits.ProviderReferenceMaxLength);
             billingEvent.ProviderSubscriptionReference = OptionalSafeReference(billingEvent.ProviderSubscriptionReference, nameof(billingEvent.ProviderSubscriptionReference), OrganizationBillingLimits.ProviderReferenceMaxLength);
             billingEvent.RejectionCode = OptionalSafeCode(billingEvent.RejectionCode, nameof(billingEvent.RejectionCode));
-            EnsureDefined(billingEvent.State, nameof(billingEvent.State));
             EnsureDefined(billingEvent.ProcessingStatus, nameof(billingEvent.ProcessingStatus));
+            if (billingEvent.State.HasValue)
+                EnsureDefined(billingEvent.State.Value, nameof(billingEvent.State));
+            else if (billingEvent.ProcessingStatus is not BillingProviderEventProcessingStatus.RecordedUnknown)
+                throw new InvalidOperationException("A billing event without a lifecycle state must be recorded as unknown.");
             billingEvent.OccurredAt = billingEvent.OccurredAt.ToUniversalTime();
             billingEvent.ReceivedAt = billingEvent.ReceivedAt.ToUniversalTime();
             billingEvent.ProcessedAt = NormalizeOptionalTimestamp(billingEvent.ProcessedAt, nameof(billingEvent.ProcessedAt));

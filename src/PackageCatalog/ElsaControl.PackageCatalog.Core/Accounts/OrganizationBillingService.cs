@@ -19,6 +19,14 @@ public sealed class OrganizationBillingService(
         return store.ConsumeAsync(providerEvent, _timeProvider.GetUtcNow(), cancellationToken);
     }
 
+    public Task<BillingEventConsumptionResult> RecordUnknownAsync(
+        BillingProviderEvent providerEvent,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(providerEvent);
+        return store.RecordUnknownAsync(providerEvent, _timeProvider.GetUtcNow(), cancellationToken);
+    }
+
     public Task<BillingEventConsumptionResult> StartTrialAsync(
         Guid organizationId,
         string provider,

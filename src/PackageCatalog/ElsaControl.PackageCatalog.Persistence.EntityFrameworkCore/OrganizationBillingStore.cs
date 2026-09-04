@@ -23,9 +23,93 @@ public sealed class OrganizationBillingStore(CatalogDbContext dbContext) : IOrga
         if (receivedAt == default)
             throw new ArgumentException("Event receipt timestamp is required.", nameof(receivedAt));
         providerEvent = NormalizeEvent(providerEvent);
-        ValidateEvent(providerEvent);
+        ValidateEvent(providerEvent, allowUnknown: false);
 
         return await ConsumeCoreAsync(providerEvent, receivedAt, cancellationToken, attempt: 0);
+    }
+
+    public async Task<BillingEventConsumptionResult> RecordUnknownAsync(
+        BillingProviderEvent providerEvent,
+        DateTimeOffset receivedAt,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(providerEvent);
+        if (receivedAt == default)
+            throw new ArgumentException("Event receipt timestamp is required.", nameof(receivedAt));
+        providerEvent = NormalizeEvent(providerEvent);
+        ValidateEvent(providerEvent, allowUnknown: true);
+
+        return await RecordUnknownCoreAsync(providerEvent, receivedAt, cancellationToken, attempt: 0);
+    }
+
+    private async Task<BillingEventConsumptionResult> RecordUnknownCoreAsync(
+        BillingProviderEvent providerEvent,
+        DateTimeOffset receivedAt,
+        CancellationToken cancellationToken,
+        int attempt)
+    {
+        try
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+            await EnsureOrganizationExistsAsync(providerEvent.OrganizationId, cancellationToken);
+            var existingEvent = await dbContext.BillingProviderEvents
+                .SingleOrDefaultAsync(x => x.Provider == providerEvent.Provider && x.ProviderEventId == providerEvent.ProviderEventId, cancellationToken);
+            if (existingEvent is not null)
+            {
+                EnsureSameEvent(existingEvent, providerEvent);
+                var replaySubscription = await dbContext.OrganizationSubscriptions.AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.OrganizationId == existingEvent.OrganizationId, cancellationToken);
+                var replayEntitlement = await dbContext.OrganizationEntitlementSnapshots.AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.OrganizationId == existingEvent.OrganizationId, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return new(BillingEventConsumptionOutcome.Replayed, replaySubscription, replayEntitlement, existingEvent);
+            }
+
+            var now = receivedAt.ToUniversalTime();
+            var inbox = new BillingProviderEventInboxEntry
+            {
+                OrganizationId = providerEvent.OrganizationId,
+                Provider = providerEvent.Provider,
+                ProviderEventId = providerEvent.ProviderEventId,
+                EventType = providerEvent.EventType,
+                State = null,
+                EventHash = providerEvent.EventHash,
+                ProviderCustomerReference = providerEvent.ProviderCustomerReference,
+                ProviderSubscriptionReference = providerEvent.ProviderSubscriptionReference,
+                OccurredAt = providerEvent.OccurredAt.ToUniversalTime(),
+                ReceivedAt = now,
+                ProcessedAt = now,
+                ProcessingStatus = BillingProviderEventProcessingStatus.RecordedUnknown,
+                RejectionCode = "provider.event.unknown"
+            };
+            dbContext.BillingProviderEvents.Add(inbox);
+            AddBillingAudit(providerEvent.OrganizationId, inbox.Id, "A correlated unsupported billing provider event was recorded.", now);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            var subscription = await dbContext.OrganizationSubscriptions.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.OrganizationId == providerEvent.OrganizationId, cancellationToken);
+            var entitlement = await dbContext.OrganizationEntitlementSnapshots.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.OrganizationId == providerEvent.OrganizationId, cancellationToken);
+            return new(BillingEventConsumptionOutcome.RecordedUnknown, subscription, entitlement, inbox, inbox.RejectionCode);
+        }
+        catch (Exception exception) when (attempt < 2 && IsRetryableConflict(exception))
+        {
+            dbContext.ChangeTracker.Clear();
+            var existing = await dbContext.BillingProviderEvents.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Provider == providerEvent.Provider && x.ProviderEventId == providerEvent.ProviderEventId, cancellationToken);
+            if (existing is not null)
+            {
+                EnsureSameEvent(existing, providerEvent);
+                var replaySubscription = await dbContext.OrganizationSubscriptions.AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.OrganizationId == existing.OrganizationId, cancellationToken);
+                var replayEntitlement = await dbContext.OrganizationEntitlementSnapshots.AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.OrganizationId == existing.OrganizationId, cancellationToken);
+                return new(BillingEventConsumptionOutcome.Replayed, replaySubscription, replayEntitlement, existing);
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(20 * (attempt + 1)), cancellationToken);
+            return await RecordUnknownCoreAsync(providerEvent, receivedAt, cancellationToken, attempt + 1);
+        }
     }
 
     private async Task<BillingEventConsumptionResult> ConsumeCoreAsync(
@@ -68,6 +152,7 @@ public sealed class OrganizationBillingStore(CatalogDbContext dbContext) : IOrga
     {
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        await EnsureOrganizationExistsAsync(providerEvent.OrganizationId, cancellationToken);
         var existingEvent = await dbContext.BillingProviderEvents
             .SingleOrDefaultAsync(x => x.Provider == providerEvent.Provider && x.ProviderEventId == providerEvent.ProviderEventId, cancellationToken);
         if (existingEvent is not null)
@@ -92,12 +177,6 @@ public sealed class OrganizationBillingStore(CatalogDbContext dbContext) : IOrga
             EnsureReferenceMatches(subscription.ProviderCustomerReference, providerEvent.ProviderCustomerReference, "customer");
             EnsureReferenceMatches(subscription.ProviderSubscriptionReference, providerEvent.ProviderSubscriptionReference, "subscription");
         }
-        var isNewSubscription = subscription is null;
-        subscription ??= OrganizationSubscriptionLifecycle.CreateTrial(
-            providerEvent.OrganizationId,
-            providerEvent.Provider,
-            occurrence);
-
         var inbox = new BillingProviderEventInboxEntry
         {
             OrganizationId = providerEvent.OrganizationId,
@@ -114,6 +193,27 @@ public sealed class OrganizationBillingStore(CatalogDbContext dbContext) : IOrga
         };
         dbContext.BillingProviderEvents.Add(inbox);
 
+        // A Stripe trialing event must never create a late trial or move its
+        // end date; checkout starts it first. Legacy/provider reconciliation
+        // may still materialize a non-trial lifecycle row for an active event
+        // so it can be audited and converged on the next checkout.
+        if (subscription is null && providerEvent.State == OrganizationSubscriptionState.Trial)
+        {
+            inbox.ProcessingStatus = BillingProviderEventProcessingStatus.Rejected;
+            inbox.RejectionCode = "subscription.missing";
+            inbox.ProcessedAt = now;
+            AddBillingAudit(providerEvent.OrganizationId, inbox.Id, "A normalized billing provider event was rejected because no control-plane subscription exists.", now);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new(BillingEventConsumptionOutcome.Rejected, null, null, inbox, inbox.RejectionCode);
+        }
+
+        var isNewSubscription = subscription is null;
+        subscription ??= OrganizationSubscriptionLifecycle.CreateTrial(
+            providerEvent.OrganizationId,
+            providerEvent.Provider,
+            occurrence);
+
         var isOlderEvent = occurrence < subscription.LastProviderEventOccurredAt ||
                            (occurrence == subscription.LastProviderEventOccurredAt &&
                             subscription.LastProviderEventId is not null &&
@@ -128,7 +228,7 @@ public sealed class OrganizationBillingStore(CatalogDbContext dbContext) : IOrga
             return new(BillingEventConsumptionOutcome.IgnoredOutOfOrder, subscription, null, inbox);
         }
 
-        if (!OrganizationSubscriptionLifecycle.CanTransition(subscription.State, providerEvent.State))
+        if (!OrganizationSubscriptionLifecycle.CanTransition(subscription.State, providerEvent.State!.Value))
         {
             inbox.ProcessingStatus = BillingProviderEventProcessingStatus.Rejected;
             inbox.RejectionCode = "subscription.transition.invalid";
@@ -139,7 +239,7 @@ public sealed class OrganizationBillingStore(CatalogDbContext dbContext) : IOrga
             return new(BillingEventConsumptionOutcome.Rejected, existingSubscription, null, inbox, inbox.RejectionCode);
         }
 
-        OrganizationSubscriptionLifecycle.ApplyState(subscription, providerEvent.State, occurrence);
+        OrganizationSubscriptionLifecycle.ApplyState(subscription, providerEvent.State.Value, occurrence);
         subscription.ProviderCustomerReference ??= providerEvent.ProviderCustomerReference;
         subscription.ProviderSubscriptionReference ??= providerEvent.ProviderSubscriptionReference;
         if (isNewSubscription)
@@ -291,7 +391,13 @@ public sealed class OrganizationBillingStore(CatalogDbContext dbContext) : IOrga
             throw new BillingProviderEventConflictException($"A subscription cannot change its provider {referenceName} reference.");
     }
 
-    private static void ValidateEvent(BillingProviderEvent providerEvent)
+    private async Task EnsureOrganizationExistsAsync(Guid organizationId, CancellationToken cancellationToken)
+    {
+        if (!await dbContext.Organizations.AsNoTracking().AnyAsync(x => x.Id == organizationId, cancellationToken))
+            throw new ArgumentException("Billing event organization does not exist.", nameof(organizationId));
+    }
+
+    private static void ValidateEvent(BillingProviderEvent providerEvent, bool allowUnknown)
     {
         if (providerEvent.OrganizationId == Guid.Empty)
             throw new ArgumentException("Organization ID is required.", nameof(providerEvent));
@@ -301,8 +407,22 @@ public sealed class OrganizationBillingStore(CatalogDbContext dbContext) : IOrga
         RequireSha256(providerEvent.EventHash, nameof(providerEvent.EventHash));
         RequireSafeReference(providerEvent.ProviderCustomerReference, nameof(providerEvent.ProviderCustomerReference));
         RequireSafeReference(providerEvent.ProviderSubscriptionReference, nameof(providerEvent.ProviderSubscriptionReference));
-        if (!Enum.IsDefined(providerEvent.State) || providerEvent.OccurredAt == default)
-            throw new ArgumentException("Billing event state and UTC occurrence timestamp are required.", nameof(providerEvent));
+        if (providerEvent.OccurredAt == default)
+            throw new ArgumentException("Billing event occurrence timestamp is required.", nameof(providerEvent));
+
+        if (allowUnknown)
+        {
+            if (providerEvent.State.HasValue)
+                throw new ArgumentException("Unknown billing events must not contain a lifecycle state.", nameof(providerEvent));
+        }
+        else if (!providerEvent.State.HasValue)
+        {
+            throw new ArgumentException("Known billing events require a lifecycle state.", nameof(providerEvent));
+        }
+        else if (!Enum.IsDefined(providerEvent.State.Value))
+        {
+            throw new ArgumentException("Billing event lifecycle state is invalid.", nameof(providerEvent));
+        }
     }
 
     private static BillingProviderEvent NormalizeEvent(BillingProviderEvent providerEvent)
