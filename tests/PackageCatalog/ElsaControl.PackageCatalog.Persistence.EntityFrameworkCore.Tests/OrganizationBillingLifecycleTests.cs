@@ -1,0 +1,198 @@
+using ElsaControl.PackageCatalog.Core.Accounts;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+
+namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests;
+
+public sealed class OrganizationBillingLifecycleTests
+{
+    private static readonly DateTimeOffset Start = new(2026, 9, 1, 0, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task Clock_drives_each_deadline_without_early_deletion_and_retries_are_idempotent()
+    {
+        await using var fixture = await LifecycleFixture.CreateAsync();
+        var subscription = await fixture.StartTrialAsync(fixture.OrganizationId, Start);
+
+        Assert.Empty(await fixture.Store.AdvanceDueAsync(subscription.TrialEndsAt.AddTicks(-1)));
+        Assert.Equal(OrganizationSubscriptionState.Trial, await fixture.StateAsync(fixture.OrganizationId));
+
+        await fixture.AdvanceAsync(subscription.TrialEndsAt, OrganizationSubscriptionState.PastDue);
+        var pastDue = await fixture.SubscriptionAsync(fixture.OrganizationId);
+        Assert.Equal(subscription.TrialEndsAt.AddDays(7), pastDue.GraceEndsAt);
+        Assert.Empty(await fixture.Store.AdvanceDueAsync(pastDue.GraceEndsAt!.Value.AddTicks(-1)));
+
+        await fixture.AdvanceAsync(pastDue.GraceEndsAt.Value, OrganizationSubscriptionState.Constrained);
+        var constrained = await fixture.SubscriptionAsync(fixture.OrganizationId);
+        Assert.Empty(await fixture.Store.AdvanceDueAsync(constrained.ConstrainedAt!.Value.AddDays(1).AddTicks(-1)));
+
+        await fixture.AdvanceAsync(constrained.ConstrainedAt.Value.AddDays(1), OrganizationSubscriptionState.Suspended);
+        var suspended = await fixture.SubscriptionAsync(fixture.OrganizationId);
+        Assert.Equal(suspended.SuspendedAt!.Value.AddDays(30), suspended.RetentionEndsAt);
+        Assert.Empty(await fixture.Store.AdvanceDueAsync(suspended.RetentionEndsAt!.Value.AddTicks(-1)));
+        Assert.Empty(await fixture.Db.OrganizationBillingCleanups.ToListAsync());
+
+        await fixture.AdvanceAsync(suspended.RetentionEndsAt.Value, OrganizationSubscriptionState.Retained);
+        Assert.Single(await fixture.Db.OrganizationBillingCleanups.ToListAsync());
+        Assert.Empty(await fixture.Store.AdvanceDueAsync(suspended.RetentionEndsAt.Value));
+        Assert.Single(await fixture.Db.OrganizationBillingCleanups.ToListAsync());
+
+        var notices = await fixture.Db.OrganizationBillingLifecycleNotices.OrderBy(x => x.Kind).ToListAsync();
+        Assert.Equal(5, notices.Count);
+        Assert.Equal(5, notices.Select(x => x.Kind).Distinct().Count());
+        Assert.DoesNotContain(notices, x => x.State == OrganizationSubscriptionState.Deleted);
+    }
+
+    [Fact]
+    public async Task Lifecycle_advancement_is_isolated_by_organization()
+    {
+        await using var fixture = await LifecycleFixture.CreateAsync();
+        var secondOrganizationId = Guid.NewGuid();
+        fixture.Db.Organizations.Add(new Organization { Id = secondOrganizationId, Name = "Second" });
+        await fixture.Db.SaveChangesAsync();
+        var first = await fixture.StartTrialAsync(fixture.OrganizationId, Start);
+        await fixture.StartTrialAsync(secondOrganizationId, Start.AddDays(1));
+
+        await fixture.Store.AdvanceDueAsync(first.TrialEndsAt);
+
+        Assert.Equal(OrganizationSubscriptionState.PastDue, await fixture.StateAsync(fixture.OrganizationId));
+        Assert.Equal(OrganizationSubscriptionState.Trial, await fixture.StateAsync(secondOrganizationId));
+        Assert.Single(await fixture.Db.OrganizationBillingLifecycleNotices.Where(x => x.OrganizationId == fixture.OrganizationId).ToListAsync());
+        Assert.Empty(await fixture.Db.OrganizationBillingLifecycleNotices.Where(x => x.OrganizationId == secondOrganizationId).ToListAsync());
+    }
+
+    [Fact]
+    public async Task Explicit_early_deletion_queues_immediate_cleanup_and_tombstones_only_after_confirmation()
+    {
+        await using var fixture = await LifecycleFixture.CreateAsync();
+        var subscription = await fixture.StartTrialAsync(fixture.OrganizationId, Start);
+        subscription.ProviderCustomerReference = "cus_safe";
+        subscription.ProviderSubscriptionReference = "sub_safe";
+        await fixture.Db.SaveChangesAsync();
+        var requestedAt = Start.AddDays(2);
+
+        var requested = await fixture.Store.RequestDeletionAsync(fixture.OrganizationId, requestedAt);
+        var repeated = await fixture.Store.RequestDeletionAsync(fixture.OrganizationId, requestedAt);
+
+        Assert.NotNull(requested);
+        Assert.NotNull(repeated);
+        Assert.Equal(OrganizationSubscriptionState.Suspended, await fixture.StateAsync(fixture.OrganizationId));
+        Assert.Single(await fixture.Db.OrganizationBillingCleanups.ToListAsync());
+        Assert.Equal(3, await fixture.Db.OrganizationBillingLifecycleNotices.CountAsync());
+        Assert.Equal(3, await fixture.Db.OrganizationBillingLifecycleNotices.Select(x => x.Kind).Distinct().CountAsync());
+        var work = Assert.IsType<OrganizationBillingCleanupWorkItem>(await fixture.Store.TryClaimCleanupAsync("worker", requestedAt));
+
+        var retry = await fixture.Store.CompleteCleanupAsync(new(work.Id, work.OrganizationId, work.SubscriptionId, work.LeaseToken, OrganizationBillingCleanupOutcome.RetryableFailure, requestedAt, "provider.retry"));
+        Assert.Equal(OrganizationBillingCleanupState.Queued, retry.State);
+        Assert.Equal(OrganizationSubscriptionState.Suspended, await fixture.StateAsync(fixture.OrganizationId));
+        Assert.Null(await fixture.Store.TryClaimCleanupAsync("worker", requestedAt.AddSeconds(59)));
+
+        var retryWork = Assert.IsType<OrganizationBillingCleanupWorkItem>(await fixture.Store.TryClaimCleanupAsync("worker", requestedAt.AddMinutes(1)));
+        var completed = await fixture.Store.CompleteCleanupAsync(new(retryWork.Id, retryWork.OrganizationId, retryWork.SubscriptionId, retryWork.LeaseToken, OrganizationBillingCleanupOutcome.ConfirmedAbsent, requestedAt.AddMinutes(1)));
+        Assert.True(completed.SubscriptionDeleted);
+        var tombstone = await fixture.SubscriptionAsync(fixture.OrganizationId);
+        Assert.Equal(OrganizationSubscriptionState.Deleted, tombstone.State);
+        Assert.Null(tombstone.ProviderCustomerReference);
+        Assert.Null(tombstone.ProviderSubscriptionReference);
+        Assert.Null(tombstone.LastProviderEventId);
+        var cleanup = await fixture.Db.OrganizationBillingCleanups.SingleAsync();
+        Assert.Null(cleanup.ProviderCustomerReference);
+        Assert.Null(cleanup.ProviderSubscriptionReference);
+    }
+
+    [Fact]
+    public async Task Worker_uses_TimeProvider_and_retries_provider_cleanup_safely()
+    {
+        await using var fixture = await LifecycleFixture.CreateAsync();
+        var subscription = await fixture.StartTrialAsync(fixture.OrganizationId, Start);
+        await fixture.Store.RequestDeletionAsync(fixture.OrganizationId, Start.AddDays(1));
+        var clock = new TestTimeProvider(Start.AddDays(1));
+        var provider = new SequencedCleanupProvider(
+            OrganizationBillingCleanupOutcome.RetryableFailure,
+            OrganizationBillingCleanupOutcome.ConfirmedAbsent);
+        var worker = new OrganizationBillingLifecycleWorker(fixture.Store, clock, provider);
+
+        var first = await worker.ProcessAvailableAsync("worker");
+        Assert.Equal(1, first.CleanupAttempts);
+        Assert.Equal(OrganizationSubscriptionState.Suspended, await fixture.StateAsync(fixture.OrganizationId));
+
+        clock.UtcNow = clock.UtcNow.AddSeconds(59);
+        var tooEarly = await worker.ProcessAvailableAsync("worker");
+        Assert.Equal(0, tooEarly.CleanupAttempts);
+
+        clock.UtcNow = clock.UtcNow.AddSeconds(1);
+        var second = await worker.ProcessAvailableAsync("worker");
+        Assert.Equal(1, second.CleanupAttempts);
+        Assert.Equal(OrganizationSubscriptionState.Deleted, await fixture.StateAsync(fixture.OrganizationId));
+        Assert.Equal(2, provider.Requests.Count);
+        Assert.All(provider.Requests, request => Assert.Equal(subscription.Id, request.SubscriptionId));
+    }
+
+    private sealed class LifecycleFixture(SqliteConnection connection, CatalogDbContext db) : IAsyncDisposable
+    {
+        public Guid OrganizationId { get; } = Guid.NewGuid();
+        public CatalogDbContext Db { get; } = db;
+        public OrganizationBillingStore Store { get; } = new(db);
+
+        public static async Task<LifecycleFixture> CreateAsync()
+        {
+            var connection = new SqliteConnection("Data Source=:memory:");
+            await connection.OpenAsync();
+            var db = new CatalogDbContext(new DbContextOptionsBuilder<CatalogDbContext>().UseSqlite(connection).Options);
+            await db.Database.EnsureCreatedAsync();
+            var fixture = new LifecycleFixture(connection, db);
+            db.Organizations.Add(new Organization { Id = fixture.OrganizationId, Name = "Acme" });
+            await db.SaveChangesAsync();
+            return fixture;
+        }
+
+        public async Task<OrganizationSubscription> StartTrialAsync(Guid organizationId, DateTimeOffset startedAt)
+        {
+            var result = await Store.StartTrialAsync(organizationId, "stripe", startedAt);
+            return Assert.IsType<OrganizationSubscription>(result.Subscription);
+        }
+
+        public async Task AdvanceAsync(DateTimeOffset now, OrganizationSubscriptionState expected)
+        {
+            var advances = await Store.AdvanceDueAsync(now);
+            Assert.Single(advances);
+            Assert.Equal(expected, advances[0].CurrentState);
+            Assert.Equal(expected, await StateAsync(advances[0].OrganizationId));
+        }
+
+        public async Task<OrganizationSubscription> SubscriptionAsync(Guid organizationId)
+        {
+            Db.ChangeTracker.Clear();
+            return await Db.OrganizationSubscriptions.SingleAsync(x => x.OrganizationId == organizationId);
+        }
+
+        public async Task<OrganizationSubscriptionState> StateAsync(Guid organizationId) =>
+            (await SubscriptionAsync(organizationId)).State;
+
+        public async ValueTask DisposeAsync()
+        {
+            await Db.DisposeAsync();
+            await connection.DisposeAsync();
+        }
+    }
+
+
+    private sealed class TestTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public DateTimeOffset UtcNow { get; set; } = utcNow;
+        public override DateTimeOffset GetUtcNow() => UtcNow;
+    }
+
+    private sealed class SequencedCleanupProvider(params OrganizationBillingCleanupOutcome[] outcomes) : IOrganizationBillingCleanupProvider
+    {
+        private readonly Queue<OrganizationBillingCleanupOutcome> _outcomes = new(outcomes);
+        public string Provider => "stripe";
+        public List<OrganizationBillingCleanupRequest> Requests { get; } = [];
+
+        public Task<OrganizationBillingCleanupOutcome> CleanupAsync(OrganizationBillingCleanupRequest request, CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return Task.FromResult(_outcomes.Dequeue());
+        }
+    }
+}

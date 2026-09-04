@@ -69,6 +69,21 @@ public static class OrganizationBillingEndpoints
             return ToHttpResult(result);
         });
 
+        group.MapPost("/delete", async (
+            Guid organizationId,
+            HttpContext context,
+            IWorkspaceIdentityReader identityReader,
+            OrganizationBillingApiService billing,
+            CancellationToken cancellationToken) =>
+        {
+            var identity = await identityReader.ReadAsync(context);
+            if (identity is null)
+                return WorkspaceIdentityHttpContextExtensions.UnauthorizedWorkspaceIdentity();
+
+            var result = await billing.RequestDeletionAsync(identity, organizationId, cancellationToken);
+            return ToDeletionHttpResult(result);
+        });
+
         endpoints.MapPost("/api/billing/webhooks/stripe", HandleStripeWebhookAsync)
             .WithTags("Billing Webhooks");
 
@@ -171,6 +186,19 @@ public static class OrganizationBillingEndpoints
         BillingEventConsumptionOutcome.RecordedUnknown => "recorded-unknown",
         _ => "unknown"
     };
+
+    private static IResult ToDeletionHttpResult(OrganizationBillingDeletionApiResult result)
+    {
+        if (result.Succeeded)
+            return Results.Accepted(value: new OrganizationBillingDeletionResponse(
+                result.Advance!.CurrentState.ToString(),
+                result.Advance.CleanupQueued));
+        if (result.Failure is OrganizationWorkspaceFailure.OrganizationNotAllowed || result.OrganizationUnavailable)
+            return Results.NotFound(new { code = "organization.not-found" });
+        if (result.Failure is OrganizationWorkspaceFailure.OrganizationRoleNotAllowed)
+            return Results.Forbid();
+        return Results.BadRequest(new { code = "billing.deletion.invalid" });
+    }
 }
 
 public sealed record OrganizationBillingSessionResponse(string Url);
@@ -268,3 +296,5 @@ public sealed record OrganizationBillingCapacityResponse(
     int? ManagedInstancesLimit,
     int WorkspacesUsed,
     int? WorkspacesLimit);
+
+public sealed record OrganizationBillingDeletionResponse(string State, bool CleanupQueued);

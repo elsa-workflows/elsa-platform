@@ -12,7 +12,7 @@ namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 /// subscription, projects the entitlement snapshot and writes safe audit
 /// metadata together.
 /// </summary>
-public sealed class OrganizationBillingStore(CatalogDbContext dbContext) : IOrganizationBillingStore
+public sealed partial class OrganizationBillingStore(CatalogDbContext dbContext) : IOrganizationBillingStore, IOrganizationBillingLifecycleStore
 {
     public async Task<BillingEventConsumptionResult> ConsumeAsync(
         BillingProviderEvent providerEvent,

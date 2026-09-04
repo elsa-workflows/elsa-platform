@@ -10,6 +10,8 @@ public sealed class OrganizationBillingService(
     TimeProvider? timeProvider = null)
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+    private IOrganizationBillingLifecycleStore LifecycleStore => store as IOrganizationBillingLifecycleStore ??
+        throw new InvalidOperationException("The billing store does not support commercial lifecycle processing.");
 
     public Task<BillingEventConsumptionResult> ConsumeAsync(
         BillingProviderEvent providerEvent,
@@ -46,4 +48,17 @@ public sealed class OrganizationBillingService(
         Guid organizationId,
         CancellationToken cancellationToken = default) =>
         store.GetSubscriptionAsync(organizationId, cancellationToken);
+
+    public Task<IReadOnlyList<OrganizationBillingLifecycleAdvance>> AdvanceLifecycleAsync(
+        CancellationToken cancellationToken = default) =>
+        LifecycleStore.AdvanceDueAsync(_timeProvider.GetUtcNow(), cancellationToken);
+
+    public Task<OrganizationBillingLifecycleAdvance?> RequestDeletionAsync(
+        Guid organizationId,
+        CancellationToken cancellationToken = default)
+    {
+        if (organizationId == Guid.Empty)
+            throw new ArgumentException("Organization ID is required.", nameof(organizationId));
+        return LifecycleStore.RequestDeletionAsync(organizationId, _timeProvider.GetUtcNow(), cancellationToken);
+    }
 }

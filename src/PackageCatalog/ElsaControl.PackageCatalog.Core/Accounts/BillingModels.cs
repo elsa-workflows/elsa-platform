@@ -27,10 +27,18 @@ public sealed class OrganizationSubscription
     public DateTimeOffset TrialEndsAt { get; set; }
     public DateTimeOffset? ActivatedAt { get; set; }
     public DateTimeOffset? PastDueAt { get; set; }
+    /// <summary>UTC instant at which the failed-payment grace period ends.</summary>
+    public DateTimeOffset? GraceEndsAt { get; set; }
     public DateTimeOffset? ConstrainedAt { get; set; }
     public DateTimeOffset? SuspendedAt { get; set; }
+    /// <summary>UTC instant at which the final retention period ends.</summary>
+    public DateTimeOffset? RetentionEndsAt { get; set; }
     public DateTimeOffset? RetainedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
+    /// <summary>Set when the customer explicitly requests deletion before retention expires.</summary>
+    public DateTimeOffset? EarlyDeletionRequestedAt { get; set; }
+    /// <summary>Advances only for a control-plane lifecycle transition.</summary>
+    public int LifecycleVersion { get; set; }
     public DateTimeOffset LastProviderEventOccurredAt { get; set; }
     public string? LastProviderEventId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
@@ -77,6 +85,166 @@ public enum BillingProviderEventProcessingStatus
     Rejected,
     RecordedUnknown
 }
+
+public enum OrganizationBillingLifecycleNoticeKind
+{
+    GraceStarted,
+    ConstraintStarted,
+    SuspensionStarted,
+    ExportAvailable,
+    DeletionScheduled
+}
+
+public enum OrganizationBillingNoticeDeliveryStatus
+{
+    Pending,
+    Delivered,
+    Failed
+}
+
+/// <summary>
+/// Durable, safe notification intent. The unique organization/subscription/kind
+/// identity makes scheduler retries idempotent while delivery remains a separate concern.
+/// </summary>
+public sealed class OrganizationBillingLifecycleNotice
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid OrganizationId { get; set; }
+    public Organization? Organization { get; set; }
+    public Guid SubscriptionId { get; set; }
+    public OrganizationSubscription? Subscription { get; set; }
+    public OrganizationBillingLifecycleNoticeKind Kind { get; set; }
+    public OrganizationSubscriptionState State { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public OrganizationBillingNoticeDeliveryStatus DeliveryStatus { get; set; } = OrganizationBillingNoticeDeliveryStatus.Pending;
+    public DateTimeOffset? DeliveredAt { get; set; }
+    public int DeliveryAttemptCount { get; set; }
+    public string? LastFailureCode { get; set; }
+}
+
+public enum OrganizationBillingCleanupState
+{
+    Queued,
+    InProgress,
+    Confirmed,
+    Failed
+}
+
+/// <summary>
+/// Provider-neutral cleanup intent. References are opaque provider locators,
+/// never credentials or raw customer data.
+/// </summary>
+public sealed class OrganizationBillingCleanup
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid OrganizationId { get; set; }
+    public Organization? Organization { get; set; }
+    public Guid SubscriptionId { get; set; }
+    public OrganizationSubscription? Subscription { get; set; }
+    public string CleanupKey { get; set; } = "";
+    public string Provider { get; set; } = "";
+    public string? ProviderCustomerReference { get; set; }
+    public string? ProviderSubscriptionReference { get; set; }
+    public OrganizationBillingCleanupState State { get; set; } = OrganizationBillingCleanupState.Queued;
+    public DateTimeOffset RequestedAt { get; set; }
+    public DateTimeOffset NotBeforeAt { get; set; }
+    public DateTimeOffset? LastAttemptAt { get; set; }
+    public DateTimeOffset? CompletedAt { get; set; }
+    public int AttemptCount { get; set; }
+    public string? LeaseOwner { get; set; }
+    public string? LeaseToken { get; set; }
+    public DateTimeOffset? LeaseExpiresAt { get; set; }
+    public string? LastFailureCode { get; set; }
+}
+
+public enum OrganizationBillingCleanupOutcome
+{
+    ConfirmedAbsent,
+    RetryableFailure,
+    Unknown
+}
+
+public sealed record OrganizationBillingLifecycleAdvance(
+    Guid OrganizationId,
+    Guid SubscriptionId,
+    OrganizationSubscriptionState PreviousState,
+    OrganizationSubscriptionState CurrentState,
+    DateTimeOffset TransitionedAt,
+    bool NoticeCreated,
+    bool CleanupQueued);
+
+public sealed record OrganizationBillingCleanupWorkItem(
+    Guid Id,
+    Guid OrganizationId,
+    Guid SubscriptionId,
+    string CleanupKey,
+    string Provider,
+    string? ProviderCustomerReference,
+    string? ProviderSubscriptionReference,
+    int AttemptCount,
+    string LeaseToken);
+
+public sealed record OrganizationBillingCleanupCompletion(
+    Guid CleanupId,
+    Guid OrganizationId,
+    Guid SubscriptionId,
+    string LeaseToken,
+    OrganizationBillingCleanupOutcome Outcome,
+    DateTimeOffset CompletedAt,
+    string? FailureCode = null);
+
+public sealed record OrganizationBillingCleanupResult(
+    OrganizationBillingCleanupState State,
+    bool SubscriptionDeleted,
+    string? FailureCode = null);
+
+public sealed record OrganizationBillingCleanupRequest(
+    Guid OrganizationId,
+    Guid SubscriptionId,
+    string CleanupKey,
+    string Provider,
+    string? ProviderCustomerReference,
+    string? ProviderSubscriptionReference,
+    int AttemptCount);
+
+/// <summary>Provider-neutral port used by the durable cleanup worker.</summary>
+public interface IOrganizationBillingLifecycleStore
+{
+    Task<IReadOnlyList<OrganizationBillingLifecycleAdvance>> AdvanceDueAsync(
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default);
+
+    Task<OrganizationBillingLifecycleAdvance?> RequestDeletionAsync(
+        Guid organizationId,
+        DateTimeOffset requestedAt,
+        CancellationToken cancellationToken = default);
+
+    Task<OrganizationBillingCleanupWorkItem?> TryClaimCleanupAsync(
+        string workerId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default);
+
+    Task<OrganizationBillingCleanupResult> CompleteCleanupAsync(
+        OrganizationBillingCleanupCompletion completion,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// A billing provider implements only its own remote cleanup semantics. The
+/// lifecycle and retention policy never depend on this interface's provider type.
+/// </summary>
+public interface IOrganizationBillingCleanupProvider
+{
+    string Provider { get; }
+
+    Task<OrganizationBillingCleanupOutcome> CleanupAsync(
+        OrganizationBillingCleanupRequest request,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record OrganizationBillingLifecycleBatchResult(
+    IReadOnlyList<OrganizationBillingLifecycleAdvance> Advances,
+    int CleanupAttempts);
 
 /// <summary>
 /// Durable inbox entry. It contains only normalized, bounded metadata.
@@ -144,11 +312,14 @@ public interface IOrganizationBillingStore
 public static class OrganizationSubscriptionLifecycle
 {
     public static readonly TimeSpan TrialDuration = TimeSpan.FromDays(14);
+    public static readonly TimeSpan PaymentGracePeriod = TimeSpan.FromDays(7);
+    public static readonly TimeSpan ConstraintPeriod = TimeSpan.FromDays(1);
+    public static readonly TimeSpan FinalRetentionPeriod = TimeSpan.FromDays(30);
 
     public static bool CanTransition(OrganizationSubscriptionState current, OrganizationSubscriptionState next) =>
         current == next || (current, next) switch
         {
-            (OrganizationSubscriptionState.Trial, OrganizationSubscriptionState.Active or OrganizationSubscriptionState.PastDue) => true,
+            (OrganizationSubscriptionState.Trial, OrganizationSubscriptionState.Active or OrganizationSubscriptionState.PastDue or OrganizationSubscriptionState.Suspended) => true,
             (OrganizationSubscriptionState.Active, OrganizationSubscriptionState.PastDue or OrganizationSubscriptionState.Constrained or OrganizationSubscriptionState.Suspended) => true,
             (OrganizationSubscriptionState.PastDue, OrganizationSubscriptionState.Active or OrganizationSubscriptionState.Constrained or OrganizationSubscriptionState.Suspended) => true,
             (OrganizationSubscriptionState.Constrained, OrganizationSubscriptionState.Active or OrganizationSubscriptionState.Suspended) => true,
@@ -156,6 +327,12 @@ public static class OrganizationSubscriptionLifecycle
             (OrganizationSubscriptionState.Retained, OrganizationSubscriptionState.Deleted) => true,
             _ => false
         };
+
+    public static bool CanTransition(OrganizationSubscription subscription, OrganizationSubscriptionState next) =>
+        CanTransition(subscription.State, next) ||
+        subscription.State == OrganizationSubscriptionState.Suspended &&
+        next == OrganizationSubscriptionState.Deleted &&
+        subscription.EarlyDeletionRequestedAt is not null;
 
     public static OrganizationSubscription CreateTrial(Guid organizationId, string provider, DateTimeOffset startedAt)
     {
@@ -175,7 +352,7 @@ public static class OrganizationSubscriptionLifecycle
 
     public static void ApplyState(OrganizationSubscription subscription, OrganizationSubscriptionState next, DateTimeOffset occurredAt)
     {
-        if (!CanTransition(subscription.State, next))
+        if (!CanTransition(subscription, next))
             throw new InvalidOperationException($"Subscription cannot transition from {subscription.State} to {next}.");
 
         var timestamp = occurredAt.ToUniversalTime();
@@ -187,12 +364,14 @@ public static class OrganizationSubscriptionLifecycle
                 break;
             case OrganizationSubscriptionState.PastDue:
                 subscription.PastDueAt ??= timestamp;
+                subscription.GraceEndsAt ??= timestamp.Add(PaymentGracePeriod);
                 break;
             case OrganizationSubscriptionState.Constrained:
                 subscription.ConstrainedAt ??= timestamp;
                 break;
             case OrganizationSubscriptionState.Suspended:
                 subscription.SuspendedAt ??= timestamp;
+                subscription.RetentionEndsAt ??= timestamp.Add(FinalRetentionPeriod);
                 break;
             case OrganizationSubscriptionState.Retained:
                 subscription.RetainedAt ??= timestamp;
@@ -201,5 +380,7 @@ public static class OrganizationSubscriptionLifecycle
                 subscription.DeletedAt ??= timestamp;
                 break;
         }
+
+        subscription.LifecycleVersion++;
     }
 }

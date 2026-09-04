@@ -109,6 +109,21 @@ public sealed class OrganizationBillingApiService(
         }
     }
 
+    public async Task<OrganizationBillingDeletionApiResult> RequestDeletionAsync(
+        TrustedWorkspaceIdentity identity,
+        Guid organizationId,
+        CancellationToken cancellationToken)
+    {
+        var access = await accounts.GetOrganizationAccessAsync(identity, organizationId, OrganizationOperation.ManageBilling, cancellationToken);
+        if (!access.Succeeded)
+            return OrganizationBillingDeletionApiResult.Denied(access.Failure!.Value);
+
+        var result = await billing.RequestDeletionAsync(organizationId, cancellationToken);
+        return result is null
+            ? OrganizationBillingDeletionApiResult.NotFound()
+            : OrganizationBillingDeletionApiResult.Accepted(result);
+    }
+
     private bool IsStripeProvider => string.Equals(provider.Provider, BillingProviderNames.Stripe, StringComparison.Ordinal);
 }
 
@@ -134,4 +149,16 @@ public sealed record OrganizationBillingStatusApiResult(
 
     public static OrganizationBillingStatusApiResult Success(OrganizationBillingStatusResponse status) => new(status, null);
     public static OrganizationBillingStatusApiResult Denied(OrganizationWorkspaceFailure failure) => new(null, failure);
+}
+
+public sealed record OrganizationBillingDeletionApiResult(
+    OrganizationBillingLifecycleAdvance? Advance,
+    OrganizationWorkspaceFailure? Failure,
+    bool OrganizationUnavailable)
+{
+    public bool Succeeded => Advance is not null && Failure is null && !OrganizationUnavailable;
+
+    public static OrganizationBillingDeletionApiResult Accepted(OrganizationBillingLifecycleAdvance advance) => new(advance, null, false);
+    public static OrganizationBillingDeletionApiResult Denied(OrganizationWorkspaceFailure failure) => new(null, failure, false);
+    public static OrganizationBillingDeletionApiResult NotFound() => new(null, null, true);
 }

@@ -213,6 +213,8 @@ builder.Services.Configure<ReleaseCatalogAdmissionOptions>(
     builder.Configuration.GetSection(ReleaseCatalogAdmissionOptions.ConfigurationSection));
 builder.Services.Configure<StripeBillingOptions>(
     builder.Configuration.GetSection(StripeBillingOptions.ConfigurationSection));
+builder.Services.Configure<OrganizationBillingLifecycleWorkerOptions>(
+    builder.Configuration.GetSection(OrganizationBillingLifecycleWorkerOptions.ConfigurationSection));
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<AdminApiKeyValidator>();
 builder.Services.AddSingleton<BuilderClientApiKeyValidator>();
@@ -242,7 +244,16 @@ builder.Services.AddScoped<ManagedElsaHandoffService>();
 builder.Services.AddHostedService<ManagedElsaHandoffConfigurationValidator>();
 builder.Services.AddSingleton<IWorkspacePermissionContribution, ManagedElsaInstancePermissionContribution>();
 builder.Services.AddCatalogDbContext(builder.Configuration);
-builder.Services.AddScoped<IOrganizationBillingStore, OrganizationBillingStore>();
+builder.Services.AddScoped<OrganizationBillingStore>();
+builder.Services.AddScoped<IOrganizationBillingStore>(services =>
+    services.GetRequiredService<OrganizationBillingStore>());
+builder.Services.AddScoped<IOrganizationBillingLifecycleStore>(services =>
+    services.GetRequiredService<OrganizationBillingStore>());
+builder.Services.AddScoped<OrganizationBillingLifecycleWorker>(services =>
+    new OrganizationBillingLifecycleWorker(
+        services.GetRequiredService<IOrganizationBillingLifecycleStore>(),
+        services.GetRequiredService<TimeProvider>(),
+        services.GetService<IOrganizationBillingCleanupProvider>()));
 builder.Services.AddScoped<OrganizationBillingService>();
 builder.Services.AddScoped<OrganizationBillingApiService>();
 builder.Services.AddSingleton<Func<StripeClient>>(services =>
@@ -436,6 +447,9 @@ var deploymentQueueWorkerEnabled = builder.Configuration.GetValue("Deployment:Qu
 if (deploymentQueueWorkerEnabled && !builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddHostedService<DeploymentQueueHostedService>();
 var instanceLifecycleWorkerEnabled = builder.Configuration.GetValue(ElsaInstanceLifecycleWorkerOptions.ConfigurationSection + ":Enabled", false);
+var billingLifecycleWorkerEnabled = builder.Configuration.GetValue(OrganizationBillingLifecycleWorkerOptions.ConfigurationSection + ":Enabled", false);
+if (billingLifecycleWorkerEnabled && !builder.Environment.IsEnvironment("Testing"))
+    builder.Services.AddHostedService<OrganizationBillingLifecycleHostedService>();
 if (instanceLifecycleWorkerEnabled && !builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddHostedService<ElsaInstanceLifecycleHostedService>();
 if (instanceLifecycleWorkerEnabled && azureInstanceLifecycleEnabled && !builder.Environment.IsEnvironment("Testing"))

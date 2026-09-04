@@ -34,6 +34,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     public DbSet<OrganizationAuditRecord> OrganizationAuditRecords => Set<OrganizationAuditRecord>();
     public DbSet<OrganizationSubscription> OrganizationSubscriptions => Set<OrganizationSubscription>();
     public DbSet<BillingProviderEventInboxEntry> BillingProviderEvents => Set<BillingProviderEventInboxEntry>();
+    public DbSet<OrganizationBillingLifecycleNotice> OrganizationBillingLifecycleNotices => Set<OrganizationBillingLifecycleNotice>();
+    public DbSet<OrganizationBillingCleanup> OrganizationBillingCleanups => Set<OrganizationBillingCleanup>();
     public DbSet<Workspace> Workspaces => Set<Workspace>();
     public DbSet<WorkspaceMembership> WorkspaceMemberships => Set<WorkspaceMembership>();
     public DbSet<WorkspaceEntitlementSnapshot> WorkspaceEntitlementSnapshots => Set<WorkspaceEntitlementSnapshot>();
@@ -115,6 +117,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.ApplyConfiguration(new Models.OrganizationAuditRecordConfiguration());
         modelBuilder.ApplyConfiguration(new Models.OrganizationSubscriptionConfiguration());
         modelBuilder.ApplyConfiguration(new Models.BillingProviderEventInboxEntryConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.OrganizationBillingLifecycleNoticeConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.OrganizationBillingCleanupConfiguration());
         modelBuilder.ApplyConfiguration(new Models.WorkspaceConfiguration());
         modelBuilder.ApplyConfiguration(new Models.WorkspaceMembershipConfiguration());
         modelBuilder.ApplyConfiguration(new Models.WorkspaceEntitlementSnapshotConfiguration());
@@ -188,6 +192,9 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             modelBuilder.Entity<BillingProviderEventInboxEntry>().Property(x => x.ProviderEventId).UseCollation(binaryCollation);
             modelBuilder.Entity<BillingProviderEventInboxEntry>().Property(x => x.ProviderCustomerReference).UseCollation(binaryCollation);
             modelBuilder.Entity<BillingProviderEventInboxEntry>().Property(x => x.ProviderSubscriptionReference).UseCollation(binaryCollation);
+            modelBuilder.Entity<OrganizationBillingCleanup>().Property(x => x.Provider).UseCollation(binaryCollation);
+            modelBuilder.Entity<OrganizationBillingCleanup>().Property(x => x.ProviderCustomerReference).UseCollation(binaryCollation);
+            modelBuilder.Entity<OrganizationBillingCleanup>().Property(x => x.ProviderSubscriptionReference).UseCollation(binaryCollation);
         }
     }
 
@@ -222,6 +229,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         EnsureElsaInstanceRecoveryRequestsAreAppendOnly();
         EnsureManagedElsaHandoffRowsAreAppendOnly();
         EnsureBillingProviderEventsAreAppendOnly();
+        EnsureBillingLifecycleNoticesAreAppendOnly();
+        EnsureBillingCleanupsAreNotDeleted();
         EnsureBillingSubscriptionsAreConsistent();
         EnsureGovernedReleaseCatalogIsImmutable();
         ValidateManagedElsaHandoffRows();
@@ -248,15 +257,20 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             subscription.LastProviderEventOccurredAt = subscription.LastProviderEventOccurredAt.ToUniversalTime();
             subscription.CreatedAt = subscription.CreatedAt.ToUniversalTime();
             subscription.UpdatedAt = subscription.UpdatedAt.ToUniversalTime();
+            if (subscription.LifecycleVersion < 0)
+                throw new InvalidOperationException("Subscription lifecycle version is invalid.");
             if (subscription.TrialStartedAt == default || subscription.TrialEndsAt <= subscription.TrialStartedAt ||
                 subscription.LastProviderEventOccurredAt == default || subscription.CreatedAt == default || subscription.UpdatedAt == default)
                 throw new InvalidOperationException("Subscription lifecycle timestamps are invalid.");
             subscription.ActivatedAt = NormalizeOptionalTimestamp(subscription.ActivatedAt, nameof(subscription.ActivatedAt));
             subscription.PastDueAt = NormalizeOptionalTimestamp(subscription.PastDueAt, nameof(subscription.PastDueAt));
+            subscription.GraceEndsAt = NormalizeOptionalTimestamp(subscription.GraceEndsAt, nameof(subscription.GraceEndsAt));
             subscription.ConstrainedAt = NormalizeOptionalTimestamp(subscription.ConstrainedAt, nameof(subscription.ConstrainedAt));
             subscription.SuspendedAt = NormalizeOptionalTimestamp(subscription.SuspendedAt, nameof(subscription.SuspendedAt));
+            subscription.RetentionEndsAt = NormalizeOptionalTimestamp(subscription.RetentionEndsAt, nameof(subscription.RetentionEndsAt));
             subscription.RetainedAt = NormalizeOptionalTimestamp(subscription.RetainedAt, nameof(subscription.RetainedAt));
             subscription.DeletedAt = NormalizeOptionalTimestamp(subscription.DeletedAt, nameof(subscription.DeletedAt));
+            subscription.EarlyDeletionRequestedAt = NormalizeOptionalTimestamp(subscription.EarlyDeletionRequestedAt, nameof(subscription.EarlyDeletionRequestedAt));
         }
 
         foreach (var entry in ChangeTracker.Entries<BillingProviderEventInboxEntry>()
@@ -283,6 +297,45 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             if (billingEvent.OccurredAt == default || billingEvent.ReceivedAt == default)
                 throw new InvalidOperationException("Billing event timestamps are required.");
         }
+
+        foreach (var entry in ChangeTracker.Entries<OrganizationBillingLifecycleNotice>()
+                     .Where(x => x.State is EntityState.Added or EntityState.Modified))
+        {
+            var notice = entry.Entity;
+            if (notice.Id == Guid.Empty || notice.OrganizationId == Guid.Empty || notice.SubscriptionId == Guid.Empty)
+                throw new InvalidOperationException("A billing lifecycle notice requires stable organization and subscription identifiers.");
+            EnsureDefined(notice.Kind, nameof(notice.Kind));
+            EnsureDefined(notice.State, nameof(notice.State));
+            EnsureDefined(notice.DeliveryStatus, nameof(notice.DeliveryStatus));
+            notice.CreatedAt = notice.CreatedAt.ToUniversalTime();
+            notice.DeliveredAt = NormalizeOptionalTimestamp(notice.DeliveredAt, nameof(notice.DeliveredAt));
+            notice.LastFailureCode = OptionalSafeCode(notice.LastFailureCode, nameof(notice.LastFailureCode));
+            if (notice.CreatedAt == default || notice.DeliveryAttemptCount < 0)
+                throw new InvalidOperationException("Billing lifecycle notice metadata is invalid.");
+        }
+
+        foreach (var entry in ChangeTracker.Entries<OrganizationBillingCleanup>()
+                     .Where(x => x.State is EntityState.Added or EntityState.Modified))
+        {
+            var cleanup = entry.Entity;
+            if (cleanup.Id == Guid.Empty || cleanup.OrganizationId == Guid.Empty || cleanup.SubscriptionId == Guid.Empty)
+                throw new InvalidOperationException("A billing cleanup requires stable organization and subscription identifiers.");
+            cleanup.CleanupKey = RequireSafeCode(cleanup.CleanupKey, nameof(cleanup.CleanupKey));
+            cleanup.Provider = RequireSafeCode(cleanup.Provider, nameof(cleanup.Provider));
+            cleanup.ProviderCustomerReference = OptionalSafeReference(cleanup.ProviderCustomerReference, nameof(cleanup.ProviderCustomerReference), OrganizationBillingLimits.ProviderReferenceMaxLength);
+            cleanup.ProviderSubscriptionReference = OptionalSafeReference(cleanup.ProviderSubscriptionReference, nameof(cleanup.ProviderSubscriptionReference), OrganizationBillingLimits.ProviderReferenceMaxLength);
+            EnsureDefined(cleanup.State, nameof(cleanup.State));
+            cleanup.RequestedAt = cleanup.RequestedAt.ToUniversalTime();
+            cleanup.NotBeforeAt = cleanup.NotBeforeAt.ToUniversalTime();
+            cleanup.LastAttemptAt = NormalizeOptionalTimestamp(cleanup.LastAttemptAt, nameof(cleanup.LastAttemptAt));
+            cleanup.CompletedAt = NormalizeOptionalTimestamp(cleanup.CompletedAt, nameof(cleanup.CompletedAt));
+            cleanup.LeaseExpiresAt = NormalizeOptionalTimestamp(cleanup.LeaseExpiresAt, nameof(cleanup.LeaseExpiresAt));
+            cleanup.LeaseOwner = OptionalSafeCode(cleanup.LeaseOwner, nameof(cleanup.LeaseOwner));
+            cleanup.LeaseToken = OptionalSafeCode(cleanup.LeaseToken, nameof(cleanup.LeaseToken));
+            cleanup.LastFailureCode = OptionalSafeCode(cleanup.LastFailureCode, nameof(cleanup.LastFailureCode));
+            if (cleanup.RequestedAt == default || cleanup.NotBeforeAt == default || cleanup.AttemptCount < 0)
+                throw new InvalidOperationException("Billing cleanup metadata is invalid.");
+        }
     }
 
     private void EnsureBillingProviderEventsAreAppendOnly()
@@ -290,6 +343,20 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         foreach (var entry in ChangeTracker.Entries<BillingProviderEventInboxEntry>()
                      .Where(x => x.State is EntityState.Modified or EntityState.Deleted))
             throw new InvalidOperationException("Billing provider event inbox entries are append-only.");
+    }
+
+    private void EnsureBillingLifecycleNoticesAreAppendOnly()
+    {
+        foreach (var entry in ChangeTracker.Entries<OrganizationBillingLifecycleNotice>()
+                     .Where(x => x.State == EntityState.Deleted))
+            throw new InvalidOperationException("Billing lifecycle notices are append-only.");
+    }
+
+    private void EnsureBillingCleanupsAreNotDeleted()
+    {
+        foreach (var entry in ChangeTracker.Entries<OrganizationBillingCleanup>()
+                     .Where(x => x.State == EntityState.Deleted))
+            throw new InvalidOperationException("Billing cleanup intents cannot be deleted.");
     }
 
     private void EnsureBillingSubscriptionsAreConsistent()
@@ -307,8 +374,9 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             EnsureTimestampUnchanged(entry, nameof(OrganizationSubscription.CreatedAt), subscription.CreatedAt);
             EnsureTimestampUnchanged(entry, nameof(OrganizationSubscription.TrialStartedAt), subscription.TrialStartedAt);
             EnsureTimestampUnchanged(entry, nameof(OrganizationSubscription.TrialEndsAt), subscription.TrialEndsAt);
-            EnsureBoundReference(entry, nameof(OrganizationSubscription.ProviderCustomerReference), subscription.ProviderCustomerReference);
-            EnsureBoundReference(entry, nameof(OrganizationSubscription.ProviderSubscriptionReference), subscription.ProviderSubscriptionReference);
+            var originalState = entry.Property<OrganizationSubscriptionState>(nameof(OrganizationSubscription.State)).OriginalValue;
+            EnsureBoundReference(entry, nameof(OrganizationSubscription.ProviderCustomerReference), subscription.ProviderCustomerReference, subscription.State == OrganizationSubscriptionState.Deleted);
+            EnsureBoundReference(entry, nameof(OrganizationSubscription.ProviderSubscriptionReference), subscription.ProviderSubscriptionReference, subscription.State == OrganizationSubscriptionState.Deleted);
 
             var originalOccurrence = entry.Property<DateTimeOffset>(nameof(OrganizationSubscription.LastProviderEventOccurredAt)).OriginalValue.ToUniversalTime();
             var currentOccurrence = subscription.LastProviderEventOccurredAt.ToUniversalTime();
@@ -316,14 +384,13 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
                 throw new InvalidOperationException("Subscription event ordering cannot move backwards.");
 
             var originalEventId = entry.Property<string?>(nameof(OrganizationSubscription.LastProviderEventId)).OriginalValue;
-            if (currentOccurrence == originalOccurrence && originalEventId is not null &&
+            if (subscription.State != OrganizationSubscriptionState.Deleted && currentOccurrence == originalOccurrence && originalEventId is not null &&
                 (subscription.LastProviderEventId is null ||
                  string.CompareOrdinal(subscription.LastProviderEventId, originalEventId) < 0))
                 throw new InvalidOperationException("Subscription event ordering cursor changed at the same timestamp.");
             if (currentOccurrence > originalOccurrence && string.IsNullOrWhiteSpace(subscription.LastProviderEventId))
                 throw new InvalidOperationException("A newer subscription event requires an event identity.");
 
-            var originalState = entry.Property<OrganizationSubscriptionState>(nameof(OrganizationSubscription.State)).OriginalValue;
             var cursorAdvanced = currentOccurrence > originalOccurrence ||
                 (currentOccurrence == originalOccurrence &&
                  subscription.LastProviderEventId is not null &&
@@ -331,18 +398,28 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
                   string.CompareOrdinal(subscription.LastProviderEventId, originalEventId) > 0));
             if (subscription.State != originalState)
             {
-                if (!OrganizationSubscriptionLifecycle.CanTransition(originalState, subscription.State))
+                if (!OrganizationSubscriptionLifecycle.CanTransition(subscription, subscription.State))
                     throw new InvalidOperationException("Subscription state transition is not allowed.");
-                if (!cursorAdvanced)
+                var originalLifecycleVersion = entry.Property<int>(nameof(OrganizationSubscription.LifecycleVersion)).OriginalValue;
+                var lifecycleAdvanced = subscription.LifecycleVersion == originalLifecycleVersion + 1;
+                if (!cursorAdvanced && !lifecycleAdvanced)
                     throw new InvalidOperationException("A direct subscription state change requires an advanced provider event cursor.");
             }
 
-            EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.ActivatedAt), subscription.ActivatedAt, subscription.State, OrganizationSubscriptionState.Active, subscription.LastProviderEventOccurredAt);
-            EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.PastDueAt), subscription.PastDueAt, subscription.State, OrganizationSubscriptionState.PastDue, subscription.LastProviderEventOccurredAt);
-            EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.ConstrainedAt), subscription.ConstrainedAt, subscription.State, OrganizationSubscriptionState.Constrained, subscription.LastProviderEventOccurredAt);
-            EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.SuspendedAt), subscription.SuspendedAt, subscription.State, OrganizationSubscriptionState.Suspended, subscription.LastProviderEventOccurredAt);
-            EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.RetainedAt), subscription.RetainedAt, subscription.State, OrganizationSubscriptionState.Retained, subscription.LastProviderEventOccurredAt);
-            EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.DeletedAt), subscription.DeletedAt, subscription.State, OrganizationSubscriptionState.Deleted, subscription.LastProviderEventOccurredAt);
+            var originalLifecycleVersionValue = entry.Property<int>(nameof(OrganizationSubscription.LifecycleVersion)).OriginalValue;
+            if (subscription.LifecycleVersion != originalLifecycleVersionValue &&
+                subscription.LifecycleVersion != originalLifecycleVersionValue + 1)
+                throw new InvalidOperationException("Subscription lifecycle version must advance by one.");
+            var lifecycleTransition = subscription.LifecycleVersion == originalLifecycleVersionValue + 1 && !cursorAdvanced;
+
+            EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.ActivatedAt), subscription.ActivatedAt, subscription.State, OrganizationSubscriptionState.Active, subscription.LastProviderEventOccurredAt, lifecycleTransition: lifecycleTransition);
+            EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.PastDueAt), subscription.PastDueAt, subscription.State, OrganizationSubscriptionState.PastDue, subscription.LastProviderEventOccurredAt, lifecycleTransition: lifecycleTransition);
+            EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.GraceEndsAt), subscription.GraceEndsAt, subscription.State, OrganizationSubscriptionState.PastDue, subscription.LastProviderEventOccurredAt, allowFuture: true, lifecycleTransition: lifecycleTransition);
+            EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.ConstrainedAt), subscription.ConstrainedAt, subscription.State, OrganizationSubscriptionState.Constrained, subscription.LastProviderEventOccurredAt, lifecycleTransition: lifecycleTransition);
+            EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.SuspendedAt), subscription.SuspendedAt, subscription.State, OrganizationSubscriptionState.Suspended, subscription.LastProviderEventOccurredAt, lifecycleTransition: lifecycleTransition);
+            EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.RetentionEndsAt), subscription.RetentionEndsAt, subscription.State, OrganizationSubscriptionState.Suspended, subscription.LastProviderEventOccurredAt, allowFuture: true, lifecycleTransition: lifecycleTransition);
+            EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.RetainedAt), subscription.RetainedAt, subscription.State, OrganizationSubscriptionState.Retained, subscription.LastProviderEventOccurredAt, lifecycleTransition: lifecycleTransition);
+            EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.DeletedAt), subscription.DeletedAt, subscription.State, OrganizationSubscriptionState.Deleted, subscription.LastProviderEventOccurredAt, lifecycleTransition: lifecycleTransition);
         }
     }
 
@@ -359,10 +436,10 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             throw new InvalidOperationException($"Subscription {propertyName} is immutable.");
     }
 
-    private static void EnsureBoundReference(EntityEntry<OrganizationSubscription> entry, string propertyName, string? currentValue)
+    private static void EnsureBoundReference(EntityEntry<OrganizationSubscription> entry, string propertyName, string? currentValue, bool allowClearOnDeletion)
     {
         var originalValue = entry.Property<string?>(propertyName).OriginalValue;
-        if (originalValue is not null && !string.Equals(originalValue, currentValue, StringComparison.Ordinal))
+        if (originalValue is not null && !string.Equals(originalValue, currentValue, StringComparison.Ordinal) && !(allowClearOnDeletion && currentValue is null))
             throw new InvalidOperationException($"Subscription {propertyName} cannot be replaced or removed.");
     }
 
@@ -372,7 +449,9 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         DateTimeOffset? currentValue,
         OrganizationSubscriptionState currentState,
         OrganizationSubscriptionState expectedState,
-        DateTimeOffset currentCursor)
+        DateTimeOffset currentCursor,
+        bool allowFuture = false,
+        bool lifecycleTransition = false)
     {
         var originalValue = entry.Property<DateTimeOffset?>(propertyName).OriginalValue;
         if (originalValue is not null)
@@ -385,7 +464,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         if (currentValue is null)
             return;
 
-        if (currentState != expectedState || currentValue.Value.ToUniversalTime() != currentCursor.ToUniversalTime())
+        if ((!allowFuture && !lifecycleTransition && currentState != expectedState) ||
+            (!allowFuture && !lifecycleTransition && currentValue.Value.ToUniversalTime() != currentCursor.ToUniversalTime()))
             throw new InvalidOperationException($"Subscription {propertyName} must match its lifecycle event.");
     }
 
