@@ -92,6 +92,51 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         Assert.Null(active.DeletedAt);
     }
 
+    [Theory]
+    [InlineData("organization")]
+    [InlineData("instance")]
+    public async Task Finalize_rejects_an_assignment_with_a_mismatched_owner(string mismatch)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var assignmentOrganizationId = Guid.NewGuid();
+        var assignmentInstanceId = Guid.NewGuid();
+        var operationOrganizationId = mismatch == "organization" ? Guid.NewGuid() : assignmentOrganizationId;
+        var operationInstanceId = mismatch == "instance" ? Guid.NewGuid() : assignmentInstanceId;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var assignment = await Assignment(store, assignmentOrganizationId, assignmentInstanceId, now);
+        var operation = await store.CreateOrGetAsync(Request() with
+        {
+            TargetKey = $"mismatched-{mismatch}",
+            IdempotencyKey = $"mismatched-{mismatch}",
+            OrganizationId = operationOrganizationId,
+            InstanceId = operationInstanceId,
+            LifecycleAction = ElsaInstanceOperationAction.Reconcile,
+            ProviderAssignmentId = assignment.Id
+        }, now);
+        var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => store.FinalizeAsync(
+            _workspaceId,
+            operation.Id,
+            "lease",
+            AzureProviderOperationStatus.Succeeded,
+            "operation.succeeded",
+            now,
+            claimed.Version));
+
+        Assert.Equal("The Azure provider assignment binding is invalid.", exception.Message);
+        var persistedOperation = Assert.IsType<AzureProviderOperation>(await store.GetAsync(_workspaceId, operation.Id));
+        Assert.Equal(AzureProviderOperationStatus.Running, persistedOperation.Status);
+        Assert.Equal(claimed.Version, persistedOperation.Version);
+        Assert.Equal("worker", persistedOperation.WorkerId);
+        var persistedAssignment = Assert.IsType<AzureProviderResourceAssignment>(await ((IAzureProviderResourceAssignmentStore)store).GetAsync(_workspaceId, assignment.Id));
+        Assert.Equal(AzureProviderAssignmentState.Reserved, persistedAssignment.State);
+        Assert.Null(persistedAssignment.LastOperationId);
+        Assert.Equal(assignment.Version, persistedAssignment.Version);
+    }
+
     [Fact]
     public async Task Commercial_denial_is_authorized_and_held_in_the_same_operation_CAS()
     {

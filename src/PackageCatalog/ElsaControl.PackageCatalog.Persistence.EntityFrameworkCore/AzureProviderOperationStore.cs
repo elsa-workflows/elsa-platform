@@ -282,10 +282,10 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
             .Where(x => (x.Status == AzureProviderOperationStatus.Accepted ||
                          x.Status == AzureProviderOperationStatus.Queued ||
                          x.Status == AzureProviderOperationStatus.EntitlementHeld) &&
-                        // RecoveryRequired is an explicit operator-recovery
-                        // state, not automatic queue work. Exclude it before
-                        // applying the batch limit so recovery rows cannot
-                        // starve accepted provider operations.
+                        // Keep legacy rows marked by an unrestorable-plan
+                        // transition out of automatic polling. RecoveryRequired
+                        // is already excluded by the status predicate and uses
+                        // explicit provider recovery instead.
                         !db.AzureProviderOperationTransitions.Any(transition =>
                             transition.OperationId == x.Id &&
                             transition.Code == "azure.plan.unrestorable") &&
@@ -599,6 +599,17 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
         var completionFingerprint = Hash($"{status}|{code}");
         if (entity.Status == status) return entity.CompletionLeaseTokenHash == Hash(leaseToken) && entity.CompletionFingerprint == completionFingerprint ? ToModel(entity) : null;
         if (entity.Status != AzureProviderOperationStatus.Running || !LeaseMatches(entity, leaseToken, now) || expectedVersion.HasValue && entity.Version != expectedVersion.Value) return null;
+        AzureProviderResourceAssignmentEntity? assignment = null;
+        if (entity.ProviderAssignmentId is { } assignmentId)
+        {
+            assignment = await db.AzureProviderResourceAssignments.SingleOrDefaultAsync(
+                x => x.Id == assignmentId && x.WorkspaceId == workspaceId,
+                cancellationToken);
+            if (assignment is null)
+                throw new InvalidOperationException("The Azure provider assignment binding is unavailable.");
+            if (assignment.OrganizationId != entity.OrganizationId || assignment.InstanceId != entity.InstanceId)
+                throw new InvalidOperationException("The Azure provider assignment binding is invalid.");
+        }
         entity.Status = status; entity.UpdatedAt = now; entity.Version++;
         // Recovery-required operations stay reservable for operator reconciliation, so they are
         // never stamped as completed regardless of which transition produced the status.
@@ -606,13 +617,8 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
         entity.CompletionLeaseTokenHash = entity.LeaseTokenHash;
         entity.CompletionFingerprint = completionFingerprint;
         entity.LeaseTokenHash = null; entity.LeaseExpiresAt = null; entity.WorkerId = null;
-        if (entity.ProviderAssignmentId is { } assignmentId)
+        if (assignment is not null)
         {
-            var assignment = await db.AzureProviderResourceAssignments.SingleOrDefaultAsync(
-                x => x.Id == assignmentId && x.WorkspaceId == workspaceId,
-                cancellationToken);
-            if (assignment is null)
-                throw new InvalidOperationException("The Azure provider assignment binding is unavailable.");
             assignment.LastOperationId = entity.Id;
             assignment.State = status switch
             {
