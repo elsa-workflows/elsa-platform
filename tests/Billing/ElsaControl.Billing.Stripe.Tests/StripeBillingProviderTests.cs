@@ -49,6 +49,20 @@ public sealed class StripeBillingProviderTests
     }
 
     [Fact]
+    public async Task Cleanup_uses_durable_idempotency_key_and_confirms_absence()
+    {
+        var cleanup = new RecordingCleanupGateway();
+        var provider = CreateProvider(cleanup: cleanup);
+
+        var result = await provider.CleanupAsync(new(
+            OrganizationId, Guid.NewGuid(), "cleanup-key", "stripe", "cus_123", "sub_123", 1));
+
+        Assert.Equal(OrganizationBillingCleanupOutcome.ConfirmedAbsent, result);
+        Assert.Equal("sub_123", cleanup.SubscriptionReference);
+        Assert.Equal("cleanup-key", cleanup.RequestOptions!.IdempotencyKey);
+    }
+
+    [Fact]
     public void Webhook_signature_is_verified_before_paused_subscription_is_normalized()
     {
         var provider = CreateProvider();
@@ -229,7 +243,8 @@ public sealed class StripeBillingProviderTests
 
     private static StripeBillingProvider CreateProvider(
         IStripeCheckoutSessionGateway? checkout = null,
-        IStripeCustomerPortalGateway? portal = null) =>
+        IStripeCustomerPortalGateway? portal = null,
+        IStripeSubscriptionCleanupGateway? cleanup = null) =>
         new(
             Options.Create(new StripeBillingOptions
             {
@@ -242,7 +257,8 @@ public sealed class StripeBillingProviderTests
                 PortalReturnUrl = "https://console.test/billing"
             }),
             checkout ?? new RecordingCheckoutGateway(),
-            portal ?? new RecordingPortalGateway());
+            portal ?? new RecordingPortalGateway(),
+            cleanup ?? new RecordingCleanupGateway());
 
     private sealed class RecordingCheckoutGateway : IStripeCheckoutSessionGateway
     {
@@ -281,5 +297,18 @@ public sealed class StripeBillingProviderTests
     {
         public Task<global::Stripe.BillingPortal.Session> CreateAsync(global::Stripe.BillingPortal.SessionCreateOptions options, RequestOptions requestOptions, CancellationToken cancellationToken) =>
             Task.FromException<global::Stripe.BillingPortal.Session>(exception);
+    }
+
+    private sealed class RecordingCleanupGateway : IStripeSubscriptionCleanupGateway
+    {
+        public string? SubscriptionReference { get; private set; }
+        public RequestOptions? RequestOptions { get; private set; }
+
+        public Task<bool> CancelOrConfirmAbsentAsync(string subscriptionReference, RequestOptions requestOptions, CancellationToken cancellationToken)
+        {
+            SubscriptionReference = subscriptionReference;
+            RequestOptions = requestOptions;
+            return Task.FromResult(true);
+        }
     }
 }

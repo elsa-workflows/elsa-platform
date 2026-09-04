@@ -268,7 +268,10 @@ builder.Services.AddSingleton<Func<StripeClient>>(services =>
 });
 builder.Services.AddScoped<IStripeCheckoutSessionGateway, StripeCheckoutSessionGateway>();
 builder.Services.AddScoped<IStripeCustomerPortalGateway, StripeCustomerPortalGateway>();
-builder.Services.AddScoped<IBillingProvider, StripeBillingProvider>();
+builder.Services.AddScoped<IStripeSubscriptionCleanupGateway, StripeSubscriptionCleanupGateway>();
+builder.Services.AddScoped<StripeBillingProvider>();
+builder.Services.AddScoped<IBillingProvider>(services => services.GetRequiredService<StripeBillingProvider>());
+builder.Services.AddScoped<IOrganizationBillingCleanupProvider>(services => services.GetRequiredService<StripeBillingProvider>());
 builder.Services.AddScoped<EfCoreElsaInstanceLifecycleStore>();
 builder.Services.AddScoped<IElsaInstanceCommercialGate, EfCoreElsaInstanceCommercialGate>();
 builder.Services.AddScoped<IElsaInstanceLifecycleStore>(services => services.GetRequiredService<EfCoreElsaInstanceLifecycleStore>());
