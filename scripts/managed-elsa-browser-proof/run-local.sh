@@ -178,7 +178,7 @@ if ! MANAGED_ELSA_BROWSER_PROOF=1 \
   exit 1
 fi
 
-expected_scenarios=$(tr -d '\r' <"$playwright_list_output" | grep -Eo 'Total: [0-9]+' | tr -cd '0-9')
+expected_scenarios=$(tr -d '\r' <"$playwright_list_output" | grep -Eo 'Total: [0-9]+' | tr -cd '0-9' || true)
 if [[ "$expected_scenarios" != 4 ]]; then
   echo "Managed Elsa browser proof must discover exactly 4 scenarios (found: ${expected_scenarios:-none})." >&2
   exit 1

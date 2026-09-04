@@ -42,7 +42,14 @@ var options = new DbContextOptionsBuilder<CatalogDbContext>()
         sqlite.MigrationsAssembly("ElsaControl.PackageCatalog.Persistence.SqliteMigrations"))
     .Options;
 await using var database = new CatalogDbContext(options);
-await database.Database.MigrateAsync();
+try
+{
+    await database.Database.MigrateAsync();
+}
+catch (Exception)
+{
+    return Fail("The isolated proof database could not be prepared.");
+}
 
 if (command == "initialize")
 {
