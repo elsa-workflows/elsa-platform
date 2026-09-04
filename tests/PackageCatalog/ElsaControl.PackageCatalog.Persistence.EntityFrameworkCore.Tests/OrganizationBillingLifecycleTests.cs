@@ -251,6 +251,25 @@ public sealed class OrganizationBillingLifecycleTests
     }
 
     [Fact]
+    public async Task Overdue_grace_deadline_can_be_backfilled_from_canonical_past_due_timestamp()
+    {
+        await using var fixture = await LifecycleFixture.CreateAsync();
+        var subscription = await fixture.StartTrialAsync(fixture.OrganizationId, Start);
+        OrganizationSubscriptionLifecycle.ApplyState(subscription, OrganizationSubscriptionState.PastDue, Start.AddDays(14), advanceLifecycleVersion: true);
+        subscription.GraceEndsAt = null;
+        await fixture.Db.SaveChangesAsync();
+
+        fixture.Db.ChangeTracker.Clear();
+        subscription = await fixture.SubscriptionAsync(fixture.OrganizationId);
+        subscription.LastProviderEventOccurredAt = Start.AddDays(30);
+        subscription.LastProviderEventId = "evt_later";
+        subscription.GraceEndsAt = subscription.PastDueAt!.Value.Add(OrganizationSubscriptionLifecycle.PaymentGracePeriod);
+
+        await fixture.Db.SaveChangesAsync();
+        Assert.True(subscription.GraceEndsAt < subscription.LastProviderEventOccurredAt);
+    }
+
+    [Fact]
     public async Task Lifecycle_version_cannot_advance_without_a_state_transition()
     {
         await using var fixture = await LifecycleFixture.CreateAsync();

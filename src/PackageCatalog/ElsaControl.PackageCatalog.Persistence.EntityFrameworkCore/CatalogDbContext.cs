@@ -421,10 +421,10 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
 
             EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.ActivatedAt), subscription.ActivatedAt, subscription.State, OrganizationSubscriptionState.Active, subscription.LastProviderEventOccurredAt, lifecycleTransition: lifecycleTransition);
             EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.PastDueAt), subscription.PastDueAt, subscription.State, OrganizationSubscriptionState.PastDue, subscription.LastProviderEventOccurredAt, lifecycleTransition: lifecycleTransition);
-            EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.GraceEndsAt), subscription.GraceEndsAt, subscription.State, OrganizationSubscriptionState.PastDue, subscription.LastProviderEventOccurredAt, allowFuture: true, lifecycleTransition: lifecycleTransition);
+            EnsureDerivedLifecycleDeadline(entry, nameof(OrganizationSubscription.GraceEndsAt), subscription.GraceEndsAt, subscription.PastDueAt, OrganizationSubscriptionLifecycle.PaymentGracePeriod);
             EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.ConstrainedAt), subscription.ConstrainedAt, subscription.State, OrganizationSubscriptionState.Constrained, subscription.LastProviderEventOccurredAt, lifecycleTransition: lifecycleTransition);
             EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.SuspendedAt), subscription.SuspendedAt, subscription.State, OrganizationSubscriptionState.Suspended, subscription.LastProviderEventOccurredAt, lifecycleTransition: lifecycleTransition);
-            EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.RetentionEndsAt), subscription.RetentionEndsAt, subscription.State, OrganizationSubscriptionState.Suspended, subscription.LastProviderEventOccurredAt, allowFuture: true, lifecycleTransition: lifecycleTransition);
+            EnsureDerivedLifecycleDeadline(entry, nameof(OrganizationSubscription.RetentionEndsAt), subscription.RetentionEndsAt, subscription.SuspendedAt, OrganizationSubscriptionLifecycle.FinalRetentionPeriod);
             EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.RetainedAt), subscription.RetainedAt, subscription.State, OrganizationSubscriptionState.Retained, subscription.LastProviderEventOccurredAt, lifecycleTransition: lifecycleTransition);
             EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.DeletedAt), subscription.DeletedAt, subscription.State, OrganizationSubscriptionState.Deleted, subscription.LastProviderEventOccurredAt, lifecycleTransition: lifecycleTransition);
         }
@@ -476,6 +476,28 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         if (!lifecycleTransition && currentState != expectedState ||
             !lifecycleTransition && !allowFuture && currentValue.Value.ToUniversalTime() != currentCursor.ToUniversalTime() ||
             !lifecycleTransition && allowFuture && currentValue.Value.ToUniversalTime() < currentCursor.ToUniversalTime())
+            throw new InvalidOperationException($"Subscription {propertyName} must match its lifecycle event.");
+    }
+
+    private static void EnsureDerivedLifecycleDeadline(
+        EntityEntry<OrganizationSubscription> entry,
+        string propertyName,
+        DateTimeOffset? currentValue,
+        DateTimeOffset? lifecycleTimestamp,
+        TimeSpan period)
+    {
+        var originalValue = entry.Property<DateTimeOffset?>(propertyName).OriginalValue;
+        if (originalValue is not null)
+        {
+            if (currentValue is null || currentValue.Value.ToUniversalTime() != originalValue.Value.ToUniversalTime())
+                throw new InvalidOperationException($"Subscription {propertyName} is bind-once.");
+            return;
+        }
+
+        if (currentValue is null)
+            return;
+        if (lifecycleTimestamp is null ||
+            currentValue.Value.ToUniversalTime() != lifecycleTimestamp.Value.ToUniversalTime().Add(period))
             throw new InvalidOperationException($"Subscription {propertyName} must match its lifecycle event.");
     }
 
