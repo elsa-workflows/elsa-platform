@@ -236,6 +236,8 @@ public sealed class AzureProviderOperationValidationTests
     [InlineData("secret://database", true)]
     [InlineData("secret://vault/database", true)]
     [InlineData("secret://vault/database/connection", true)]
+    [InlineData("secret://source.vault.azure.net/secrets/sql-connection/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", true)]
+    [InlineData("https://source.vault.azure.net/secrets/sql-connection/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", false)]
     [InlineData("secret://vault/../database", false)]
     [InlineData("secret://vault/./database", false)]
     [InlineData("secret://vault//database", false)]

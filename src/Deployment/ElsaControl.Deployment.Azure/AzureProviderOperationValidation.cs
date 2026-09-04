@@ -602,14 +602,14 @@ public static class AzureProviderOperationValidation
     /// </summary>
     public static bool IsSafeSecretReference(string? value)
     {
-        if (AzureKeyVaultSecretLocator.TryParse(value, out _))
+        if (AzureKeyVaultSecretLocator.TryParsePlanReference(value, out _))
             return true;
 
         if (string.IsNullOrWhiteSpace(value) || value.Length > 512 || value.Any(char.IsWhiteSpace) || value.Any(char.IsControl) ||
             value.Contains('\\') || value.Contains('%') || value.Contains('?') || value.Contains('#') ||
             value.Contains("/../", StringComparison.Ordinal) || value.Contains("/./", StringComparison.Ordinal) ||
             value.EndsWith("/..", StringComparison.Ordinal) || value.EndsWith("/.", StringComparison.Ordinal) ||
-            !Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != "secret" ||
+            !Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != "secret" || !uri.IsDefaultPort ||
             string.IsNullOrWhiteSpace(uri.Host) || !string.IsNullOrEmpty(uri.UserInfo) ||
             !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment) ||
             uri.AbsolutePath.Contains("//", StringComparison.Ordinal))

@@ -10,7 +10,8 @@ public sealed class ManagedIdentityAzureSecretResolverTests
     private static readonly Guid AssignmentId = Guid.Parse("44444444-4444-4444-4444-444444444444");
     private static readonly Guid OperationId = Guid.Parse("55555555-5555-5555-5555-555555555555");
     private const string Version = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    private const string SecretReference = $"https://source.vault.azure.net/secrets/sql-connection/{Version}";
+    private const string SecretReference = $"secret://source.vault.azure.net/secrets/sql-connection/{Version}";
+    private const string ExternalSecretReference = $"https://source.vault.azure.net/secrets/sql-connection/{Version}";
     private const string ManagedSqlReference = AzureManagedSecretReferences.SqlConnection;
 
     [Fact]
@@ -26,6 +27,15 @@ public sealed class ManagedIdentityAzureSecretResolverTests
         Assert.Equal(new Uri("https://source.vault.azure.net/"), reader.VaultUri);
         Assert.Equal("sql-connection", reader.Name);
         Assert.Equal(Version, reader.Version);
+    }
+
+    [Fact]
+    public void Projects_an_external_key_vault_locator_to_the_canonical_plan_reference()
+    {
+        Assert.True(AzureKeyVaultSecretLocator.TryParse(ExternalSecretReference, out var locator));
+        Assert.NotNull(locator);
+        Assert.Equal(SecretReference, locator!.PlanReference);
+        Assert.Equal(new Uri("https://source.vault.azure.net/"), locator.VaultUri);
     }
 
     [Theory]
@@ -47,7 +57,7 @@ public sealed class ManagedIdentityAzureSecretResolverTests
             ProviderAssignmentId = changed == "Assignment" ? Guid.NewGuid().ToString("D") : AssignmentId.ToString("D"),
             Name = changed == "Name" ? "identity-signing-key" : "database:connectionstring",
             Reference = changed == "Reference"
-                ? $"https://source.vault.azure.net/secrets/other-secret/{Version}"
+                ? $"secret://source.vault.azure.net/secrets/other-secret/{Version}"
                 : SecretReference
         };
 
@@ -60,8 +70,14 @@ public sealed class ManagedIdentityAzureSecretResolverTests
 
     [Theory]
     [InlineData("https://source.vault.azure.net/secrets/sql-connection")]
+    [InlineData("https://source.vault.azure.net/secrets/sql-connection/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
     [InlineData("https://source.vault.azure.net/secrets/sql-connection/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!")]
     [InlineData("https://source.vault.azure.net/secrets/sql-connection/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?api-version=7.4")]
+    [InlineData("https://user:password@source.vault.azure.net/secrets/sql-connection/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("https://source.vault.azure.net:8443/secrets/sql-connection/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("secret://user:password@source.vault.azure.net/secrets/sql-connection/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("secret://source.vault.azure.net/secrets/sql-connection/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?api-version=7.4")]
+    [InlineData("secret://source.vault.azure.net/secrets/sql-connection/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#fragment")]
     [InlineData("https://other.example/secrets/sql-connection/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
     [InlineData("https://source.vault.azure.net/secrets/sql-connection/../admin/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
     public async Task Rejects_unversioned_or_unsafe_key_vault_locators(string reference)
@@ -85,7 +101,7 @@ public sealed class ManagedIdentityAzureSecretResolverTests
             {
                 SecretReferences = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
-                    ["database:connectionstring"] = $"https://source.vault.azure.net/secrets/sql-connection/{new string('b', 32)}"
+                    ["database:connectionstring"] = $"secret://source.vault.azure.net/secrets/sql-connection/{new string('b', 32)}"
                 }
             }
         };

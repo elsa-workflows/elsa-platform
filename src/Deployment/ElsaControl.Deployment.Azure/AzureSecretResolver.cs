@@ -224,6 +224,13 @@ public sealed record AzureKeyVaultSecretLocator(
         "^[A-Fa-f0-9]{32}$",
         RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
 
+    /// <summary>
+    /// Gets the provider-neutral plan locator for this exact, versioned Key Vault secret.
+    /// The resolver converts this back to the fixed HTTPS vault origin only at the SDK boundary.
+    /// </summary>
+    public string PlanReference =>
+        $"secret://{VaultUri.DnsSafeHost}/secrets/{Name}/{Version}";
+
     public static bool TryParse(string? value, out AzureKeyVaultSecretLocator? locator)
     {
         locator = null;
@@ -232,7 +239,7 @@ public sealed record AzureKeyVaultSecretLocator(
             value.Contains("/../", StringComparison.Ordinal) || value.Contains("/./", StringComparison.Ordinal) ||
             value.EndsWith("/..", StringComparison.Ordinal) || value.EndsWith("/.", StringComparison.Ordinal) ||
             !Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
-            uri.Scheme != Uri.UriSchemeHttps || !uri.IsDefaultPort ||
+            (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != "secret") || !uri.IsDefaultPort ||
             string.IsNullOrWhiteSpace(uri.Host) || !VaultHostPattern.IsMatch(uri.DnsSafeHost) ||
             uri.DnsSafeHost.Contains("--", StringComparison.Ordinal) ||
             !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Query) ||
@@ -247,6 +254,26 @@ public sealed record AzureKeyVaultSecretLocator(
 
         var vaultUri = new Uri($"https://{uri.DnsSafeHost}/", UriKind.Absolute);
         locator = new AzureKeyVaultSecretLocator(vaultUri, segments[2], segments[3]);
+
+        // HTTPS is accepted only as an external configuration alias. Secret references that
+        // enter a resolved plan or durable operation must use this exact canonical projection.
+        if (uri.Scheme == "secret" && !string.Equals(value, locator.PlanReference, StringComparison.Ordinal))
+        {
+            locator = null;
+            return false;
+        }
+
+        return true;
+    }
+
+    internal static bool TryParsePlanReference(string? value, out AzureKeyVaultSecretLocator? locator)
+    {
+        if (!TryParse(value, out locator) || !string.Equals(value, locator!.PlanReference, StringComparison.Ordinal))
+        {
+            locator = null;
+            return false;
+        }
+
         return true;
     }
 
@@ -312,7 +339,7 @@ public sealed class ManagedIdentityAzureSecretResolver : IAzureSecretResolver
 
         var providerOwnedSqlConnection = AzureManagedSecretReferences.IsSqlConnection(request.Name, request.Reference);
         AzureKeyVaultSecretLocator? locator = null;
-        if (!providerOwnedSqlConnection && !AzureKeyVaultSecretLocator.TryParse(request.Reference, out locator))
+        if (!providerOwnedSqlConnection && !AzureKeyVaultSecretLocator.TryParsePlanReference(request.Reference, out locator))
             throw new ArgumentException("The Key Vault secret locator is unsafe.", nameof(request));
 
         var authorization = await _authorizationStore.GetAsync(request.WorkspaceId, assignmentId, cancellationToken);
@@ -358,7 +385,7 @@ public sealed class ManagedIdentityAzureSecretResolver : IAzureSecretResolver
             !string.Equals(
                 persistedReference,
                 request.Reference,
-                providerOwnedSqlConnection ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase))
+                StringComparison.Ordinal))
             return false;
 
         if (assignment.State != AzureProviderAssignmentState.Provisioning)

@@ -48,9 +48,9 @@ internal static class AzureProviderRunnerComposition
         var secretSection = configuration.GetSection("Deployment:AzureProvider:Secrets");
         if (secretSection.GetChildren().Any())
         {
-            // External secrets require immutable, versioned Key Vault locators. The exact
-            // provider-owned SQL instruction is the only internal exception; generic
-            // provider-neutral secret:// locators must not survive until seeding.
+            // External secrets require immutable, versioned Key Vault locators, which are
+            // projected to canonical provider-neutral secret:// plan references. The exact
+            // provider-owned SQL instruction is the only internal exception.
             _ = ConfiguredAzureSecretResolver.ReadNamedReferences(configuration);
         }
 

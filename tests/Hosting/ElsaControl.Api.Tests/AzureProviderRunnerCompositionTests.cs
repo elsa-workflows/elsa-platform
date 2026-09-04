@@ -88,9 +88,43 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
             }));
 
         Assert.Equal(3, references.Count);
-        Assert.Equal(KeyVaultReference("sql-connection"), references["database:connectionstring"]);
+        Assert.Equal(CanonicalKeyVaultReference("sql-connection"), references["database:connectionstring"]);
+        Assert.All(references.Values.Where(value => value != AzureManagedSecretReferences.SqlConnection),
+            value => Assert.StartsWith("secret://", value, StringComparison.Ordinal));
         Assert.DoesNotContain(references.Values, value => value.Contains("runtime-only", StringComparison.Ordinal));
         Assert.Throws<NotSupportedException>(() => ((IDictionary<string, string>)references).Add("extra", KeyVaultReference("extra")));
+    }
+
+    [Fact]
+    public void Named_secret_references_reject_an_external_and_canonical_alias_for_the_same_secret()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() => ConfiguredAzureSecretResolver.ReadNamedReferences(
+            Configuration(new Dictionary<string, string?>
+            {
+                ["Deployment:AzureProvider:Secrets:0:Name"] = "database:connectionstring",
+                ["Deployment:AzureProvider:Secrets:0:Reference"] = KeyVaultReference("sql-connection"),
+                ["Deployment:AzureProvider:Secrets:1:Name"] = "identity:signingkey",
+                ["Deployment:AzureProvider:Secrets:1:Reference"] = CanonicalKeyVaultReference("sql-connection"),
+                ["Deployment:AzureProvider:Secrets:2:Name"] = "admin:password",
+                ["Deployment:AzureProvider:Secrets:2:Reference"] = KeyVaultReference("admin-password")
+            })));
+
+        Assert.Equal("Azure provider named secret references are invalid, duplicated, or unsupported.", exception.Message);
+    }
+
+    [Theory]
+    [InlineData("https://user:password@source.vault.azure.net/secrets/sql-connection/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("https://source.vault.azure.net:8443/secrets/sql-connection/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("https://source.vault.azure.net/secrets/sql-connection/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?api-version=7.4")]
+    [InlineData("https://source.vault.azure.net/secrets/sql-connection/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#fragment")]
+    public void Named_secret_references_reject_unsafe_external_key_vault_locators(string reference)
+    {
+        Assert.Throws<InvalidOperationException>(() => ConfiguredAzureSecretResolver.ReadNamedReferences(
+            Configuration(new Dictionary<string, string?>
+            {
+                ["Deployment:AzureProvider:Secrets:0:Name"] = "database:connectionstring",
+                ["Deployment:AzureProvider:Secrets:0:Reference"] = reference
+            })));
     }
 
     [Fact]
@@ -289,6 +323,9 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
 
     private static string KeyVaultReference(string name) =>
         $"https://source.vault.azure.net/secrets/{name}/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    private static string CanonicalKeyVaultReference(string name) =>
+        $"secret://source.vault.azure.net/secrets/{name}/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     private static IConfiguration Configuration(IReadOnlyDictionary<string, string?> values) =>
         new ConfigurationBuilder().AddInMemoryCollection(values).Build();
