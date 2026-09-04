@@ -295,6 +295,13 @@ values. Supply a previously admitted, externally verified catalog-entry
 projection as the fixture; producer admission is an upstream prerequisite, not
 part of this proof.
 
+The initial public Azure profile requires unrestricted egress. Set the stamp's
+server-owned `RuntimeBuilder:InstancePlans:DefaultEgress` to `unrestricted`
+explicitly when using that profile. Omission retains the platform's `restricted`
+default; enabling Azure does not relax it automatically. Unsupported policy
+values fail startup. This is not a claim that the initial Azure profile enforces
+restricted outbound connectivity.
+
 The test content root and production settings file are an early-startup
 packaging contract. Stage the supplied safe configuration at
 `<api-content-root>/appsettings.Production.json` before starting the test

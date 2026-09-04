@@ -294,7 +294,7 @@ builder.Services.AddScoped<IElsaInstanceLifecycleResolutionInputSource>(services
         services.GetRequiredService<IGovernedReleaseCatalogStore>(),
         services.GetRequiredService<IOptions<ElsaInstancePlanAuthorityOptions>>().Value,
         governedAzureSecretReferences));
-builder.Services.AddScoped<IElsaInstancePlanResolver, ElsaInstancePlanResolver>();
+ElsaInstancePlanResolutionComposition.AddResolver(builder.Services, builder.Configuration);
 builder.Services.AddScoped<ElsaInstanceLifecycleService>();
 builder.Services.AddScoped<ElsaInstanceLifecycleWorker>();
 builder.Services.AddScoped<ElsaInstanceDeletionWorker>();

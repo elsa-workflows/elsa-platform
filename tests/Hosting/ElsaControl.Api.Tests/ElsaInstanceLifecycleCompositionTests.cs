@@ -3,12 +3,47 @@ using ElsaControl.Deployment.Core.Instances;
 using ElsaControl.Api.Workspace;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using ElsaControl.RuntimeBuilder.Abstractions.Plans;
 
 namespace ElsaControl.Api.Tests;
 
 public sealed class ElsaInstanceLifecycleCompositionTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"elsa-api-lifecycle-{Guid.NewGuid():N}");
+
+    [Theory]
+    [InlineData(null, "restricted")]
+    [InlineData("restricted", "restricted")]
+    [InlineData("unrestricted", "unrestricted")]
+    public void Instance_plan_egress_requires_an_explicit_server_policy_to_relax_the_default(string? configured, string expected)
+    {
+        var services = new ServiceCollection();
+        ElsaInstancePlanResolutionComposition.AddResolver(services, Configuration(new Dictionary<string, string?>
+        {
+            ["RuntimeBuilder:InstancePlans:DefaultEgress"] = configured
+        }));
+
+        using var provider = services.BuildServiceProvider();
+        Assert.Equal(expected, provider.GetRequiredService<ElsaInstancePlanResolutionOptions>().DefaultEgress);
+        Assert.Contains(services, descriptor => descriptor.ServiceType == typeof(IElsaInstancePlanResolver));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("unknown-policy")]
+    [InlineData("unrestricted\nsecret-marker")]
+    public void Unsupported_instance_plan_egress_fails_closed_without_echoing_configuration(string configured)
+    {
+        var services = new ServiceCollection();
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            ElsaInstancePlanResolutionComposition.AddResolver(services, Configuration(new Dictionary<string, string?>
+            {
+                ["RuntimeBuilder:InstancePlans:DefaultEgress"] = configured
+            })));
+
+        Assert.Equal("The instance plan egress policy is unsupported.", exception.Message);
+        Assert.DoesNotContain(services, descriptor => descriptor.ServiceType == typeof(IElsaInstancePlanResolver));
+    }
 
     [Fact]
     public void Azure_provider_ports_are_not_composed_when_Azure_lifecycle_is_disabled()
