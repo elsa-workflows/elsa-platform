@@ -547,6 +547,8 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasAlternateKey("OrganizationId", "Id");
+
                     b.HasIndex("OrganizationId")
                         .IsUnique();
 

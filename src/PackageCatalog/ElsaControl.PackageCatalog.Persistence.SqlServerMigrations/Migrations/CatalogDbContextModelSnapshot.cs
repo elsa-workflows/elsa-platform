@@ -563,6 +563,8 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasAlternateKey("OrganizationId", "Id");
+
                     b.HasIndex("OrganizationId")
                         .IsUnique();
 

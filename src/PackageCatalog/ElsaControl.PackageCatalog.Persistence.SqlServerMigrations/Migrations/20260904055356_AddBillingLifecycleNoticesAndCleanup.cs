@@ -66,7 +66,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         columns: x => new { x.OrganizationId, x.SubscriptionId },
                         principalTable: "OrganizationSubscriptions",
                         principalColumns: new[] { "OrganizationId", "Id" },
-                        onDelete: ReferentialAction.NoAction);
+                        onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
                         name: "FK_OrganizationBillingCleanups_Organizations_OrganizationId",
                         column: x => x.OrganizationId,
@@ -98,7 +98,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         columns: x => new { x.OrganizationId, x.SubscriptionId },
                         principalTable: "OrganizationSubscriptions",
                         principalColumns: new[] { "OrganizationId", "Id" },
-                        onDelete: ReferentialAction.Cascade);
+                        onDelete: ReferentialAction.NoAction);
                     table.ForeignKey(
                         name: "FK_OrganizationBillingLifecycleNotices_Organizations_OrganizationId",
                         column: x => x.OrganizationId,

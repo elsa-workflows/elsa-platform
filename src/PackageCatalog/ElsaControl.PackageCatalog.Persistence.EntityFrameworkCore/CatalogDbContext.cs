@@ -375,6 +375,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             EnsureTimestampUnchanged(entry, nameof(OrganizationSubscription.TrialStartedAt), subscription.TrialStartedAt);
             EnsureTimestampUnchanged(entry, nameof(OrganizationSubscription.TrialEndsAt), subscription.TrialEndsAt);
             var originalState = entry.Property<OrganizationSubscriptionState>(nameof(OrganizationSubscription.State)).OriginalValue;
+            var stateChanged = subscription.State != originalState;
             EnsureBoundReference(entry, nameof(OrganizationSubscription.ProviderCustomerReference), subscription.ProviderCustomerReference, subscription.State == OrganizationSubscriptionState.Deleted);
             EnsureBoundReference(entry, nameof(OrganizationSubscription.ProviderSubscriptionReference), subscription.ProviderSubscriptionReference, subscription.State == OrganizationSubscriptionState.Deleted);
 
@@ -396,7 +397,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
                  subscription.LastProviderEventId is not null &&
                  (originalEventId is null ||
                   string.CompareOrdinal(subscription.LastProviderEventId, originalEventId) > 0));
-            if (subscription.State != originalState)
+            if (stateChanged)
             {
                 if (!OrganizationSubscriptionLifecycle.CanTransition(originalState, subscription.State) &&
                     !(originalState == OrganizationSubscriptionState.Suspended &&
@@ -413,7 +414,10 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             if (subscription.LifecycleVersion != originalLifecycleVersionValue &&
                 subscription.LifecycleVersion != originalLifecycleVersionValue + 1)
                 throw new InvalidOperationException("Subscription lifecycle version must advance by one.");
-            var lifecycleTransition = subscription.LifecycleVersion == originalLifecycleVersionValue + 1 && !cursorAdvanced;
+            var lifecycleVersionAdvanced = subscription.LifecycleVersion == originalLifecycleVersionValue + 1;
+            if (lifecycleVersionAdvanced && !stateChanged)
+                throw new InvalidOperationException("Subscription lifecycle version can only advance with a state transition.");
+            var lifecycleTransition = stateChanged && lifecycleVersionAdvanced && !cursorAdvanced;
 
             EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.ActivatedAt), subscription.ActivatedAt, subscription.State, OrganizationSubscriptionState.Active, subscription.LastProviderEventOccurredAt, lifecycleTransition: lifecycleTransition);
             EnsureLifecycleTimestamp(entry, nameof(OrganizationSubscription.PastDueAt), subscription.PastDueAt, subscription.State, OrganizationSubscriptionState.PastDue, subscription.LastProviderEventOccurredAt, lifecycleTransition: lifecycleTransition);

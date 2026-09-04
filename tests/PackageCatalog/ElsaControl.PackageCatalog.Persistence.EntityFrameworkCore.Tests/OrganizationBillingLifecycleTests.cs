@@ -231,6 +231,18 @@ public sealed class OrganizationBillingLifecycleTests
         Assert.Equal("Subscription GraceEndsAt must match its lifecycle event.", error.Message);
     }
 
+    [Fact]
+    public async Task Lifecycle_version_cannot_advance_without_a_state_transition()
+    {
+        await using var fixture = await LifecycleFixture.CreateAsync();
+        var subscription = await fixture.StartTrialAsync(fixture.OrganizationId, Start);
+        subscription.LifecycleVersion++;
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Db.SaveChangesAsync());
+
+        Assert.Equal("Subscription lifecycle version can only advance with a state transition.", error.Message);
+    }
+
     private sealed class LifecycleFixture(SqliteConnection connection, CatalogDbContext db) : IAsyncDisposable
     {
         public Guid OrganizationId { get; } = Guid.NewGuid();
