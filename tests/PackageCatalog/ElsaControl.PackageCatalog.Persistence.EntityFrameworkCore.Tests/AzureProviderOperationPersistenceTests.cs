@@ -51,8 +51,10 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         Assert.Equal("Azure provider operation accepted.", accepted.Message);
     }
 
-    [Fact]
-    public async Task Checkpoint_and_finalize_update_the_bound_assignment_atomically()
+    [Theory]
+    [InlineData(AzureProviderOperationPhase.FoundationSubmitted)]
+    [InlineData(AzureProviderOperationPhase.FoundationReady)]
+    public async Task Checkpoint_and_finalize_update_the_bound_assignment_atomically(AzureProviderOperationPhase phase)
     {
         var now = DateTimeOffset.UtcNow;
         var organizationId = Guid.NewGuid();
@@ -77,13 +79,27 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
             _workspaceId,
             operation.Id,
             "lease",
-            new(AzureProviderOperationPhase.FoundationReady, "foundation.ready", "ignored", resources, null, AzureProviderHealth.Unknown, []),
+            new(phase, "foundation.checkpointed", "ignored", resources, null, AzureProviderHealth.Unknown, []),
             now,
             claimed.Version));
         var during = Assert.IsType<AzureProviderResourceAssignment>(await ((IAzureProviderResourceAssignmentStore)store).GetAsync(_workspaceId, assignment.Id));
         Assert.Equal(AzureProviderAssignmentState.Provisioning, during.State);
         Assert.Equal(resources.FoundationDeploymentId, during.Resources.FoundationDeploymentId);
         Assert.Equal(operation.Id, during.LastOperationId);
+
+        // SeedSecrets runs only after FoundationSubmitted has been committed. A fresh
+        // context must see the exact operation link used by durable secret authorization.
+        using (var reloadedDb = CreateContext())
+        {
+            var reloadedStore = new AzureProviderOperationStore(reloadedDb);
+            var authorization = Assert.IsType<AzureSecretAuthorization>(await
+                new DurableAzureSecretAuthorizationStore(reloadedStore, reloadedStore)
+                    .GetAsync(_workspaceId, assignment.Id));
+            Assert.Equal(operation.Id, authorization.Assignment.LastOperationId);
+            Assert.Equal(operation.Id, authorization.Operation.Id);
+            Assert.Equal(phase, authorization.Operation.Phase);
+            Assert.Equal(AzureProviderOperationStatus.Running, authorization.Operation.Status);
+        }
 
         _ = Assert.IsType<AzureProviderOperation>(await store.FinalizeAsync(
             _workspaceId, operation.Id, "lease", AzureProviderOperationStatus.Succeeded, "operation.succeeded", now, checkpointed.Version));
