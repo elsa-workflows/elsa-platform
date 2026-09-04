@@ -25,8 +25,13 @@ SQL instruction is the sole internal exception. Names must already be canonical
 lower-case keys, and no two names may collapse to the same Azure secret name
 after `:` and `_` are mapped to `-`. A
 missing, unsafe, or ambiguous named alias fails startup closed when managed
-instance lifecycle is enabled. External production references must be absolute, versioned
+instance lifecycle is enabled. External configuration accepts absolute, versioned
 Key Vault HTTPS secret locators without credentials, query strings, or fragments.
+They are normalized to `secret://<vault>.vault.azure.net/secrets/<name>/<version>`
+before entering plans and durable operations; that exact canonical form is also
+accepted in configuration. HTTPS/canonical aliases of the same locator cannot be
+assigned to two names. The managed resolver requires the exact persisted canonical
+reference, and converts it to the fixed HTTPS vault origin only when reading the secret.
 An enabled production worker rejects configured `Value` entries and disposable
 proof mode. Its managed identity resolves values only after checking the durable
 workspace, organization, instance, assignment and running-operation authorization.

@@ -44,6 +44,12 @@ provider workers enabled, the v1 instance-provider scope, pinned CLI/sqlcmd/curl
 and two versioned source Key Vault references plus the provider-owned SQL sentinel. The database
 slot uses the provider-owned `secret://azure-managed/sql-connection` sentinel; signing-key and
 admin-password slots remain versioned Key Vault locators. Raw secret values are not accepted.
+HTTPS configuration locators are normalized to canonical `secret://` plan references.
+Set `RuntimeBuilder:InstancePlans:DefaultEgress=unrestricted` explicitly for this Azure
+profile; the default remains `restricted`, which this profile cannot realize. The admitted
+release must declare exact `Elsa.Persistence.EFCore.SqlServer` and
+`Elsa.Scheduling.Quartz.EFCore.SqlServer` package versions. Validate the catalog-to-plan-to-Azure
+translation offline before provisioning; never infer missing versions from the Elsa release.
 
 ## Azure prerequisites
 
@@ -71,13 +77,16 @@ operation is processed by the real hosted workers until the Azure provider reach
 `Healthy`. It then disposes and recreates the production factory against the same SQLite database,
 submits a fresh reconcile, and verifies that the durable provider assignment is retained. Finally
 it creates and consumes a real delete confirmation, waits for `Deleted`, and verifies the v1
-assignment is `Deleted` with empty resource references.
+assignment is `Deleted` with only its immutable resource-group identity retained and no
+remaining workload-resource inventory.
 
 Every polling loop is bounded. A failure attempts product cleanup once more through the lifecycle
 service. The catalog database is never deleted. The evidence file contains only safe organization,
 workspace, account, instance, operation, assignment, and provider-operation IDs plus stage and
-cleanup status; provider exceptions, configuration, connection strings, secret values, and raw
-Azure output are not written.
+cleanup status and scope (`none`, `local`, or `provider`); provider exceptions, configuration,
+connection strings, secret values, and raw Azure output are not written.
+If resolution fails before an assignment exists, successful local deletion is recorded as
+local-only cleanup. It cannot satisfy the overall proof, which requires provider-scoped cleanup.
 
 This proof covers provider apply/reconcile/reload/delete ownership and correlation. It does not
 claim release-manifest producer admission or public customer authentication, because the composed
