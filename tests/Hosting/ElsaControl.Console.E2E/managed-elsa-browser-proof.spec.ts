@@ -240,7 +240,7 @@ function createAndExecuteBasicWorkflow(page: Page) {
           const state = response.workflowState ?? response;
           executionStatus = knownWorkflowStatus(response.status) ?? knownWorkflowStatus(state.status);
           executionSubStatus = knownWorkflowStatus(response.subStatus) ?? knownWorkflowStatus(state.subStatus);
-          if (executionStatus === "Finished" ||
+          if ((executionStatus === "Finished" && executionSubStatus === "Finished") ||
             ["Faulted", "Cancelled", "Suspended"].includes(executionStatus ?? ""))
             break;
 

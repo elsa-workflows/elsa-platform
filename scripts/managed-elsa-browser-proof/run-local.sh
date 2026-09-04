@@ -74,9 +74,10 @@ docker info >/dev/null
 fixture_project="$repo_root/src/Hosting/ElsaControl.ManagedBrowserProof/ElsaControl.ManagedBrowserProof.csproj"
 keycloak_issuer="http://127.0.0.1:8080/realms/elsa-control"
 keycloak_realm="$repo_root/dev/keycloak/elsa-control-realm.json"
+keycloak_username=${MANAGED_ELSA_PROOF_USERNAME:-ada}
 dotnet build "$fixture_project" >/dev/null
 dotnet run --no-build --project "$fixture_project" -- \
-  initialize "$fixture_database" "$keycloak_issuer" "$keycloak_realm" ada >/dev/null
+  initialize "$fixture_database" "$keycloak_issuer" "$keycloak_realm" "$keycloak_username" >/dev/null
 mkcert -cert-file "$proof_root/tls.crt" -key-file "$proof_root/tls.key" runtime.localhost control.localhost localhost >/dev/null
 cp "$(mkcert -CAROOT)/rootCA.pem" "$proof_root/local-root-ca.crt"
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$proof_root/control-handoff-key.pem" 2>/dev/null
@@ -168,6 +169,7 @@ playwright_list_output="$proof_root/playwright-list.log"
 if ! MANAGED_ELSA_BROWSER_PROOF=1 \
   MANAGED_ELSA_PROOF_DATABASE="$fixture_database" \
   MANAGED_ELSA_PROOF_RUNTIME_ORIGIN="$runtime_origin/" \
+  MANAGED_ELSA_PROOF_USERNAME="$keycloak_username" \
   ADMIN_UI_BASE_URL=http://localhost:5173 \
   FORCE_COLOR=0 \
   npm --prefix "$repo_root/tests/Hosting/ElsaControl.Console.E2E" run e2e -- \
@@ -186,6 +188,7 @@ playwright_output="$proof_root/playwright.log"
 if ! MANAGED_ELSA_BROWSER_PROOF=1 \
   MANAGED_ELSA_PROOF_DATABASE="$fixture_database" \
   MANAGED_ELSA_PROOF_RUNTIME_ORIGIN="$runtime_origin/" \
+  MANAGED_ELSA_PROOF_USERNAME="$keycloak_username" \
   ADMIN_UI_BASE_URL=http://localhost:5173 \
   FORCE_COLOR=0 \
   npm --prefix "$repo_root/tests/Hosting/ElsaControl.Console.E2E" run e2e -- \

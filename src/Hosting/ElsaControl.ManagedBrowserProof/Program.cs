@@ -46,7 +46,16 @@ await database.Database.MigrateAsync();
 
 if (command == "initialize")
 {
-    var result = await InitializeAsync(database, args[2], args[3], args[4]);
+    AccountWorkspaceContext result;
+    try
+    {
+        result = await InitializeAsync(database, args[2], args[3], args[4]);
+    }
+    catch (Exception)
+    {
+        return Fail("The isolated proof database could not be initialized from the supplied identity data.");
+    }
+
     if (result.Workspaces.Count != 1)
         return Fail("The isolated proof database must contain exactly one workspace after initialization.");
 
