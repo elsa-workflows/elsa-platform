@@ -24,7 +24,7 @@ Authentication__ApiKey="$(openssl rand -hex 32 2>/dev/null)" || fail "could not 
 export Authentication__ApiKey
 
 container_id=""
-# shellcheck disable=SC2329 # cleanup is invoked indirectly by the EXIT trap.
+# shellcheck disable=SC2317,SC2329 # cleanup is invoked indirectly by the EXIT trap (0.9/0.11).
 cleanup() {
   if [[ -n "$container_id" ]]; then
     if ! docker rm --force "$container_id" >/dev/null 2>&1; then
