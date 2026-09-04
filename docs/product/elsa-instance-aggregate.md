@@ -830,13 +830,13 @@ document remains the source of the boundary decisions.
 | 7 | [#143](https://github.com/valence-works/elsa-control/issues/143) / [#144](https://github.com/valence-works/elsa-control/issues/144) — console and managed handoff integration | 5, 6 | Instance lifecycle UX, progress/retry/error states, exact instance audience/callback lookup and browser-to-runtime proof across supported catalog data |
 | 8 | [#129](https://github.com/valence-works/elsa-control/issues/129), [#131](https://github.com/valence-works/elsa-control/issues/131), [#132](https://github.com/valence-works/elsa-control/issues/132) — recovery, upgrade and deletion acceptance | 6 | Backup/restore-to-new, staged upgrade/rollback, retention/tombstone, isolation and placement evidence; update launch runbooks and support controls |
 
-Tasks 1–6 are closed and the Azure provider/Milestone B proof is accepted. #143 is
-closed; #144 remains active through the real Azure browser proof (#185) and the
-capability-based multi-release/topology integration
-([elsa-production-image#35](https://github.com/valence-works/elsa-production-image/issues/35)). #129 consumes the stable
-revision/deployment/instance ownership mapping; its executable restore-to-new proof
-and review remediation are running in PR #205. It is not yet a production
-recovery-service claim.
+Tasks 1–7 are closed and the Azure provider/Milestone B proof is accepted. #144, #185
+and [elsa-production-image#35](https://github.com/valence-works/elsa-production-image/issues/35)
+completed the real Azure browser proof and capability-based multi-release/topology
+integration; #249 added workflow creation, publication and execution evidence and
+closed the walking skeleton. #129 consumes the stable revision/deployment/instance
+ownership mapping and has accepted executable restore-to-new evidence. It remains a
+recovery-contract proof, not a claim that production backup operations are shipped.
 
 ## Non-goals and deferred choices
 

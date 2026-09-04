@@ -71,18 +71,26 @@ completed: image/version authority
   -> durable Elsa Instance lifecycle and API
   -> managed handoff/session foundation
 
-active: real local/Azure browser proof (#185)
+completed: real local/Azure browser proof (#185)
   -> capability-based multi-release/topology runtime integration
      (elsa-production-image#35, https://github.com/valence-works/elsa-production-image/issues/35)
-  -> Elsa Cloud walking-skeleton completion
+  -> managed workflow creation and execution (#249)
+  -> Elsa Cloud walking-skeleton completion (#101)
+
+active: decompose the MVP commercial lifecycle (#120)
+  -> entitlement projection and enforcement
+  -> Stripe webhook and subscription lifecycle
+  -> suspension, retention, export and deletion evidence
+  -> public-launch evidence gate (#122)
 ```
 
-Milestone B and the core lifecycle/recovery mechanisms needed by Milestone C have
-executable evidence; the still-open Feature rollups remain the authority for milestone
-acceptance. The current P0 gate is honest browser-to-runtime proof against the admitted
-immutable Elsa 3.8 Combined image, followed by capability-driven generalization without
-a finite Elsa version switch. Billing, broad observability and later isolation profiles
-do not block that walking-skeleton proof.
+Milestones B, C and D now have executable evidence. The composed browser evidence
+covers normal Entra/MFA over public TLS, the admitted immutable Elsa 3.8 Combined image,
+seamless handoff, workflow publication and successful execution. Capability-driven runtime
+integration remains cardinality-unbounded rather than selecting from a finite Elsa
+version switch. The next delivery boundary is the MVP commercial lifecycle; public
+launch still depends on billing, operations, security and support evidence rather than
+the walking-skeleton proof alone.
 
 ## Execution Progress and Live Queue
 
@@ -101,24 +109,31 @@ status and dependency order. The initial prerequisite queue produced these outco
   (#125 and #126).
 - Admitted the producer's signed schema 2.0 release manifest while retaining distinct
   immutable OCI subject and payload identities (#158 and #202).
-- Passed the real local managed-browser proof; the equivalent Azure public-TLS proof
-  remains active under #185 and requires the account owner's normal Entra/MFA step.
+- Passed the real local and Azure public-TLS managed-browser proof under #185 using the
+  account owner's normal Entra/MFA interaction, including one-time handoff, replay,
+  logout and expiry behavior.
+- Generalized the producer/runtime integration through declared capabilities and
+  immutable compatibility evidence in
+  [elsa-production-image#35](https://github.com/valence-works/elsa-production-image/issues/35)
+  and the corresponding Elsa Control admission work.
+- Completed the browser-to-runtime workflow creation, publication and execution proof
+  under #249, closing the Elsa Cloud walking-skeleton Feature #101.
 
 The identity handoff contract and threat model are captured in
 [`docs/spikes/127-managed-elsa-identity-handoff.md`](../spikes/127-managed-elsa-identity-handoff.md).
 
-The only current successor leaf is [elsa-production-image#35](https://github.com/valence-works/elsa-production-image/issues/35), which is
-correctly Not Ready while #185 remains open. It generalizes the proven integration by
-declared capability and immutable artifact compatibility for arbitrary supported Elsa
-release lines and applicable Server/Combined topologies.
+There is no remaining Agent Ready implementation leaf after the walking skeleton. The
+next planned Feature is #120, whose decided commercial policy must be decomposed into
+small dependency-ordered Tasks before dispatch. #214 remains deliberately blocked
+until the required CI workflow can be protected from pull-request-controlled changes.
 
 ## Major Risks
 
 | Risk | Mitigation |
 |------|------------|
-| A proof centered on Elsa 3.8 could hard-code a finite version or topology switch. | Complete #185, then require [elsa-production-image#35](https://github.com/valence-works/elsa-production-image/issues/35) and #97 to select compatible immutable integration artifacts from declared capability metadata for arbitrary supported release lines. |
+| A proof centered on Elsa 3.8 could hard-code a finite version or topology switch. | Preserve the capability-driven contract delivered by [elsa-production-image#35](https://github.com/valence-works/elsa-production-image/issues/35), #97 and #247: select immutable compatible artifacts from catalog data for arbitrary supported release lines. |
 | Shared isolation can dominate architecture and security. | Launch paid service with Dedicated only; require #110-derived executable evidence before adding Shared or Data-isolated. |
 | The proven Azure provider could be mistaken for production stamp composition. | Keep the API default fail closed while the production runner/stamp boundary is configured; retain provider IDs and reconciliation metadata behind ADR-0007. |
-| Seamless identity can appear complete from API/session tests while Combined Studio still challenges the user. | Require #185's real public-TLS browser proof, replay/expiry/logout evidence and immutable release facts before accepting the walking skeleton. |
-| Backup/restore design can be mistaken for a production recovery service. | Keep #129 active until its restore-to-new proof, runbook and exact-head review are accepted; track production API, retention and operations slices separately. |
+| Seamless identity can regress after the accepted walking-skeleton proof. | Retain #185 and #249 as release-gate browser coverage for public TLS, normal Entra/MFA, replay/expiry/logout protections and actual workflow execution. |
+| Backup/restore design can be mistaken for a production recovery service. | Treat #129 as an accepted recovery-contract proof only; track production API, scheduling, retention and operator exercises as separate implementation slices. |
 | SRE, backup, security and cost can be postponed despite gating launch. | Treat Milestones E–G exit evidence as non-negotiable and keep those concerns as explicit Epics, not cleanup. |

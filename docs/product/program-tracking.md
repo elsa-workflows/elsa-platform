@@ -38,12 +38,13 @@ Elsa Control owns provider-neutral desired Elsa configuration. A resolved applic
 
 Completed foundations: commercial image/version authority → resolved Elsa application
 model → typed reconciliation → Azure provider/IaC and executable Milestone B proof →
-durable Elsa Instance lifecycle/API → managed handoff/session foundation. Active P0
-path: real local/Azure browser proof (#185) → capability-based multi-release/topology
-runtime integration ([elsa-production-image#35](https://github.com/valence-works/elsa-production-image/issues/35)) → Elsa Cloud
-walking-skeleton completion. #129 is an independent P1 recovery lane with its live
-proof and review remediation running in PR #205; it is not evidence that production
-backup operations are already shipped.
+durable Elsa Instance lifecycle/API → managed handoff/session foundation → real
+local/Azure browser proof (#185) → capability-based multi-release/topology integration
+([elsa-production-image#35](https://github.com/valence-works/elsa-production-image/issues/35)) → managed workflow execution
+(#249) → Elsa Cloud walking-skeleton completion (#101). The next active planning
+boundary is the MVP commercial lifecycle (#120), followed by the public-launch evidence
+gate (#122). #129 proved the accepted recovery contract; it is not evidence that
+production backup operations are already shipped.
 
 ## Tracking
 
@@ -63,7 +64,7 @@ The six operational views are:
 ## Epic tracking
 
 - [x] #84 Architecture & Product Model
-- [ ] #85 Versions, Distributions & Feature Catalog
+- [x] #85 Versions, Distributions & Feature Catalog
 - [x] #86 Deployment Providers & Azure Proof
 - [ ] #87 Managed Instance Lifecycle & Deployment Stamps
 - [ ] #88 Identity, Organizations & Onboarding
