@@ -97,6 +97,41 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
         Assert.Contains(nameof(InvalidOperationException), json);
     }
 
+    [Fact]
+    public void Production_packaging_guard_requires_early_host_inputs()
+    {
+        var contentRoot = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "elsa-control-live-proof-content"));
+        var stagedConfiguration = Path.Combine(contentRoot, "appsettings.Production.json");
+
+        Assert.True(HasProductionPackagingContract("Production", null, contentRoot, stagedConfiguration));
+        Assert.True(HasProductionPackagingContract("production", "Production", contentRoot, stagedConfiguration));
+        Assert.False(HasProductionPackagingContract("Development", null, contentRoot, stagedConfiguration));
+        Assert.False(HasProductionPackagingContract("Production", "Development", contentRoot, stagedConfiguration));
+        Assert.False(HasProductionPackagingContract("Production", string.Empty, contentRoot, stagedConfiguration));
+    }
+
+    [Fact]
+    public void Production_packaging_guard_rejects_relative_or_unstaged_configuration()
+    {
+        var contentRoot = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "elsa-control-live-proof-content"));
+
+        Assert.False(HasProductionPackagingContract(
+            "Production",
+            null,
+            "elsa-control-live-proof-content",
+            Path.Combine(contentRoot, "appsettings.Production.json")));
+        Assert.False(HasProductionPackagingContract(
+            "Production",
+            null,
+            contentRoot,
+            Path.Combine(contentRoot, "live-proof.json")));
+        Assert.False(HasProductionPackagingContract(
+            "Production",
+            null,
+            contentRoot,
+            Path.Combine(contentRoot, "staged-appsettings.Production.json")));
+    }
+
     [ProductionAzureFact]
     public async Task Production_composition_applies_reconciles_reloads_and_deletes_one_instance()
     {
@@ -111,7 +146,7 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
 
         try
         {
-            application = StartApplication(inputs.ConfigPath, cancellationToken);
+            application = StartApplication(cancellationToken);
             stage = "seed";
             state = await SeedAsync(application.Services, inputs, cancellationToken);
 
@@ -127,7 +162,7 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
             await previousApplication.DisposeAsync();
 
             stage = "reload";
-            application = StartApplication(inputs.ConfigPath, cancellationToken);
+            application = StartApplication(cancellationToken);
             state = await ReconcileAsync(application.Services, inputs, state, cancellationToken);
 
             stage = "reconcile-after-reload";
@@ -182,11 +217,14 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
 
     private static LiveProofInputs LoadInputs()
     {
+        var aspNetCoreEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+        var dotNetEnvironment = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
+        var contentRoot = Environment.GetEnvironmentVariable("ASPNETCORE_TEST_CONTENTROOT_ELSACONTROL_API");
         var configPath = Environment.GetEnvironmentVariable(ConfigurationPath);
-        if (string.IsNullOrWhiteSpace(configPath))
+        if (!HasProductionPackagingContract(aspNetCoreEnvironment, dotNetEnvironment, contentRoot, configPath))
             throw new ProofConfigurationException();
 
-        configPath = Path.GetFullPath(configPath);
+        configPath = Path.GetFullPath(configPath!);
         if (!File.Exists(configPath))
             throw new ProofConfigurationException();
 
@@ -237,9 +275,9 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
             evidenceDirectory);
     }
 
-    private static ProductionAzureLifecycleProofApplication StartApplication(string configPath, CancellationToken cancellationToken)
+    private static ProductionAzureLifecycleProofApplication StartApplication(CancellationToken cancellationToken)
     {
-        var application = new ProductionAzureLifecycleProofApplication(configPath);
+        var application = new ProductionAzureLifecycleProofApplication();
         try
         {
             using var client = application.CreateClient();
@@ -492,7 +530,7 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
             if (application is null)
             {
                 using var cleanupTimeout = new CancellationTokenSource(inputs.Timeout);
-                application = StartApplication(inputs.ConfigPath, cleanupTimeout.Token);
+                application = StartApplication(cleanupTimeout.Token);
                 ownsApplication = true;
             }
 
@@ -684,6 +722,36 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
             throw new ProofConfigurationException();
     }
 
+    private static bool HasProductionPackagingContract(
+        string? aspNetCoreEnvironment,
+        string? dotNetEnvironment,
+        string? contentRoot,
+        string? configPath)
+    {
+        if (!string.Equals(aspNetCoreEnvironment, "Production", StringComparison.OrdinalIgnoreCase) ||
+            (dotNetEnvironment is not null &&
+             !string.Equals(dotNetEnvironment, "Production", StringComparison.OrdinalIgnoreCase)) ||
+            string.IsNullOrWhiteSpace(contentRoot) ||
+            string.IsNullOrWhiteSpace(configPath) ||
+            !Path.IsPathFullyQualified(contentRoot) ||
+            !Path.IsPathFullyQualified(configPath))
+            return false;
+
+        try
+        {
+            var expectedPath = Path.GetFullPath(Path.Combine(contentRoot, "appsettings.Production.json"));
+            var suppliedPath = Path.GetFullPath(configPath);
+            var comparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+            return string.Equals(expectedPath, suppliedPath, comparison);
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
     private static string? SafeToken(string? value)
     {
         value = value?.Trim();
@@ -700,13 +768,11 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
                 ? parsed
                 : throw new ProofConfigurationException();
 
-    private sealed class ProductionAzureLifecycleProofApplication(string configPath) : WebApplicationFactory<Program>
+    private sealed class ProductionAzureLifecycleProofApplication : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Production");
-            builder.ConfigureAppConfiguration((_, configuration) =>
-                configuration.AddJsonFile(configPath, optional: false, reloadOnChange: false));
         }
     }
 
