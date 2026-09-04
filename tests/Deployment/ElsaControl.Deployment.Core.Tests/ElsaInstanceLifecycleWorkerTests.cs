@@ -83,6 +83,30 @@ public sealed class ElsaInstanceLifecycleWorkerTests
     }
 
     [Fact]
+    public async Task Worker_time_commercial_denial_holds_the_run_without_provider_submission()
+    {
+        var store = new EntitlementHoldingLifecycleStore(new StaticTimeProvider(Now));
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var accepted = await service.CreateAsync(CreateRequest("claims-entitlement-held", "create-entitlement-held"));
+        store.RegisterResolutionInput(accepted.Operation.Id, ResolutionInput(accepted.Instance));
+        var provider = new RecordingSubmissionPort();
+
+        var result = await new ElsaInstanceLifecycleWorker(
+                store,
+                new RecordingResolver(SuccessfulResolution(WorkspaceId, accepted.Instance.Id)),
+                new StaticTimeProvider(Now),
+                provider,
+                store)
+            .ProcessAvailableAsync("lifecycle-worker-entitlement");
+
+        var held = Assert.Single(result.Results);
+        Assert.Equal(ElsaInstanceOperationState.EntitlementHeld, held.Operation.State);
+        Assert.Equal(ElsaInstanceCommercialOperation.LifecycleConstrained, held.FailureCode);
+        Assert.Equal(0, result.ProviderInvocations);
+        Assert.Empty(provider.Submissions);
+    }
+
+    [Fact]
     public async Task Uncertain_provider_submission_is_recoverable_without_inserting_another_run()
     {
         var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
@@ -660,6 +684,58 @@ public sealed class ElsaInstanceLifecycleWorkerTests
                 $"provider-operation-{request.OperationId:N}",
                 Replayed: Submissions.Count > 1));
         }
+    }
+
+    private sealed class EntitlementHoldingLifecycleStore(TimeProvider timeProvider)
+        : IElsaInstanceLifecycleStore,
+          IElsaInstanceLifecycleWorkerStore,
+          IElsaInstanceProviderSubmissionStore,
+          IElsaInstanceEntitlementHoldStore
+    {
+        private readonly InMemoryElsaInstanceLifecycleStore _inner = new(timeProvider);
+
+        public IReadOnlyCollection<ElsaInstanceOperation> Operations => _inner.Operations;
+
+        public void RegisterResolutionInput(Guid operationId, ElsaInstanceLifecycleResolutionInput input) =>
+            _inner.RegisterResolutionInput(operationId, input);
+
+        public Task<ElsaInstanceLifecycleAcceptance> CommitAcceptedAsync(
+            ElsaInstance? existingInstance, ElsaInstance instance, ElsaInstanceOperation operation,
+            ElsaInstanceLifecycleOutboxMessage outbox, CancellationToken cancellationToken = default) =>
+            _inner.CommitAcceptedAsync(existingInstance, instance, operation, outbox, cancellationToken);
+
+        public Task<ElsaInstance?> GetInstanceAsync(Guid workspaceId, Guid instanceId, CancellationToken cancellationToken = default) =>
+            _inner.GetInstanceAsync(workspaceId, instanceId, cancellationToken);
+
+        public Task<ElsaInstanceOperation?> GetActiveOperationAsync(Guid workspaceId, Guid instanceId, CancellationToken cancellationToken = default) =>
+            _inner.GetActiveOperationAsync(workspaceId, instanceId, cancellationToken);
+
+        public Task<ElsaInstanceOperation?> FindOperationByKeyAsync(Guid workspaceId, string idempotencyKey, Guid? instanceId = null,
+            ElsaInstanceOperationAction? action = null, string? idempotencyScope = null, CancellationToken cancellationToken = default) =>
+            _inner.FindOperationByKeyAsync(workspaceId, idempotencyKey, instanceId, action, idempotencyScope, cancellationToken);
+
+        public Task<ElsaInstanceLifecycleWorkItem?> TryClaimNextAsync(string workerId, DateTimeOffset now, CancellationToken cancellationToken = default) =>
+            _inner.TryClaimNextAsync(workerId, now, cancellationToken);
+
+        public Task<ElsaInstanceLifecycleWorkerResult> CommitResolvedAsync(ElsaInstanceLifecycleResolutionCommit commit, CancellationToken cancellationToken = default) =>
+            _inner.CommitResolvedAsync(commit, cancellationToken);
+
+        public Task<ElsaInstanceLifecycleWorkerResult> FailResolutionAsync(ElsaInstanceLifecycleResolutionFailure failure, CancellationToken cancellationToken = default) =>
+            _inner.FailResolutionAsync(failure, cancellationToken);
+
+        public Task<ElsaInstanceCommercialGateDecision> AuthorizeProviderSubmissionAsync(
+            Guid workspaceId, Guid instanceId, Guid operationId, DateTimeOffset authorizedAt,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(new ElsaInstanceCommercialGateDecision(
+                false,
+                ElsaInstanceCommercialOperation.LifecycleConstrained,
+                "The organization subscription does not permit managed-instance changes."));
+        }
+
+        public Task CommitProviderSubmissionAsync(ElsaInstanceProviderSubmissionCommit commit, CancellationToken cancellationToken = default) =>
+            _inner.CommitProviderSubmissionAsync(commit, cancellationToken);
+
     }
 
     private sealed class UnknownReconciliationPort : IElsaInstanceProviderReconciliationPort
