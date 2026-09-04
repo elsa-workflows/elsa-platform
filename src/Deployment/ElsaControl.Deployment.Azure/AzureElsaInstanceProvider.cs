@@ -182,10 +182,22 @@ public sealed class AzureElsaInstanceProvider(
             assignment.Id != assignmentId ||
             assignment.WorkspaceId != request.WorkspaceId ||
             assignment.InstanceId != request.InstanceId ||
-            assignment.State == AzureProviderAssignmentState.Deleted ||
             !string.Equals(assignment.ProviderScopeFingerprint, NormalizeScope(_options.ProviderScopeFingerprint), StringComparison.Ordinal) ||
             !string.Equals(assignment.WorkloadName, WorkloadName(request.InstanceId), StringComparison.OrdinalIgnoreCase))
             return CleanupUnknown(request, "deletion.provider-assignment-invalid", ElsaInstanceCleanupObservationKind.Ambiguous);
+
+        // A completed provider delete can be observed again after the lifecycle worker
+        // restarts or loses its response. Observe its durable evidence without reserving
+        // another delete for an assignment whose resources are already absent.
+        if (assignment.State == AzureProviderAssignmentState.Deleted)
+        {
+            var completed = assignment.LastOperationId is { } operationId
+                ? await operationStore.GetAsync(request.WorkspaceId, operationId, cancellationToken)
+                : null;
+            return completed is not null && assignment.Resources == new AzureProviderResourceReferences()
+                ? ObserveCleanup(completed)
+                : CleanupUnknown(request, "deletion.provider-evidence-unavailable");
+        }
 
         var reconcile = await operationStore.GetLatestReconcileAsync(
             request.WorkspaceId,
@@ -228,22 +240,29 @@ public sealed class AzureElsaInstanceProvider(
             return CleanupUnknown(request, "deletion.provider-unavailable");
         }
 
-        if (operation.WorkspaceId != request.WorkspaceId ||
-            operation.InstanceId != request.InstanceId ||
-            operation.Action != AzureProviderOperationAction.Delete ||
-            !string.Equals(operation.TargetKey, WorkloadName(request.InstanceId), StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(operation.ProviderScopeFingerprint, NormalizeScope(_options.ProviderScopeFingerprint), StringComparison.Ordinal))
-            return CleanupUnknown(request, "deletion.provider-correlation-invalid", ElsaInstanceCleanupObservationKind.Ambiguous);
+        return ObserveCleanup(operation);
 
-        return operation.Status == AzureProviderOperationStatus.Succeeded &&
-               operation.Phase == AzureProviderOperationPhase.CleanupVerified &&
-               operation.Resources == new AzureProviderResourceReferences() &&
-               operation.Endpoint is null
-            ? new(ElsaInstanceCleanupObservationKind.ConfirmedAbsent, request.OperationId,
-                request.AttemptNumber, "deletion.provider-confirmed-absent")
-            : CleanupUnknown(request, operation.Status is AzureProviderOperationStatus.Failed or AzureProviderOperationStatus.Cancelled
-                ? "deletion.provider-cleanup-failed"
-                : "deletion.provider-cleanup-pending");
+        ElsaInstanceCleanupObservation ObserveCleanup(AzureProviderOperation observed)
+        {
+            if (observed.WorkspaceId != request.WorkspaceId ||
+                observed.InstanceId != request.InstanceId ||
+                observed.OrganizationId != assignment.OrganizationId ||
+                observed.ProviderAssignmentId != assignment.Id ||
+                observed.Action != AzureProviderOperationAction.Delete ||
+                !string.Equals(observed.TargetKey, WorkloadName(request.InstanceId), StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(observed.ProviderScopeFingerprint, NormalizeScope(_options.ProviderScopeFingerprint), StringComparison.Ordinal))
+                return CleanupUnknown(request, "deletion.provider-correlation-invalid", ElsaInstanceCleanupObservationKind.Ambiguous);
+
+            return observed.Status == AzureProviderOperationStatus.Succeeded &&
+                   observed.Phase == AzureProviderOperationPhase.CleanupVerified &&
+                   observed.Resources == new AzureProviderResourceReferences() &&
+                   observed.Endpoint is null
+                ? new(ElsaInstanceCleanupObservationKind.ConfirmedAbsent, request.OperationId,
+                    request.AttemptNumber, "deletion.provider-confirmed-absent")
+                : CleanupUnknown(request, observed.Status is AzureProviderOperationStatus.Failed or AzureProviderOperationStatus.Cancelled
+                    ? "deletion.provider-cleanup-failed"
+                    : "deletion.provider-cleanup-pending");
+        }
     }
 
     private void EnsureEnabled()

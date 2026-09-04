@@ -348,8 +348,11 @@ public sealed class AzureElsaInstanceProviderTests
         EnabledOptions().Validate();
     }
 
-    [Fact]
-    public async Task Cleanup_submits_delete_from_the_exact_admitted_reconcile_plan_and_confirms_only_verified_absence()
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    public async Task Cleanup_submits_or_reobserves_delete_and_confirms_only_verified_absence(bool alreadyDeleted, bool verified)
     {
         var workspaceId = Guid.NewGuid();
         var lifecycleOperationId = Guid.NewGuid();
@@ -377,13 +380,16 @@ public sealed class AzureElsaInstanceProviderTests
             Action = AzureProviderOperationAction.Delete,
             IdempotencyKey = AzureElsaInstanceProvider.IdempotencyKey(lifecycleOperationId) + ":delete",
             LifecycleAction = ElsaInstanceOperationAction.Delete,
-            Status = AzureProviderOperationStatus.Succeeded,
+            Status = verified ? AzureProviderOperationStatus.Succeeded : AzureProviderOperationStatus.Running,
             Phase = AzureProviderOperationPhase.CleanupVerified,
             Resources = new(),
             Endpoint = null
         };
-        var service = new CapturingOperationService(reconcile) { DeleteOperation = delete };
-        var assignmentStore = new InMemoryAssignmentStore();
+        var assignmentStore = new InMemoryAssignmentStore
+        {
+            State = alreadyDeleted ? AzureProviderAssignmentState.Deleted : AzureProviderAssignmentState.Reserved,
+            LastOperationId = alreadyDeleted ? delete.Id : null
+        };
         var assignment = await assignmentStore.CreateOrGetAsync(new(
             workspaceId,
             TestOrganizationId,
@@ -403,21 +409,26 @@ public sealed class AzureElsaInstanceProviderTests
                 AzureProviderOperationService.CreateOperationRequest(reconcile))
         };
         delete = delete with { ProviderAssignmentId = assignment.Id };
-        service = new CapturingOperationService(reconcile) { DeleteOperation = delete };
-        var provider = new AzureElsaInstanceProvider(service, new CapturingOperationStore(reconcile), assignmentStore, options: EnabledOptions());
+        var service = new CapturingOperationService(reconcile) { DeleteOperation = delete };
+        var provider = new AzureElsaInstanceProvider(service, new CapturingOperationStore(reconcile, delete), assignmentStore, options: EnabledOptions());
 
         var result = await provider.CleanupAsync(new(
             workspaceId, TestInstanceId, lifecycleOperationId, 3, null,
             new ElsaPlacementAssignmentReference(assignment.Id.ToString("D")), null));
 
-        Assert.Equal("deletion.provider-confirmed-absent", result.DiagnosticCode);
-        Assert.Equal(ElsaInstanceCleanupObservationKind.ConfirmedAbsent, result.Kind);
+        Assert.Equal(verified ? "deletion.provider-confirmed-absent" : "deletion.provider-cleanup-pending", result.DiagnosticCode);
+        Assert.Equal(verified ? ElsaInstanceCleanupObservationKind.ConfirmedAbsent : ElsaInstanceCleanupObservationKind.Unknown, result.Kind);
         Assert.Equal(lifecycleOperationId, result.OperationId);
         Assert.Equal(3, result.AttemptNumber);
-        var submission = Assert.Single(service.DeleteSubmissions);
-        Assert.Equal(ElsaInstanceOperationAction.Delete, submission.LifecycleAction);
-        Assert.Equal(plan.Fingerprint, submission.Plan.Fingerprint);
-        Assert.Equal(AzureElsaInstanceProvider.IdempotencyKey(lifecycleOperationId), submission.IdempotencyKey);
+        if (alreadyDeleted)
+            Assert.Empty(service.DeleteSubmissions);
+        else
+        {
+            var submission = Assert.Single(service.DeleteSubmissions);
+            Assert.Equal(ElsaInstanceOperationAction.Delete, submission.LifecycleAction);
+            Assert.Equal(plan.Fingerprint, submission.Plan.Fingerprint);
+            Assert.Equal(AzureElsaInstanceProvider.IdempotencyKey(lifecycleOperationId), submission.IdempotencyKey);
+        }
     }
 
     [Fact]
@@ -568,12 +579,12 @@ public sealed class AzureElsaInstanceProviderTests
             Task.FromResult<AzureProviderOperationStatusResponse?>(null);
     }
 
-    private sealed class CapturingOperationStore(AzureProviderOperation? operation = null) : IAzureProviderOperationStore
+    private sealed class CapturingOperationStore(AzureProviderOperation? operation = null, AzureProviderOperation? completedDelete = null) : IAzureProviderOperationStore
     {
         public Task<AzureProviderOperation> CreateOrGetAsync(AzureProviderOperationRequest request, DateTimeOffset now, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public async Task<AzureProviderOperationCreateResult> CreateOrGetWithResultAsync(AzureProviderOperationRequest request, DateTimeOffset now, CancellationToken cancellationToken = default) =>
             new(await CreateOrGetAsync(request, now, cancellationToken), Replayed: false);
-        public Task<AzureProviderOperation?> GetAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default) => Task.FromResult(operation);
+        public Task<AzureProviderOperation?> GetAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default) => Task.FromResult(completedDelete ?? operation);
         public Task<IReadOnlyList<AzureProviderOperation>> ListRunnableAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<AzureProviderOperation>>([]);
         public Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, string? providerScopeFingerprint, CancellationToken cancellationToken = default) => Task.FromResult(operation);
         public Task<AzureProviderOperation?> MarkUnrestorableAsync(Guid workspaceId, Guid operationId, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) => Task.FromResult<AzureProviderOperation?>(null);
@@ -589,6 +600,8 @@ public sealed class AzureElsaInstanceProviderTests
     private sealed class InMemoryAssignmentStore : IAzureProviderResourceAssignmentStore
     {
         private AzureProviderResourceAssignment? _assignment;
+        public AzureProviderAssignmentState State { get; init; } = AzureProviderAssignmentState.Reserved;
+        public Guid? LastOperationId { get; init; }
 
         public Task<AzureProviderResourceAssignment> CreateOrGetAsync(
             AzureProviderResourceAssignmentRequest request,
@@ -607,9 +620,9 @@ public sealed class AzureElsaInstanceProviderTests
                 request.WorkloadName,
                 new string('f', 64),
                 request.Location,
-                AzureProviderAssignmentState.Reserved,
+                State,
                 new(),
-                null,
+                LastOperationId,
                 1,
                 now,
                 now);
