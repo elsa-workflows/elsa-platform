@@ -446,6 +446,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     private static void EnsureBoundReference(EntityEntry<OrganizationSubscription> entry, string propertyName, string? currentValue, bool allowClearOnDeletion)
     {
         var originalValue = entry.Property<string?>(propertyName).OriginalValue;
+        if (allowClearOnDeletion && currentValue is not null)
+            throw new InvalidOperationException($"Subscription {propertyName} must remain cleared after deletion.");
         if (originalValue is not null && !string.Equals(originalValue, currentValue, StringComparison.Ordinal) && !(allowClearOnDeletion && currentValue is null))
             throw new InvalidOperationException($"Subscription {propertyName} cannot be replaced or removed.");
     }

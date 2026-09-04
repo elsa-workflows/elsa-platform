@@ -63,6 +63,19 @@ public sealed class StripeBillingProviderTests
     }
 
     [Fact]
+    public async Task Cleanup_without_a_subscription_reference_does_not_confirm_remote_absence()
+    {
+        var cleanup = new RecordingCleanupGateway();
+        var provider = CreateProvider(cleanup: cleanup);
+
+        var result = await provider.CleanupAsync(new(
+            OrganizationId, Guid.NewGuid(), "cleanup-key", "stripe", "cus_123", null, 1));
+
+        Assert.Equal(OrganizationBillingCleanupOutcome.Unknown, result);
+        Assert.Null(cleanup.SubscriptionReference);
+    }
+
+    [Fact]
     public void Webhook_signature_is_verified_before_paused_subscription_is_normalized()
     {
         var provider = CreateProvider();

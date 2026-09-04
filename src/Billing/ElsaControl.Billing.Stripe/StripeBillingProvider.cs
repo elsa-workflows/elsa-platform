@@ -71,7 +71,7 @@ public sealed class StripeBillingProvider(
         if (!string.Equals(request.Provider, Provider, StringComparison.Ordinal))
             return OrganizationBillingCleanupOutcome.Unknown;
         if (string.IsNullOrWhiteSpace(request.ProviderSubscriptionReference))
-            return OrganizationBillingCleanupOutcome.ConfirmedAbsent;
+            return OrganizationBillingCleanupOutcome.Unknown;
 
         try
         {
