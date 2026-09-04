@@ -38,6 +38,10 @@ public sealed class AzureProviderAuthorityPreflightTests : IDisposable
             Assert.Contains("--assignee-object-id", arguments);
             Assert.Contains("22222222-2222-2222-2222-222222222222", arguments);
             Assert.Contains("--fill-principal-name", arguments);
+            Assert.Equal("false", arguments[Array.IndexOf(arguments, "--fill-principal-name") + 1]);
+            Assert.Contains("--scope", arguments);
+            Assert.Contains("--include-inherited", arguments);
+            Assert.DoesNotContain("--all", arguments);
             Assert.DoesNotContain("--assignee", arguments);
         });
         Assert.Contains(

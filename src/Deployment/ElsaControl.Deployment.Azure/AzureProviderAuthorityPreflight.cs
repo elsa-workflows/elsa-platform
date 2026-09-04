@@ -230,7 +230,7 @@ public sealed class AzureProviderAuthorityPreflight : IAzureProviderAuthorityPre
     {
         var result = await _process.ExecuteAsync(
             Request(["role", "assignment", "list", "--scope", scope, "--assignee-object-id", principalId, "--fill-principal-name", "false",
-                "--include-inherited", "--all", "--query", "[].roleDefinitionName", "--output", "json",
+                "--include-inherited", "--query", "[].roleDefinitionName", "--output", "json",
                 "--only-show-errors"]),
             ParseRoles,
             cancellationToken);
