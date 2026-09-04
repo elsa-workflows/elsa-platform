@@ -137,10 +137,19 @@ function createAndExecuteBasicWorkflow(page: Page) {
   const definitionId = "managed-elsa-browser-proof-v1";
 
   return page.evaluate(async ({ definitionId }) => {
-    const knownWorkflowStatus = (value: unknown) => typeof value === "string" &&
-      ["Running", "Finished", "Faulted", "Cancelled", "Suspended"].includes(value)
-      ? value
-      : undefined;
+    const knownWorkflowStatus = (value: unknown) => {
+      if (value === 0)
+        return "Running";
+      if (value === 1)
+        return "Finished";
+      return typeof value === "string" && ["Running", "Finished"].includes(value) ? value : undefined;
+    };
+    const knownWorkflowSubStatus = (value: unknown) => {
+      const numericStatuses = ["Pending", "Executing", "Suspended", "Finished", "Cancelled", "Faulted", "Interrupted"];
+      if (typeof value === "number" && Number.isInteger(value))
+        return numericStatuses[value];
+      return typeof value === "string" && numericStatuses.includes(value) ? value : undefined;
+    };
 
     const createResponse = await fetch("/elsa/api/workflow-definitions", {
       method: "POST",
@@ -239,9 +248,9 @@ function createAndExecuteBasicWorkflow(page: Page) {
           };
           const state = response.workflowState ?? response;
           executionStatus = knownWorkflowStatus(response.status) ?? knownWorkflowStatus(state.status);
-          executionSubStatus = knownWorkflowStatus(response.subStatus) ?? knownWorkflowStatus(state.subStatus);
+          executionSubStatus = knownWorkflowSubStatus(response.subStatus) ?? knownWorkflowSubStatus(state.subStatus);
           if ((executionStatus === "Finished" && executionSubStatus === "Finished") ||
-            ["Faulted", "Cancelled", "Suspended"].includes(executionStatus ?? ""))
+            ["Faulted", "Cancelled", "Suspended", "Interrupted"].includes(executionSubStatus ?? ""))
             break;
 
           await new Promise((resolve) => setTimeout(resolve, 500));
