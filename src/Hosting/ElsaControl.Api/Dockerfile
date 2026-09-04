@@ -67,5 +67,5 @@ ENV ASPNETCORE_URLS=http://+:8080 \
     Deployment__AzureProvider__Runner__SqlCmdPath=/usr/local/bin/sqlcmd \
     Deployment__AzureProvider__Runner__CurlPath=/usr/bin/curl \
     Deployment__AzureProvider__Runner__TemplateRoot=/app/azure-provider
-COPY infra/azure-workload-proof/ /app/azure-provider/
+COPY infra/azure-production/ /app/azure-provider/
 ENTRYPOINT ["dotnet", "ElsaControl.Api.dll"]

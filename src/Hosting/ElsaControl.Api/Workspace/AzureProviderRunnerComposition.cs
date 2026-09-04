@@ -56,9 +56,22 @@ internal static class AzureProviderRunnerComposition
             .Any(child => child["Value"] is not null))
             throw new InvalidOperationException(
                 "Azure provider worker configuration must not contain raw secret values.");
-        var secretResolver = ConfiguredAzureSecretResolver.Create(configuration);
-        services.AddScoped<IAzureSecretResolver>(_ => secretResolver);
-        services.AddScoped<IAzureProviderRunner>(_ => new AzureBicepProviderRunner(options, scope, secretResolver));
+        var managedIdentity = new Azure.Identity.ManagedIdentityCredential(
+            Azure.Identity.ManagedIdentityId.FromUserAssignedClientId(options.AzureCliClientId!));
+        services.AddSingleton<IAzureKeyVaultSecretReader>(_ => new AzureKeyVaultSecretReader(managedIdentity));
+        services.AddScoped<IAzureSecretAuthorizationStore>(provider =>
+            new DurableAzureSecretAuthorizationStore(
+                provider.GetRequiredService<IAzureProviderResourceAssignmentStore>(),
+                provider.GetRequiredService<IAzureProviderOperationStore>()));
+        services.AddScoped<IAzureSecretResolver>(provider =>
+            new ManagedIdentityAzureSecretResolver(
+                provider.GetRequiredService<IAzureSecretAuthorizationStore>(),
+                provider.GetRequiredService<IAzureKeyVaultSecretReader>()));
+        services.AddScoped<IAzureProviderRunner>(provider =>
+            new AzureBicepProviderRunner(
+                options,
+                scope,
+                provider.GetRequiredService<IAzureSecretResolver>()));
         return new(options, scope);
     }
 }

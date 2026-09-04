@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "workloadName": {
+      "value": "managed-workload"
+    },
+    "imageRepository": {
+      "value": "valenceruntimeimages.azurecr.io/runtime-combined"
+    },
+    "imageDigest": {
+      "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "registryResourceGroupName": {
+      "value": "<existing-runtime-registry-resource-group>"
+    },
+    "sqlBootstrapObjectId": {
+      "value": "00000000-0000-4000-8000-000000000000"
+    },
+    "sqlBootstrapLogin": {
+      "value": "operator@example.invalid"
+    },
+    "adminUsername": {
+      "value": "<runtime-admin-username>"
+    },
+    "elsaVersion": {
+      "value": "<runtime-version>"
+    },
+    "releaseLine": {
+      "value": "<release-line>"
+    },
+    "releaseVersion": {
+      "value": "<release-version>"
+    },
+    "sqlWorkflowPackageVersion": {
+      "value": "<sql-workflow-package-version>"
+    },
+    "sqlQuartzPackageVersion": {
+      "value": "<sql-quartz-package-version>"
+    },
+    "releaseFeedServiceIndex": {
+      "value": "https://api.nuget.org/v3/index.json"
+    }
+  }
+}

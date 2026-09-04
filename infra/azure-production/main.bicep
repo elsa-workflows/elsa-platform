@@ -1,0 +1,235 @@
+targetScope = 'resourceGroup'
+
+@description('Short, unique name for the managed workload. Use lowercase letters, numbers and hyphens only.')
+@minLength(3)
+@maxLength(16)
+param workloadName string
+
+@description('The production provider is intentionally constrained to governed Azure regions.')
+@allowed([
+  'westeurope'
+  'northeurope'
+  'swedencentral'
+])
+param location string = 'westeurope'
+
+@description('Immutable runtime image repository, without a tag or digest.')
+@minLength(1)
+param imageRepository string = 'valenceruntimeimages.azurecr.io/runtime-combined'
+
+@description('Lower-case SHA-256 digest for the image, without the sha256: prefix. Tags are not accepted.')
+@minLength(64)
+@maxLength(64)
+param imageDigest string
+
+@description('Existing runtime ACR resource name.')
+@minLength(5)
+@maxLength(50)
+param registryName string = 'valenceruntimeimages'
+
+@description('Subscription ID containing the existing runtime ACR.')
+param registrySubscriptionId string = subscription().subscriptionId
+
+@description('Resource group containing the existing runtime ACR.')
+@minLength(1)
+param registryResourceGroupName string
+
+@description('Microsoft Entra object ID for the SQL administrator.')
+param sqlBootstrapObjectId string
+
+@description('Microsoft Entra login/display name for the SQL administrator.')
+@minLength(1)
+@maxLength(128)
+param sqlBootstrapLogin string
+
+@description('Name of the SQL connection secret in the workload Key Vault.')
+@minLength(1)
+@maxLength(127)
+param sqlConnectionSecretName string = 'sql-connection'
+
+@description('Name of the Elsa identity signing secret in the workload Key Vault.')
+@minLength(1)
+@maxLength(127)
+param signingKeySecretName string = 'identity-signing-key'
+
+@description('Name of the runtime administrator credential in Key Vault.')
+@minLength(1)
+@maxLength(127)
+param adminPasswordSecretName string = 'admin-password'
+
+@description('Runtime administrator username supplied by the release/workspace owner.')
+@minLength(1)
+@maxLength(128)
+param adminUsername string
+
+@description('Elsa runtime version represented by the immutable image. Version is data, not an IaC branch.')
+@minLength(1)
+param elsaVersion string
+
+@description('Exact Nuplane feed version for SQL Server workflow/identity persistence packages.')
+@minLength(1)
+param sqlWorkflowPackageVersion string
+
+@description('Exact Nuplane feed version for SQL Server scheduling package.')
+@minLength(1)
+param sqlQuartzPackageVersion string
+
+@description('Release line carried by the immutable image and release manifest.')
+@minLength(1)
+param releaseLine string
+
+@description('Optional release version retained as deployment metadata. Empty reuses elsaVersion.')
+param releaseVersion string = ''
+
+@description('Nuplane service index for the release package feed. Override for a producer-owned feed.')
+param releaseFeedServiceIndex string = 'https://api.nuget.org/v3/index.json'
+
+@description('Name of the Nuplane release package feed.')
+@minLength(1)
+@maxLength(63)
+param releaseFeedName string = 'release'
+
+@description('Owner tag for the managed workload.')
+@minLength(1)
+param owner string = 'elsa-control'
+
+@description('Create the externally reachable Container App. Set false for the foundation phase while the runbook seeds Key Vault secrets.')
+param deployWorkload bool = true
+
+@description('SHA-256 of the compiled main template. The runbook supplies this so IaC changes produce a new plan and revision identity.')
+@minLength(64)
+@maxLength(64)
+param templateFingerprint string
+
+@description('Runbook-selected Container Apps revision suffix. Empty uses the plan fingerprint for direct template consumers.')
+@maxLength(63)
+param workloadRevisionSuffix string = ''
+
+@description('Existing healthy revision kept at 100% while a candidate warms. Empty is valid only for the first workload deployment.')
+@maxLength(64)
+param stableTrafficRevisionName string = ''
+
+@description('Additional tags. Required owner, release and fingerprint tags always win.')
+param additionalTags object = {}
+
+var effectiveReleaseVersion = empty(releaseVersion) ? elsaVersion : releaseVersion
+var planInput = 'template=${toLower(templateFingerprint)}|name=${workloadName}|location=${location}|image=${imageRepository}@sha256:${toLower(imageDigest)}|elsa=${elsaVersion}|release-line=${releaseLine}|release-version=${effectiveReleaseVersion}|release-feed=${releaseFeedName}/${releaseFeedServiceIndex}|sql-workflow=${sqlWorkflowPackageVersion}|sql-quartz=${sqlQuartzPackageVersion}|topology=combined|acr=${registrySubscriptionId}/${registryResourceGroupName}/${registryName}|sql-bootstrap=${sqlBootstrapObjectId}/${sqlBootstrapLogin}|admin=${adminUsername}|secrets=${sqlConnectionSecretName}/${signingKeySecretName}/${adminPasswordSecretName}'
+// Bicep 0.43 has no SHA-256 function. uniqueString is deterministic for the
+// canonical input, including the externally computed compiled-template hash.
+var planFingerprint = uniqueString(planInput)
+var revisionSuffix = empty(workloadRevisionSuffix) ? take(planFingerprint, 24) : workloadRevisionSuffix
+var requiredTags = {
+  owner: owner
+  'workload-name': workloadName
+  'plan-fingerprint': planFingerprint
+  'managed-by': 'elsa-control-bicep'
+  'release-line': releaseLine
+  'release-version': effectiveReleaseVersion
+}
+var tags = union(additionalTags, requiredTags)
+
+module workloadIdentity 'modules/identity.bicep' = {
+  name: 'workload-identity'
+  params: {
+    name: '${workloadName}-identity'
+    location: location
+    tags: tags
+  }
+}
+
+module observability 'modules/observability.bicep' = {
+  name: 'observability'
+  params: {
+    name: '${workloadName}-logs'
+    location: location
+    tags: tags
+  }
+}
+
+module database 'modules/sql.bicep' = {
+  name: 'sql'
+  params: {
+    serverName: '${workloadName}-sql'
+    databaseName: 'Elsa'
+    location: location
+    bootstrapObjectId: sqlBootstrapObjectId
+    bootstrapLogin: sqlBootstrapLogin
+    tags: tags
+  }
+}
+
+module vault 'modules/key-vault.bicep' = {
+  name: 'key-vault'
+  params: {
+    name: '${workloadName}-kv'
+    location: location
+    workloadPrincipalId: workloadIdentity.outputs.principalId
+    bootstrapObjectId: sqlBootstrapObjectId
+    sqlConnectionSecretName: sqlConnectionSecretName
+    signingKeySecretName: signingKeySecretName
+    adminPasswordSecretName: adminPasswordSecretName
+    tags: tags
+  }
+}
+
+module containerEnvironment 'modules/container-apps-environment.bicep' = {
+  name: 'container-apps-environment'
+  params: {
+    name: '${workloadName}-aca'
+    location: location
+    logAnalyticsWorkspaceName: observability.outputs.name
+    tags: tags
+  }
+}
+
+module workload 'modules/container-app.bicep' = if (deployWorkload) {
+  name: 'container-app'
+  params: {
+    name: '${workloadName}-app'
+    location: location
+    managedEnvironmentId: containerEnvironment.outputs.id
+    registryName: registryName
+    registrySubscriptionId: registrySubscriptionId
+    registryResourceGroupName: registryResourceGroupName
+    imageRepository: imageRepository
+    imageDigest: imageDigest
+    workloadIdentityId: workloadIdentity.outputs.id
+    sqlConnectionSecretUri: vault.outputs.sqlConnectionSecretUri
+    signingKeySecretUri: vault.outputs.signingKeySecretUri
+    adminPasswordSecretUri: vault.outputs.adminCredentialUri
+    sqlRef: take(sqlConnectionSecretName, 63)
+    signingRef: take(signingKeySecretName, 63)
+    adminCredentialRef: take(adminPasswordSecretName, 63)
+    adminUsername: adminUsername
+    elsaVersion: elsaVersion
+    releaseLine: releaseLine
+    releaseVersion: effectiveReleaseVersion
+    releaseFeedName: releaseFeedName
+    releaseFeedServiceIndex: releaseFeedServiceIndex
+    sqlWorkflowPackageVersion: sqlWorkflowPackageVersion
+    sqlQuartzPackageVersion: sqlQuartzPackageVersion
+    revisionSuffix: revisionSuffix
+    stableTrafficRevisionName: stableTrafficRevisionName
+    tags: tags
+  }
+}
+
+// Deliberately limited to identifiers, endpoint and fingerprint metadata. Secret values,
+// shared keys, tokens and connection strings never cross the output boundary.
+output resourceGroupName string = resourceGroup().name
+output deploymentName string = take('elsa-${workloadName}-${take(planFingerprint, 12)}', 64)
+output planFingerprint string = planFingerprint
+output workloadIdentityId string = workloadIdentity.outputs.id
+output workloadIdentityClientId string = workloadIdentity.outputs.clientId
+output workloadIdentityPrincipalId string = workloadIdentity.outputs.principalId
+output keyVaultId string = vault.outputs.id
+output keyVaultUri string = vault.outputs.uri
+output sqlServerId string = database.outputs.id
+output sqlServerName string = database.outputs.name
+output sqlDatabaseName string = database.outputs.databaseName
+output sqlServerFqdn string = database.outputs.fullyQualifiedDomainName
+output sqlShortTermRetentionDays int = database.outputs.shortTermRetentionDays
+output containerAppsEnvironmentId string = containerEnvironment.outputs.id
+output containerAppId string = deployWorkload ? workload!.outputs.id : ''
+output containerAppEndpoint string = deployWorkload ? workload!.outputs.endpoint : ''
+output immutableImage string = '${imageRepository}@sha256:${toLower(imageDigest)}'

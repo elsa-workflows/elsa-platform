@@ -1372,18 +1372,22 @@ public sealed class ElsaInstanceLifecycleStoreTests
         var store = new EfCoreElsaInstanceLifecycleStore(
             db, EmptyResolutionInputSource.Instance, new FixedTimeProvider(Now));
 
+        var assignmentId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee").ToString("D");
         await store.CommitProviderSubmissionAsync(new(
             workspace.Id,
             accepted.Instance.Id,
             accepted.Operation.Id,
             accepted.Operation.AttemptNumber,
             "provider-operation-accepted",
-            Now));
+            Now,
+            assignmentId));
 
         db.ChangeTracker.Clear();
         var item = Assert.Single(await store.ListPendingProviderOperationsAsync(16));
         Assert.Equal(accepted.Operation.Id, item.OperationId);
         Assert.Null(item.Submission);
+        Assert.Equal(assignmentId,
+            (await db.ElsaInstances.AsNoTracking().SingleAsync(x => x.Id == accepted.Instance.Id)).PlacementAssignmentId);
     }
 
     [Fact]

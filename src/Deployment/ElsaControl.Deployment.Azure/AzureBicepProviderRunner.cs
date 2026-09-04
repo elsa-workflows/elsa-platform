@@ -18,12 +18,11 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     private const string AcrPullRoleDefinitionId = "7f951dda-4ed3-4680-a7ca-43fe172d538d";
     private const string KeyVaultSecretsUserRoleDefinitionId = "4633458b-17de-408a-b874-0445c86b69e6";
     private const string KeyVaultSecretsOfficerRoleDefinitionId = "b86a8fe4-44ce-4948-aee5-eccb2c155cd7";
-    private const string TemporaryFirewallRuleName = "elsa108-bootstrap";
-    private const string ProofTag = "108";
+    private const string TemporaryFirewallRuleName = "elsa-bootstrap";
+    private const string ManagedByTag = "elsa-control";
     private const string SqlConnectionSecretName = "sql-connection";
     private const string SigningKeySecretName = "identity-signing-key";
     private const string AdminPasswordSecretName = "admin-password";
-    private const string AdminUsername = "proof-admin";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true
@@ -131,8 +130,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             EnsureMutationAuthority(command);
             var created = await ExecuteAzAsync<AzureCommandNoOutput>(command,
                 ["group", "create", "--subscription", _scope.SubscriptionId, "--name", ResourceGroupName(command),
-                    "--location", _scope.Location, "--tags", $"proof={ProofTag}", $"owner={_options.Owner}",
-                    $"proof-name={command.Plan.WorkloadName}", $"expiry={_options.ExpiryUtc:yyyy-MM-dd}",
+                    "--location", _scope.Location, "--tags", $"managed-by={ManagedByTag}", $"owner={_options.Owner}",
+                    $"workload-name={command.Plan.WorkloadName}",
                     $"sqlBootstrapObjectId={_options.SqlBootstrapObjectId}", "--output", "none", "--only-show-errors"],
                 static _ => AzureCommandNoOutput.Instance,
                 cancellationToken);
@@ -154,8 +153,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             EnsureMutationAuthority(command);
             var updated = await ExecuteAzAsync<AzureCommandNoOutput>(command,
                 ["tag", "update", "--subscription", _scope.SubscriptionId, "--resource-id", groupId,
-                    "--operation", "Merge", "--tags", $"proof={ProofTag}", $"owner={_options.Owner}",
-                    $"proof-name={command.Plan.WorkloadName}", $"expiry={_options.ExpiryUtc:yyyy-MM-dd}",
+                    "--operation", "Merge", "--tags", $"managed-by={ManagedByTag}", $"owner={_options.Owner}",
+                    $"workload-name={command.Plan.WorkloadName}",
                     $"sqlBootstrapObjectId={_options.SqlBootstrapObjectId}", "--output", "none", "--only-show-errors"],
                 static _ => AzureCommandNoOutput.Instance,
                 cancellationToken);
@@ -1271,13 +1270,14 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     private IReadOnlyList<string> FoundationDeploymentArguments(AzureProviderRunnerCommand command, string deploymentName) =>
         ["deployment", "group", "create", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
             "--name", deploymentName, "--template-file", Path.Combine(_options.TemplateRoot, "main.bicep"), "--parameters",
-            $"proofName={command.Plan.WorkloadName}", $"location={_scope.Location}", $"imageRepository={command.Plan.ImageRepository}", $"imageDigest={command.Plan.ImageDigest}",
+            $"workloadName={command.Plan.WorkloadName}", $"location={_scope.Location}", $"imageRepository={command.Plan.ImageRepository}", $"imageDigest={command.Plan.ImageDigest}",
             $"registryName={_scope.RegistryName}", $"registrySubscriptionId={_scope.RegistrySubscriptionId}",
             $"registryResourceGroupName={_scope.RegistryResourceGroupName}", $"sqlBootstrapObjectId={_options.SqlBootstrapObjectId}",
-            $"sqlBootstrapLogin={_options.SqlBootstrapLogin}", $"expiryUtc={_options.ExpiryUtc:yyyy-MM-dd}", $"owner={_options.Owner}",
+            $"sqlBootstrapLogin={_options.SqlBootstrapLogin}", $"owner={_options.Owner}",
             $"sqlConnectionSecretName={SqlConnectionSecretName}", $"signingKeySecretName={SigningKeySecretName}",
-            $"adminPasswordSecretName={AdminPasswordSecretName}", $"adminUsername={AdminUsername}",
+            $"adminPasswordSecretName={AdminPasswordSecretName}", $"adminUsername={_options.RuntimeAdminUsername}",
             $"elsaVersion={command.Plan.ElsaVersion}",
+            $"releaseLine={command.Plan.ReleaseLine}",
             $"sqlWorkflowPackageVersion={command.Plan.SqlWorkflowPackageVersion}", $"sqlQuartzPackageVersion={command.Plan.SqlQuartzPackageVersion}",
             $"templateFingerprint={command.Context.TemplateFingerprint}", "deployWorkload=false", "--query", "properties.outputs", "--output", "json", "--only-show-errors"];
 
@@ -1290,13 +1290,14 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     private IReadOnlyList<string> WorkloadDeploymentArguments(AzureProviderRunnerCommand command, string deploymentName, string revision, string? stable) =>
         ["deployment", "group", "create", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
             "--name", deploymentName, "--template-file", Path.Combine(_options.TemplateRoot, "main.bicep"), "--parameters",
-            $"proofName={command.Plan.WorkloadName}", $"location={_scope.Location}", $"imageRepository={command.Plan.ImageRepository}", $"imageDigest={command.Plan.ImageDigest}",
+            $"workloadName={command.Plan.WorkloadName}", $"location={_scope.Location}", $"imageRepository={command.Plan.ImageRepository}", $"imageDigest={command.Plan.ImageDigest}",
             $"registryName={_scope.RegistryName}", $"registrySubscriptionId={_scope.RegistrySubscriptionId}",
             $"registryResourceGroupName={_scope.RegistryResourceGroupName}", $"sqlBootstrapObjectId={_options.SqlBootstrapObjectId}",
-            $"sqlBootstrapLogin={_options.SqlBootstrapLogin}", $"expiryUtc={_options.ExpiryUtc:yyyy-MM-dd}", $"owner={_options.Owner}",
+            $"sqlBootstrapLogin={_options.SqlBootstrapLogin}", $"owner={_options.Owner}",
             $"sqlConnectionSecretName={SqlConnectionSecretName}", $"signingKeySecretName={SigningKeySecretName}",
-            $"adminPasswordSecretName={AdminPasswordSecretName}", $"adminUsername={AdminUsername}",
+            $"adminPasswordSecretName={AdminPasswordSecretName}", $"adminUsername={_options.RuntimeAdminUsername}",
             $"elsaVersion={command.Plan.ElsaVersion}",
+            $"releaseLine={command.Plan.ReleaseLine}",
             $"sqlWorkflowPackageVersion={command.Plan.SqlWorkflowPackageVersion}", $"sqlQuartzPackageVersion={command.Plan.SqlQuartzPackageVersion}",
             $"templateFingerprint={command.Context.TemplateFingerprint}", "deployWorkload=true", $"workloadRevisionSuffix={revision}",
             $"stableTrafficRevisionName={stable ?? string.Empty}", "--query", "properties.outputs", "--output", "json", "--only-show-errors"];
@@ -1534,9 +1535,9 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             throw new InvalidOperationException("The Azure provider assignment does not authorize this runner command.");
         return assignment.ResourceGroupName;
     }
-    private static string FoundationDeploymentName(AzureProviderRunnerCommand command) => $"elsa108-{command.Plan.WorkloadName}-{command.Plan.Fingerprint[..12]}-foundation";
-    private static string WorkloadDeploymentName(AzureProviderRunnerCommand command) => $"elsa108-{command.Plan.WorkloadName}-{command.Plan.Fingerprint[..12]}-workload";
-    private string AcrDeploymentName(AzureProviderRunnerCommand command, string principalId) => $"elsa108-{command.Plan.WorkloadName}-{ShortHash($"{_scope.SubscriptionId}/{ResourceGroupName(command)}/{principalId}/{_scope.RegistrySubscriptionId}/{_scope.RegistryResourceGroupName}/{_scope.RegistryName}")}-acr";
+    private static string FoundationDeploymentName(AzureProviderRunnerCommand command) => $"elsa-{command.Plan.WorkloadName}-{command.Plan.Fingerprint[..12]}-foundation";
+    private static string WorkloadDeploymentName(AzureProviderRunnerCommand command) => $"elsa-{command.Plan.WorkloadName}-{command.Plan.Fingerprint[..12]}-workload";
+    private string AcrDeploymentName(AzureProviderRunnerCommand command, string principalId) => $"elsa-{command.Plan.WorkloadName}-{ShortHash($"{_scope.SubscriptionId}/{ResourceGroupName(command)}/{principalId}/{_scope.RegistrySubscriptionId}/{_scope.RegistryResourceGroupName}/{_scope.RegistryName}")}-acr";
     private static string ShortHash(string value) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)))[..12];
     private static string DeploymentId(string subscription, string resourceGroup, string name) => $"/subscriptions/{subscription}/resourceGroups/{resourceGroup}/providers/Microsoft.Resources/deployments/{name}";
     private static string Required(string? value, string name) => !string.IsNullOrWhiteSpace(value) ? value : throw new ArgumentException($"The Azure output {name} is missing.");
@@ -1595,10 +1596,10 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     }
 
     private bool OwnsGroup(IReadOnlyDictionary<string, string> tags, string workload) =>
-        tags.TryGetValue("proof", out var proof) && proof == ProofTag && tags.TryGetValue("owner", out var owner) && string.Equals(owner, _options.Owner, StringComparison.Ordinal) &&
-        tags.TryGetValue("proof-name", out var name) && string.Equals(name, workload, StringComparison.Ordinal) &&
-        tags.TryGetValue("sqlBootstrapObjectId", out var bootstrap) && string.Equals(bootstrap, _options.SqlBootstrapObjectId, StringComparison.Ordinal) &&
-        tags.TryGetValue("expiry", out var expiry) && string.Equals(expiry, _options.ExpiryUtc.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        tags.TryGetValue("managed-by", out var managedBy) && managedBy == ManagedByTag &&
+        tags.TryGetValue("owner", out var owner) && string.Equals(owner, _options.Owner, StringComparison.Ordinal) &&
+        tags.TryGetValue("workload-name", out var name) && string.Equals(name, workload, StringComparison.Ordinal) &&
+        tags.TryGetValue("sqlBootstrapObjectId", out var bootstrap) && string.Equals(bootstrap, _options.SqlBootstrapObjectId, StringComparison.Ordinal);
 
     private static SafeValue<bool> ParseBooleanAsync(ReadOnlyMemory<char> output) =>
         bool.TryParse(output.ToString().Trim(), out var value) ? new SafeValue<bool>(value) : throw new FormatException();

@@ -83,7 +83,7 @@ public sealed class AzureElsaInstanceProvider(
                 : new AzureProviderOperationSubmissionResult(
                     await operationService.SubmitAsync(request.WorkspaceId, submission, cancellationToken),
                     Replayed: false);
-            return new(result.Operation.OperationIdentity, result.Replayed);
+            return new(result.Operation.OperationIdentity, result.Replayed, submission.ProviderAssignmentId?.ToString("D"));
         }
         catch (OperationCanceledException)
         {
@@ -173,6 +173,20 @@ public sealed class AzureElsaInstanceProvider(
         request.Validate();
         EnsureEnabled();
 
+        if (request.PlacementAssignment is null ||
+            !Guid.TryParseExact(request.PlacementAssignment.AssignmentId, "D", out var assignmentId))
+            return CleanupUnknown(request, "deletion.provider-assignment-unavailable");
+
+        var assignment = await assignmentStore.GetAsync(request.WorkspaceId, assignmentId, cancellationToken);
+        if (assignment is null ||
+            assignment.Id != assignmentId ||
+            assignment.WorkspaceId != request.WorkspaceId ||
+            assignment.InstanceId != request.InstanceId ||
+            assignment.State == AzureProviderAssignmentState.Deleted ||
+            !string.Equals(assignment.ProviderScopeFingerprint, NormalizeScope(_options.ProviderScopeFingerprint), StringComparison.Ordinal) ||
+            !string.Equals(assignment.WorkloadName, WorkloadName(request.InstanceId), StringComparison.OrdinalIgnoreCase))
+            return CleanupUnknown(request, "deletion.provider-assignment-invalid", ElsaInstanceCleanupObservationKind.Ambiguous);
+
         var reconcile = await operationStore.GetLatestReconcileAsync(
             request.WorkspaceId,
             WorkloadName(request.InstanceId),
@@ -183,6 +197,7 @@ public sealed class AzureElsaInstanceProvider(
             reconcile.InstanceId != request.InstanceId ||
             reconcile.OrganizationId is null ||
             reconcile.Action != AzureProviderOperationAction.Reconcile ||
+            reconcile.ProviderAssignmentId != assignment.Id ||
             !string.Equals(reconcile.TargetKey, WorkloadName(request.InstanceId), StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(reconcile.ProviderScopeFingerprint, NormalizeScope(_options.ProviderScopeFingerprint), StringComparison.Ordinal) ||
             AzureProviderOperationService.TryRestorePlan(reconcile) is not { } plan)
@@ -201,7 +216,7 @@ public sealed class AzureElsaInstanceProvider(
                     reconcile.OrganizationId,
                     request.InstanceId,
                     ElsaInstanceOperationAction.Delete,
-                    reconcile.ProviderAssignmentId),
+                    assignment.Id),
                 cancellationToken);
         }
         catch (OperationCanceledException)

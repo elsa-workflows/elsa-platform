@@ -704,6 +704,36 @@ public sealed class AzureProviderExecutorTests
     }
 
     [Fact]
+    public async Task Bound_delete_uses_assignment_resources_instead_of_latest_reconcile_history()
+    {
+        var historical = new AzureProviderResourceReferences(ResourceGroupName: "historical-rg");
+        var assigned = new AzureProviderResourceReferences(
+            ResourceGroupName: "assigned-rg",
+            WorkloadResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/assigned-rg/providers/Microsoft.App/containerApps/app");
+        var store = new FakeOperationStore();
+        var request = CreateRequest(AzureProviderOperationAction.Delete) with
+        {
+            LifecycleAction = ElsaInstanceOperationAction.Delete
+        };
+        var runner = new RecordingRunner { CleanupResources = new(ResourceGroupName: "still-present") };
+        var assignmentStore = new FixedAssignmentStore(assigned, request.ProviderScopeFingerprint!);
+        var commercialGate = new ToggleCommercialGate { Allowed = true };
+        var executor = new AzureProviderExecutor(
+            store,
+            runner,
+            new StaticTimeProvider(Now),
+            TimeSpan.FromMinutes(5),
+            commercialGate: commercialGate,
+            assignmentStore: assignmentStore);
+
+        var result = await executor.DeleteAsync(request, CreatePlan());
+
+        Assert.True(runner.Commands.Count > 0, $"{result.Code}: {result.Message}");
+        Assert.Equal(assigned, runner.Commands.Single().Resources);
+        Assert.NotEqual(historical, runner.Commands.Single().Resources);
+    }
+
+    [Fact]
     public async Task Delete_happy_path_is_idempotent()
     {
         var store = new FakeOperationStore();
@@ -852,6 +882,36 @@ public sealed class AzureProviderExecutorTests
     private sealed class StaticTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class FixedAssignmentStore(AzureProviderResourceReferences resources, string providerScopeFingerprint) : IAzureProviderResourceAssignmentStore
+    {
+        public Task<AzureProviderResourceAssignment> CreateOrGetAsync(
+            AzureProviderResourceAssignmentRequest request,
+            DateTimeOffset now,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<AzureProviderResourceAssignment?> GetAsync(
+            Guid workspaceId,
+            Guid assignmentId,
+            CancellationToken cancellationToken = default) => Task.FromResult<AzureProviderResourceAssignment?>(new(
+                assignmentId,
+                workspaceId,
+                Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+                Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
+                providerScopeFingerprint,
+                1,
+                "11111111-1111-1111-1111-111111111111",
+                resources.ResourceGroupName!,
+                "workload-a",
+                new string('a', 64),
+                "westeurope",
+                AzureProviderAssignmentState.Active,
+                resources,
+                null,
+                1,
+                Now,
+                Now));
     }
 
     private sealed class RecordingRunner : IAzureProviderRunner

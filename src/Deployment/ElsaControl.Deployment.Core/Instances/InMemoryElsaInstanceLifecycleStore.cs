@@ -177,6 +177,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore(
                     {
                         Run = existingRun.Run with { RecoveryReason = "provider.submission.accepted" }
                     };
+                    _instances[instance.Id] = WithPlacementAssignment(instance, commit.PlacementAssignmentId);
                 }
                 return Task.CompletedTask;
             }
@@ -204,10 +205,21 @@ public sealed class InMemoryElsaInstanceLifecycleStore(
                 instance.Intent, ElsaObservedLifecycle.Unknown, ElsaInstanceHealth.Unknown, instance.Version,
                 instance.IdentityBinding, instance.DesiredStateRevisionId, instance.ResolvedPlanReference,
                 instance.CurrentResolvedRelease, instance.CurrentDeploymentReference,
-                instance.PlacementAssignmentReference, instance.ElsaTenantReference, instance.LastOperationId);
+                commit.PlacementAssignmentId is null
+                    ? instance.PlacementAssignmentReference
+                    : new ElsaPlacementAssignmentReference(commit.PlacementAssignmentId),
+                instance.ElsaTenantReference, instance.LastOperationId);
         }
         return Task.CompletedTask;
     }
+
+    private static ElsaInstance WithPlacementAssignment(ElsaInstance instance, string? assignmentId) =>
+        assignmentId is null ? instance : ElsaInstance.Hydrate(
+            instance.Id, instance.OrganizationId, instance.WorkspaceId, instance.Name, instance.Slug,
+            instance.Intent, instance.ObservedLifecycle, instance.Health, instance.Version,
+            instance.IdentityBinding, instance.DesiredStateRevisionId, instance.ResolvedPlanReference,
+            instance.CurrentResolvedRelease, instance.CurrentDeploymentReference,
+            new ElsaPlacementAssignmentReference(assignmentId), instance.ElsaTenantReference, instance.LastOperationId);
 
     public Task<IReadOnlyList<ElsaInstanceProviderPendingOperation>> ListPendingProviderOperationsAsync(
         int limit,

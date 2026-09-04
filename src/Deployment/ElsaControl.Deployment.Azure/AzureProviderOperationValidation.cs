@@ -596,6 +596,9 @@ public static class AzureProviderOperationValidation
     /// </summary>
     public static bool IsSafeSecretReference(string? value)
     {
+        if (AzureKeyVaultSecretLocator.TryParse(value, out _))
+            return true;
+
         if (string.IsNullOrWhiteSpace(value) || value.Length > 512 || value.Any(char.IsWhiteSpace) || value.Any(char.IsControl) ||
             value.Contains('\\') || value.Contains('%') || value.Contains('?') || value.Contains('#') ||
             value.Contains("/../", StringComparison.Ordinal) || value.Contains("/./", StringComparison.Ordinal) ||

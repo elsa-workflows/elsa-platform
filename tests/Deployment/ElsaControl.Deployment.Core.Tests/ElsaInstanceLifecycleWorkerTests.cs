@@ -223,6 +223,27 @@ public sealed class ElsaInstanceLifecycleWorkerTests
     }
 
     [Fact]
+    public async Task Accepted_provider_submission_persists_the_opaque_placement_assignment()
+    {
+        var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
+        var service = new ElsaInstanceLifecycleService(store, new StaticTimeProvider(Now));
+        var accepted = await service.CreateAsync(CreateRequest("claims-provider-assignment", "create-provider-assignment"));
+        store.RegisterResolutionInput(accepted.Operation.Id, ResolutionInput(accepted.Instance));
+        var assignmentId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee").ToString("D");
+
+        await new ElsaInstanceLifecycleWorker(
+                store,
+                new RecordingResolver(SuccessfulResolution(WorkspaceId, accepted.Instance.Id)),
+                new StaticTimeProvider(Now),
+                new RecordingSubmissionPort(placementAssignmentId: assignmentId),
+                store)
+            .ProcessAvailableAsync("lifecycle-worker-1");
+
+        var instance = Assert.IsType<ElsaInstance>(await store.GetInstanceAsync(WorkspaceId, accepted.Instance.Id));
+        Assert.Equal(assignmentId, instance.PlacementAssignmentReference?.AssignmentId);
+    }
+
+    [Fact]
     public async Task Invalid_deleting_provider_submission_is_not_reconstructed_for_replay()
     {
         var store = new InMemoryElsaInstanceLifecycleStore(new StaticTimeProvider(Now));
@@ -668,7 +689,8 @@ public sealed class ElsaInstanceLifecycleWorkerTests
 
     private sealed class RecordingSubmissionPort(
         bool throwOnSubmit = false,
-        ElsaInstanceProviderSubmissionFailureKind failureKind = ElsaInstanceProviderSubmissionFailureKind.OutcomeUnknown)
+        ElsaInstanceProviderSubmissionFailureKind failureKind = ElsaInstanceProviderSubmissionFailureKind.OutcomeUnknown,
+        string? placementAssignmentId = null)
         : IElsaInstanceProviderSubmissionPort
     {
         public List<ElsaInstanceProviderSubmission> Submissions { get; } = [];
@@ -684,7 +706,8 @@ public sealed class ElsaInstanceLifecycleWorkerTests
                 throw new ElsaInstanceProviderSubmissionException(failureKind);
             return Task.FromResult(new ElsaInstanceProviderSubmissionResult(
                 $"provider-operation-{request.OperationId:N}",
-                Replayed: Submissions.Count > 1));
+                Replayed: Submissions.Count > 1,
+                placementAssignmentId));
         }
     }
 

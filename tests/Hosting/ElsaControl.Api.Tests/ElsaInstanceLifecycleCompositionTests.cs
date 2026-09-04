@@ -85,7 +85,7 @@ public sealed class ElsaInstanceLifecycleCompositionTests : IDisposable
             SqlBootstrapObjectId = "11111111-1111-1111-1111-111111111111",
             SqlBootstrapLogin = "bootstrap",
             SqlBootstrapIp = "203.0.113.10",
-            ExpiryUtc = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1))
+            RuntimeAdminUsername = "runtime-admin"
         };
         var scope = new AzureProviderTargetScope(
             "11111111-1111-1111-1111-111111111111",

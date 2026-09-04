@@ -79,8 +79,8 @@ public sealed record AzureProviderRunnerOptions
     public string SqlBootstrapObjectId { get; init; } = "";
     public string SqlBootstrapLogin { get; init; } = "";
     public string SqlBootstrapIp { get; init; } = "";
+    public string RuntimeAdminUsername { get; init; } = "";
     public string Owner { get; init; } = "elsa-control";
-    public DateOnly ExpiryUtc { get; init; }
     public TimeSpan CommandTimeout { get; init; } = TimeSpan.FromMinutes(15);
     public int MaximumOutputCharacters { get; init; } = 1_048_576;
     public int ObservationAttempts { get; init; } = 60;
@@ -110,8 +110,8 @@ public sealed record AzureProviderRunnerOptions
             sqlBootstrapObjectId = SqlBootstrapObjectId.ToLowerInvariant(),
             sqlBootstrapLogin = SqlBootstrapLogin,
             sqlBootstrapIp = SqlBootstrapIp,
-            owner = Owner.ToLowerInvariant(),
-            expiryUtc = ExpiryUtc.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
+            runtimeAdminUsername = RuntimeAdminUsername,
+            owner = Owner.ToLowerInvariant()
         });
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
@@ -158,6 +158,8 @@ public sealed record AzureProviderRunnerOptions
             throw new ArgumentException("The SQL bootstrap object ID must be a canonical GUID.", nameof(SqlBootstrapObjectId));
         if (!Regex.IsMatch(SqlBootstrapLogin ?? "", "^[A-Za-z0-9._@#-]{1,128}\\z", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking))
             throw new ArgumentException("The SQL bootstrap login is unsafe.", nameof(SqlBootstrapLogin));
+        if (!Regex.IsMatch(RuntimeAdminUsername ?? "", "^[A-Za-z0-9._@#-]{1,128}\\z", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking))
+            throw new ArgumentException("The runtime administrator username is unsafe.", nameof(RuntimeAdminUsername));
         if (!System.Net.IPAddress.TryParse(SqlBootstrapIp, out var ip) ||
             ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork ||
             SqlBootstrapIp == "0.0.0.0" ||
@@ -165,8 +167,6 @@ public sealed record AzureProviderRunnerOptions
             throw new ArgumentException("The SQL bootstrap address must be one exact non-zero IPv4 address.", nameof(SqlBootstrapIp));
         if (!Regex.IsMatch(Owner ?? "", "^[a-z0-9][a-z0-9-]{0,62}\\z", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking))
             throw new ArgumentException("The Azure owner tag is unsafe.", nameof(Owner));
-        if (ExpiryUtc == default)
-            throw new ArgumentException("A disposable Azure expiry date is required.", nameof(ExpiryUtc));
         if (CommandTimeout <= TimeSpan.Zero || CommandTimeout > TimeSpan.FromHours(1))
             throw new ArgumentOutOfRangeException(nameof(CommandTimeout), "The command timeout must be positive and no longer than one hour.");
         if (MaximumOutputCharacters is < 1024 or > 16_777_216)

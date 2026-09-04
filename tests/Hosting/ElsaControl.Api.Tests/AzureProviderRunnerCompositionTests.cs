@@ -46,7 +46,7 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
             ["Deployment:AzureProvider:Runner:SqlBootstrapObjectId"] = "11111111-1111-1111-1111-111111111111",
             ["Deployment:AzureProvider:Runner:SqlBootstrapLogin"] = "bootstrap",
             ["Deployment:AzureProvider:Runner:SqlBootstrapIp"] = "203.0.113.10",
-            ["Deployment:AzureProvider:Runner:ExpiryUtc"] = "2026-09-02",
+            ["Deployment:AzureProvider:Runner:RuntimeAdminUsername"] = "runtime-admin",
             ["AZURE_CLIENT_ID"] = "33333333-3333-3333-3333-333333333333",
             ["Deployment:AzureProvider:Runner:TargetScope:SubscriptionId"] = "11111111-1111-1111-1111-111111111111",
             ["Deployment:AzureProvider:Runner:TargetScope:ResourceGroupName"] = "proof-rg",

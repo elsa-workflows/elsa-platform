@@ -118,7 +118,7 @@ public sealed class AzureProviderAuthorityPreflightTests : IDisposable
         SqlBootstrapObjectId = "11111111-1111-1111-1111-111111111111",
         SqlBootstrapLogin = "proof-bootstrap",
         SqlBootstrapIp = "203.0.113.10",
-        ExpiryUtc = new DateOnly(2026, 9, 2)
+        RuntimeAdminUsername = "runtime-admin"
     };
 
     private static AzureProviderTargetScope Scope() => new(

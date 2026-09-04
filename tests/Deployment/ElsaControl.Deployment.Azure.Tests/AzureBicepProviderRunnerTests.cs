@@ -8,6 +8,7 @@ namespace ElsaControl.Deployment.Azure.Tests;
 
 public sealed class AzureBicepProviderRunnerTests : IDisposable
 {
+    private const string OwnedGroupTags = "{\"managed-by\":\"elsa-control\",\"owner\":\"elsa-control\",\"workload-name\":\"proof\",\"sqlBootstrapObjectId\":\"11111111-1111-1111-1111-111111111111\"}";
     private readonly RunnerFixture _fixture = new();
 
     [Fact]
@@ -325,7 +326,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     {
         var process = new FakeCommandProcess();
         process.Success(args => args.Contains("group") && args.Contains("exists"), "true");
-        process.Success(args => args.Contains("group") && args.Contains("show"), "{\"proof\":\"108\",\"owner\":\"elsa-control\",\"proof-name\":\"proof\",\"expiry\":\"2026-09-02\",\"sqlBootstrapObjectId\":\"11111111-1111-1111-1111-111111111111\"}");
+        process.Success(args => args.Contains("group") && args.Contains("show"), OwnedGroupTags);
         process.Success(args => args.Contains("resource") && args.Contains("list"), "[{\"id\":\"/subscriptions/99999999-9999-9999-9999-999999999999/resourceGroups/foreign/providers/Microsoft.App/containerApps/other\",\"type\":\"Microsoft.App/containerApps\"}]");
 
         var result = await _fixture.Runner(process).RunAsync(_fixture.Command(AzureProviderRunnerStep.Cleanup));
@@ -341,7 +342,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         var process = new FakeCommandProcess();
         process.Success(args => args.Contains("group") && args.Contains("exists"), "true");
         process.Success(args => args.Contains("group") && args.Contains("exists"), "false");
-        process.Success(args => args.Contains("group") && args.Contains("show"), "{\"proof\":\"108\",\"owner\":\"elsa-control\",\"proof-name\":\"proof\",\"expiry\":\"2026-09-02\",\"sqlBootstrapObjectId\":\"11111111-1111-1111-1111-111111111111\"}");
+        process.Success(args => args.Contains("group") && args.Contains("show"), OwnedGroupTags);
         process.Success(args => args.Contains("resource") && args.Contains("list"),
             "[{\"id\":\"" + _fixture.FoundationResources.SqlServerResourceId + "/databases/elsa\",\"type\":\"Microsoft.Sql/servers/databases\"}]");
         process.Success(args => args.Contains("role") && args.Contains("assignment") && args.Contains("list"), "[]");
@@ -358,7 +359,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     {
         var process = new FakeCommandProcess();
         process.Success(args => args.Contains("group") && args.Contains("exists"), "true");
-        process.Success(args => args.Contains("group") && args.Contains("show"), "{\"proof\":\"108\",\"owner\":\"elsa-control\",\"proof-name\":\"proof\",\"expiry\":\"2026-09-02\",\"sqlBootstrapObjectId\":\"11111111-1111-1111-1111-111111111111\"}");
+        process.Success(args => args.Contains("group") && args.Contains("show"), OwnedGroupTags);
         process.Success(args => args.Contains("resource") && args.Contains("list"), "[]");
         process.Success(args => args.Contains("group") && args.Contains("delete"));
         process.Success(args => args.Contains("group") && args.Contains("exists"), "false");
@@ -376,7 +377,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     {
         var process = new FakeCommandProcess();
         process.Success(args => args.Contains("group") && args.Contains("exists"), "true");
-        process.Success(args => args.Contains("group") && args.Contains("show"), "{\"proof\":\"108\",\"owner\":\"elsa-control\",\"proof-name\":\"proof\",\"expiry\":\"2026-09-02\",\"sqlBootstrapObjectId\":\"11111111-1111-1111-1111-111111111111\"}");
+        process.Success(args => args.Contains("group") && args.Contains("show"), OwnedGroupTags);
         process.Success(args => args.Contains("resource") && args.Contains("list"),
             "[{\"id\":\"" + _fixture.FoundationResources.KeyVaultResourceId + "\",\"type\":\"Microsoft.KeyVault/vaults\"}]");
         process.Success(args => args.Contains("role") && args.Contains("assignment") && args.Contains("list"),
@@ -395,7 +396,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     {
         var process = new FakeCommandProcess();
         process.Success(args => args.Contains("group") && args.Contains("exists"), "true");
-        process.Success(args => args.Contains("group") && args.Contains("show"), "{\"proof\":\"108\",\"owner\":\"elsa-control\",\"proof-name\":\"proof\",\"expiry\":\"2026-09-02\",\"sqlBootstrapObjectId\":\"11111111-1111-1111-1111-111111111111\"}");
+        process.Success(args => args.Contains("group") && args.Contains("show"), OwnedGroupTags);
         process.Success(args => args.Contains("resource") && args.Contains("list"),
             "[{\"id\":\"" + _fixture.FoundationResources.WorkloadIdentityResourceId + "\",\"type\":\"Microsoft.ManagedIdentity/userAssignedIdentities\"}," +
             "{\"id\":\"" + _fixture.FoundationResources.KeyVaultResourceId + "\",\"type\":\"Microsoft.KeyVault/vaults\"}]");
@@ -451,7 +452,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     {
         var process = new FakeCommandProcess();
         process.Success(args => args.Contains("group") && args.Contains("exists"), "true");
-        process.Success(args => args.Contains("group") && args.Contains("show"), "{\"proof\":\"108\",\"owner\":\"elsa-control\",\"proof-name\":\"proof\",\"expiry\":\"2026-09-02\",\"sqlBootstrapObjectId\":\"11111111-1111-1111-1111-111111111111\"}");
+        process.Success(args => args.Contains("group") && args.Contains("show"), OwnedGroupTags);
         process.Success(args => args.Contains("resource") && args.Contains("list"),
             "[{\"id\":\"" + _fixture.FoundationResources.KeyVaultResourceId + "\",\"type\":\"Microsoft.KeyVault/vaults\"}]");
         process.Success(args => args.Contains("role") && args.Contains("assignment") && args.Contains("list"), "[{\"scope\":\"" + _fixture.FoundationResources.KeyVaultResourceId + "\",\"principalId\":\"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\",\"roleDefinitionId\":\"/providers/Microsoft.Authorization/roleDefinitions/4633458b-17de-408a-b874-0445c86b69e6\"},{\"scope\":\"" + _fixture.FoundationResources.KeyVaultResourceId + "\",\"principalId\":\"11111111-1111-1111-1111-111111111111\",\"roleDefinitionId\":\"/providers/Microsoft.Authorization/roleDefinitions/b86a8fe4-44ce-4948-aee5-eccb2c155cd7\"}]");
@@ -478,7 +479,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         var resources = _fixture.FoundationResources with
         {
             RegistryResourceId = _fixture.RegistryId,
-            AcrPullDeploymentId = _fixture.RegistryDeploymentId.Replace("elsa108-proof-", "foreign-", StringComparison.Ordinal),
+            AcrPullDeploymentId = _fixture.RegistryDeploymentId.Replace("elsa-proof-", "foreign-", StringComparison.Ordinal),
             AcrPullRoleAssignmentId = _fixture.RegistryRoleAssignmentId
         };
 
@@ -596,7 +597,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     {
         var process = new FakeCommandProcess();
         process.Success(args => args is ["group", "exists", ..], "true");
-        process.Success(args => args is ["group", "show", ..], "{\"proof\":\"108\",\"owner\":\"elsa-control\",\"proof-name\":\"proof\",\"expiry\":\"2026-09-02\",\"sqlBootstrapObjectId\":\"11111111-1111-1111-1111-111111111111\"}");
+        process.Success(args => args is ["group", "show", ..], OwnedGroupTags);
         process.Success(args => args is ["tag", "update", ..]);
         process.Success(args => args.Contains("sql") && args.Contains("server") && args.Contains("list"), "1");
         process.Success(args => args.Contains("ad-admin") && args.Contains("list"), "[]");
@@ -772,7 +773,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     {
         var process = new FakeCommandProcess();
         process.Success(args => args.Contains("group") && args.Contains("exists"), "true");
-        process.Success(args => args.Contains("group") && args.Contains("show"), "{\"proof\":\"108\",\"owner\":\"elsa-control\",\"proof-name\":\"proof\",\"expiry\":\"2026-09-02\",\"sqlBootstrapObjectId\":\"11111111-1111-1111-1111-111111111111\"}");
+        process.Success(args => args.Contains("group") && args.Contains("show"), OwnedGroupTags);
         process.Success(args => args.Contains("resource") && args.Contains("list"),
             "[{\"id\":\"" + _fixture.FoundationResources.KeyVaultResourceId + "\",\"type\":\"Microsoft.KeyVault/vaults\"}]");
         process.Success(args => args.Contains("role") && args.Contains("assignment") && args.Contains("list"), "[{\"scope\":\"" + _fixture.FoundationResources.KeyVaultResourceId + "\",\"principalId\":\"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\",\"roleDefinitionId\":\"/providers/Microsoft.Authorization/roleDefinitions/4633458b-17de-408a-b874-0445c86b69e6\"},{\"scope\":\"" + _fixture.FoundationResources.KeyVaultResourceId + "\",\"principalId\":\"11111111-1111-1111-1111-111111111111\",\"roleDefinitionId\":\"/providers/Microsoft.Authorization/roleDefinitions/b86a8fe4-44ce-4948-aee5-eccb2c155cd7\"}]");
@@ -858,7 +859,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     {
         var process = new FakeCommandProcess();
         process.Success(args => args.Contains("group") && args.Contains("exists") && args.Contains("proof-rg"), "true");
-        process.Success(args => args.Contains("group") && args.Contains("show"), "{\"proof\":\"108\",\"owner\":\"elsa-control\",\"proof-name\":\"proof\",\"expiry\":\"2026-09-02\",\"sqlBootstrapObjectId\":\"11111111-1111-1111-1111-111111111111\"}");
+        process.Success(args => args.Contains("group") && args.Contains("show"), OwnedGroupTags);
         process.Success(args => args.Contains("resource") && args.Contains("list"),
             "[{\"id\":\"" + _fixture.FoundationResources.WorkloadIdentityResourceId + "\",\"type\":\"Microsoft.ManagedIdentity/userAssignedIdentities\"}]");
         process.Failure(args => args.Contains("role") && args.Contains("list"));
@@ -976,7 +977,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
                 SqlBootstrapObjectId = "11111111-1111-1111-1111-111111111111",
                 SqlBootstrapLogin = "proof-bootstrap",
                 SqlBootstrapIp = "203.0.113.10",
-                ExpiryUtc = new DateOnly(2026, 9, 2),
+                RuntimeAdminUsername = "runtime-admin",
                 ObservationAttempts = observationAttempts,
                 ObservationDelay = TimeSpan.Zero
             };
@@ -1006,7 +1007,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
             SqlServerFqdn: "proof-sql.database.windows.net",
             ContainerAppsEnvironmentResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.App/managedEnvironments/proof-aca");
         public string RegistryId => "/subscriptions/22222222-2222-2222-2222-222222222222/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/valenceruntimeimages";
-        public string RegistryDeploymentId => "/subscriptions/22222222-2222-2222-2222-222222222222/resourceGroups/registry-rg/providers/Microsoft.Resources/deployments/elsa108-proof-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes("11111111-1111-1111-1111-111111111111/proof-rg/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/22222222-2222-2222-2222-222222222222/registry-rg/valenceruntimeimages")))[..12] + "-acr";
+        public string RegistryDeploymentId => "/subscriptions/22222222-2222-2222-2222-222222222222/resourceGroups/registry-rg/providers/Microsoft.Resources/deployments/elsa-proof-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes("11111111-1111-1111-1111-111111111111/proof-rg/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/22222222-2222-2222-2222-222222222222/registry-rg/valenceruntimeimages")))[..12] + "-acr";
         public string RegistryRoleAssignmentId => RegistryId + "/providers/Microsoft.Authorization/roleAssignments/cccccccc-cccc-cccc-cccc-cccccccccccc";
         public string AppId => "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.App/containerApps/proof-app";
         public string WorkloadDeploymentId => "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.Resources/deployments/workload";

@@ -1725,6 +1725,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 run.RecoveryReason = "provider.submission.accepted";
                 run.WorkerId = null;
                 run.WorkerHeartbeatAt = null;
+                if (commit.PlacementAssignmentId is not null)
+                    instance.PlacementAssignmentId = commit.PlacementAssignmentId;
                 await dbContext.ElsaInstanceAuditEvents.AddAsync(await CreateAuditEventAsync(
                     instance,
                     operation,
@@ -1761,6 +1763,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             : "provider.submission.accepted";
         run.WorkerId = null;
         run.WorkerHeartbeatAt = null;
+        if (commit.PlacementAssignmentId is not null)
+            instance.PlacementAssignmentId = commit.PlacementAssignmentId;
         await dbContext.ElsaInstanceAuditEvents.AddAsync(await CreateAuditEventAsync(
             instance,
             operation,

@@ -85,7 +85,7 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
     }
 
     [Fact]
-    public void Provider_scope_fingerprint_binds_bootstrap_authority_and_expiry()
+    public void Provider_scope_fingerprint_binds_bootstrap_and_template_authority()
     {
         var options = ValidOptions();
         var scope = ValidScope();
@@ -93,9 +93,6 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
         Assert.NotEqual(
             options.ComputeProviderScopeFingerprint(scope),
             (options with { SqlBootstrapIp = "203.0.113.11" }).ComputeProviderScopeFingerprint(scope));
-        Assert.NotEqual(
-            options.ComputeProviderScopeFingerprint(scope),
-            (options with { ExpiryUtc = options.ExpiryUtc.AddDays(1) }).ComputeProviderScopeFingerprint(scope));
         var original = options.ComputeProviderScopeFingerprint(scope);
         File.AppendAllText(Path.Combine(_templateRoot, "main.bicep"), "\n// changed");
         Assert.NotEqual(original, options.ComputeProviderScopeFingerprint(scope));
@@ -236,7 +233,7 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
         SqlBootstrapObjectId = "11111111-1111-1111-1111-111111111111",
         SqlBootstrapLogin = "proof-bootstrap",
         SqlBootstrapIp = "203.0.113.10",
-        ExpiryUtc = new DateOnly(2026, 9, 2)
+        RuntimeAdminUsername = "runtime-admin"
     };
 
     private static AzureProviderTargetScope ValidScope() => new(

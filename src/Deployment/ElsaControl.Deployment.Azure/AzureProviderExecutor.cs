@@ -152,16 +152,21 @@ public sealed class AzureProviderExecutor
 
         if (claimed.Action == AzureProviderOperationAction.Delete)
         {
-            // Delete is a separate idempotent operation from reconcile. Carry the latest
-            // provider-owned resource snapshot into it so cleanup cannot silently become a
-            // vacuous no-op after a successful apply.
-            var latestReconcile = await _store.GetLatestReconcileAsync(
-                claimed.WorkspaceId,
-                claimed.TargetKey,
-                claimed.ProviderScopeFingerprint,
-                CancellationToken.None);
-            if (latestReconcile is not null)
-                claimed = claimed with { Resources = latestReconcile.Resources };
+            // The durable assignment is the ownership authority. A legacy unbound test seam may
+            // still recover the latest reconcile snapshot, but production delete never infers
+            // ownership from whichever operation happened to be most recent.
+            if (assignment is not null)
+                claimed = claimed with { Resources = assignment.Resources };
+            else
+            {
+                var latestReconcile = await _store.GetLatestReconcileAsync(
+                    claimed.WorkspaceId,
+                    claimed.TargetKey,
+                    claimed.ProviderScopeFingerprint,
+                    CancellationToken.None);
+                if (latestReconcile is not null)
+                    claimed = claimed with { Resources = latestReconcile.Resources };
+            }
 
             return await ExecuteDeleteAsync(request.Plan, claimed, assignment, leaseToken, cancellationToken);
         }
@@ -959,7 +964,7 @@ public sealed class AzureProviderExecutor
             assignment.InstanceId != operation.InstanceId ||
             !string.Equals(assignment.ProviderScopeFingerprint, operation.ProviderScopeFingerprint, StringComparison.Ordinal) ||
             !string.Equals(assignment.WorkloadName, operation.TargetKey, StringComparison.OrdinalIgnoreCase) ||
-            assignment.State == AzureProviderAssignmentState.Deleted)
+            assignment.State is AzureProviderAssignmentState.Unknown or AzureProviderAssignmentState.Deleting or AzureProviderAssignmentState.Deleted)
             throw new InvalidOperationException("The provider assignment binding is invalid.");
         return assignment;
     }

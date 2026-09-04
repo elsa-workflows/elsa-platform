@@ -199,13 +199,19 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
     {
         ArgumentNullException.ThrowIfNull(request);
         ValidateAssignmentRequest(request);
+        await using var transaction = await db.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable, cancellationToken);
         var existing = await db.AzureProviderResourceAssignments
             .SingleOrDefaultAsync(x => x.WorkspaceId == request.WorkspaceId &&
                                        x.InstanceId == request.InstanceId &&
                                        x.ProviderScopeFingerprint == request.ProviderScopeFingerprint,
                 cancellationToken);
         if (existing is not null)
+        {
+            EnsureSameAssignment(existing, request);
+            await transaction.CommitAsync(cancellationToken);
             return ToModel(existing);
+        }
 
         var assignmentId = Guid.NewGuid();
         var resourceGroupName = AzureProviderResourceAssignmentNaming.ResourceGroupName(
@@ -230,8 +236,26 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
             UpdatedAt = now
         };
         db.AzureProviderResourceAssignments.Add(entity);
-        await db.SaveChangesAsync(cancellationToken);
-        return ToModel(entity);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return ToModel(entity);
+        }
+        catch (DbUpdateException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            db.ChangeTracker.Clear();
+            existing = await db.AzureProviderResourceAssignments.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.WorkspaceId == request.WorkspaceId &&
+                                           x.InstanceId == request.InstanceId &&
+                                           x.ProviderScopeFingerprint == request.ProviderScopeFingerprint,
+                    cancellationToken);
+            if (existing is null)
+                throw;
+            EnsureSameAssignment(existing, request);
+            return ToModel(existing);
+        }
     }
 
     async Task<AzureProviderResourceAssignment?> IAzureProviderResourceAssignmentStore.GetAsync(
@@ -544,6 +568,22 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
         entity.AcrPullRoleAssignmentId = resources.AcrPullRoleAssignmentId;
         entity.Endpoint = endpoint; entity.Health = health;
         entity.DiagnosticsJson = diagnosticsJson;
+        if (entity.ProviderAssignmentId is { } assignmentId)
+        {
+            var assignment = await db.AzureProviderResourceAssignments.SingleOrDefaultAsync(
+                x => x.Id == assignmentId && x.WorkspaceId == workspaceId,
+                cancellationToken);
+            if (assignment is null || assignment.OrganizationId != entity.OrganizationId || assignment.InstanceId != entity.InstanceId)
+                throw new InvalidOperationException("The Azure provider assignment binding is invalid.");
+            ApplyAssignmentResources(assignment, resources);
+            assignment.LastOperationId = entity.Id;
+            assignment.State = checkpoint.Phase == AzureProviderOperationPhase.CleanupVerified
+                ? AzureProviderAssignmentState.Deleted
+                : AzureProviderAssignmentState.Provisioning;
+            assignment.DeletedAt = checkpoint.Phase == AzureProviderOperationPhase.CleanupVerified ? now : null;
+            assignment.UpdatedAt = now;
+            assignment.Version++;
+        }
         AddTransition(entity, checkpoint.Code, checkpoint.Code, now);
         try { await db.SaveChangesAsync(cancellationToken); } catch (DbUpdateConcurrencyException) { db.ChangeTracker.Clear(); return null; }
         return ToModel(entity);
@@ -567,6 +607,25 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
         entity.CompletionLeaseTokenHash = entity.LeaseTokenHash;
         entity.CompletionFingerprint = completionFingerprint;
         entity.LeaseTokenHash = null; entity.LeaseExpiresAt = null; entity.WorkerId = null;
+        if (entity.ProviderAssignmentId is { } assignmentId)
+        {
+            var assignment = await db.AzureProviderResourceAssignments.SingleOrDefaultAsync(
+                x => x.Id == assignmentId && x.WorkspaceId == workspaceId,
+                cancellationToken);
+            if (assignment is null)
+                throw new InvalidOperationException("The Azure provider assignment binding is unavailable.");
+            assignment.LastOperationId = entity.Id;
+            assignment.State = status switch
+            {
+                AzureProviderOperationStatus.Succeeded when entity.Action == AzureProviderOperationAction.Delete => AzureProviderAssignmentState.Deleted,
+                AzureProviderOperationStatus.Succeeded => AzureProviderAssignmentState.Active,
+                AzureProviderOperationStatus.RecoveryRequired => AzureProviderAssignmentState.Unknown,
+                _ => assignment.State
+            };
+            assignment.DeletedAt = assignment.State == AzureProviderAssignmentState.Deleted ? now : null;
+            assignment.UpdatedAt = now;
+            assignment.Version++;
+        }
         AddTransition(entity, code, code, now);
         try { await db.SaveChangesAsync(cancellationToken); } catch (DbUpdateConcurrencyException) { db.ChangeTracker.Clear(); return null; }
         return ToModel(entity);
@@ -768,6 +827,44 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
             throw new ArgumentException("The Azure provider assignment request is invalid.", nameof(request));
         _ = AzureProviderResourceAssignmentNaming.ResourceGroupName(
             request.ResourceGroupNamePrefix, request.InstanceId, request.NamingVersion);
+    }
+
+    private static void EnsureSameAssignment(
+        AzureProviderResourceAssignmentEntity existing,
+        AzureProviderResourceAssignmentRequest request)
+    {
+        var expectedGroup = AzureProviderResourceAssignmentNaming.ResourceGroupName(
+            request.ResourceGroupNamePrefix, request.InstanceId, request.NamingVersion);
+        if (existing.OrganizationId != request.OrganizationId ||
+            existing.NamingVersion != request.NamingVersion ||
+            !string.Equals(existing.SubscriptionId, request.SubscriptionId, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(existing.ResourceGroupName, expectedGroup, StringComparison.Ordinal) ||
+            !string.Equals(existing.WorkloadName, request.WorkloadName, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(existing.Location, request.Location, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("The existing Azure provider assignment does not match the requested authority.");
+    }
+
+    private static void ApplyAssignmentResources(
+        AzureProviderResourceAssignmentEntity assignment,
+        AzureProviderResourceReferences resources)
+    {
+        assignment.ResourceGroupName = resources.ResourceGroupName ?? assignment.ResourceGroupName;
+        assignment.FoundationDeploymentId = resources.FoundationDeploymentId;
+        assignment.WorkloadDeploymentId = resources.WorkloadDeploymentId;
+        assignment.WorkloadResourceId = resources.WorkloadResourceId;
+        assignment.WorkloadRevisionName = resources.WorkloadRevisionName;
+        assignment.StableTrafficRevisionName = resources.StableTrafficRevisionName;
+        assignment.WorkloadIdentityResourceId = resources.WorkloadIdentityResourceId;
+        assignment.WorkloadIdentityClientId = resources.WorkloadIdentityClientId;
+        assignment.WorkloadIdentityPrincipalId = resources.WorkloadIdentityPrincipalId;
+        assignment.KeyVaultResourceId = resources.KeyVaultResourceId;
+        assignment.KeyVaultUri = resources.KeyVaultUri;
+        assignment.SqlServerResourceId = resources.SqlServerResourceId;
+        assignment.SqlServerFqdn = resources.SqlServerFqdn;
+        assignment.ContainerAppsEnvironmentResourceId = resources.ContainerAppsEnvironmentResourceId;
+        assignment.RegistryResourceId = resources.RegistryResourceId;
+        assignment.AcrPullDeploymentId = resources.AcrPullDeploymentId;
+        assignment.AcrPullRoleAssignmentId = resources.AcrPullRoleAssignmentId;
     }
 
     private static (IReadOnlyList<AzureProviderDiagnostic> Diagnostics, bool Invalid) ReadDiagnostics(string? json)

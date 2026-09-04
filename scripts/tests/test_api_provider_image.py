@@ -39,7 +39,7 @@ class ApiProviderImageTests(unittest.TestCase):
             "Deployment__AzureProvider__Runner__SqlCmdPath=/usr/local/bin/sqlcmd",
             "Deployment__AzureProvider__Runner__CurlPath=/usr/bin/curl",
             "Deployment__AzureProvider__Runner__TemplateRoot=/app/azure-provider",
-            "COPY infra/azure-workload-proof/ /app/azure-provider/",
+            "COPY infra/azure-production/ /app/azure-provider/",
         ):
             self.assertIn(expected, self.source)
 

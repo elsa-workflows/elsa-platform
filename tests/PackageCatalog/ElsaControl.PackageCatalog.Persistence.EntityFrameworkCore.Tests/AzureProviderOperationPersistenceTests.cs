@@ -52,6 +52,47 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Checkpoint_and_finalize_update_the_bound_assignment_atomically()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var organizationId = Guid.NewGuid();
+        var instanceId = Guid.NewGuid();
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var assignment = await Assignment(store, organizationId, instanceId, now);
+        var operation = await store.CreateOrGetAsync(Request() with
+        {
+            OrganizationId = organizationId,
+            InstanceId = instanceId,
+            LifecycleAction = ElsaInstanceOperationAction.Reconcile,
+            ProviderAssignmentId = assignment.Id
+        }, now);
+        var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now, operation.Version));
+        var resources = new AzureProviderResourceReferences(
+            assignment.ResourceGroupName,
+            FoundationDeploymentId: $"/subscriptions/{assignment.SubscriptionId}/resourceGroups/{assignment.ResourceGroupName}/providers/Microsoft.Resources/deployments/foundation");
+
+        var checkpointed = Assert.IsType<AzureProviderOperation>(await store.CheckpointAsync(
+            _workspaceId,
+            operation.Id,
+            "lease",
+            new(AzureProviderOperationPhase.FoundationReady, "foundation.ready", "ignored", resources, null, AzureProviderHealth.Unknown, []),
+            now,
+            claimed.Version));
+        var during = Assert.IsType<AzureProviderResourceAssignment>(await ((IAzureProviderResourceAssignmentStore)store).GetAsync(_workspaceId, assignment.Id));
+        Assert.Equal(AzureProviderAssignmentState.Provisioning, during.State);
+        Assert.Equal(resources.FoundationDeploymentId, during.Resources.FoundationDeploymentId);
+        Assert.Equal(operation.Id, during.LastOperationId);
+
+        _ = Assert.IsType<AzureProviderOperation>(await store.FinalizeAsync(
+            _workspaceId, operation.Id, "lease", AzureProviderOperationStatus.Succeeded, "operation.succeeded", now, checkpointed.Version));
+        var active = Assert.IsType<AzureProviderResourceAssignment>(await ((IAzureProviderResourceAssignmentStore)store).GetAsync(_workspaceId, assignment.Id));
+        Assert.Equal(AzureProviderAssignmentState.Active, active.State);
+        Assert.Null(active.DeletedAt);
+    }
+
+    [Fact]
     public async Task Commercial_denial_is_authorized_and_held_in_the_same_operation_CAS()
     {
         var now = DateTimeOffset.UtcNow;

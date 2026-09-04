@@ -36,6 +36,8 @@ public sealed class AzureElsaInstanceProviderTests
         Assert.False(first.Replayed);
         Assert.True(second.Replayed);
         Assert.Equal(first.CorrelationId, second.CorrelationId);
+        Assert.Equal("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", first.PlacementAssignmentId);
+        Assert.Equal(first.PlacementAssignmentId, second.PlacementAssignmentId);
         Assert.Equal(2, service.Submissions.Count);
         Assert.Equal(service.Submissions[0].IdempotencyKey, service.Submissions[1].IdempotencyKey);
         Assert.Equal($"elsa-instance-operation:{operationId:D}", service.Submissions[0].IdempotencyKey);
@@ -381,10 +383,32 @@ public sealed class AzureElsaInstanceProviderTests
             Endpoint = null
         };
         var service = new CapturingOperationService(reconcile) { DeleteOperation = delete };
-        var provider = new AzureElsaInstanceProvider(service, new CapturingOperationStore(reconcile), new InMemoryAssignmentStore(), options: EnabledOptions());
+        var assignmentStore = new InMemoryAssignmentStore();
+        var assignment = await assignmentStore.CreateOrGetAsync(new(
+            workspaceId,
+            TestOrganizationId,
+            TestInstanceId,
+            new string('a', 64),
+            "11111111-1111-1111-1111-111111111111",
+            "rg-elsa",
+            AzureElsaInstanceProvider.WorkloadName(TestInstanceId),
+            "westeurope"),
+            DateTimeOffset.UtcNow);
+        reconcile = reconcile with { ProviderAssignmentId = assignment.Id };
+        reconcile = reconcile with
+        {
+            RequestHash = AzureProviderOperationValidation.ComputeRequestHash(
+                AzureProviderOperationService.CreateOperationRequest(reconcile)),
+            OperationIdentity = AzureProviderOperationValidation.ComputeOperationIdentity(
+                AzureProviderOperationService.CreateOperationRequest(reconcile))
+        };
+        delete = delete with { ProviderAssignmentId = assignment.Id };
+        service = new CapturingOperationService(reconcile) { DeleteOperation = delete };
+        var provider = new AzureElsaInstanceProvider(service, new CapturingOperationStore(reconcile), assignmentStore, options: EnabledOptions());
 
         var result = await provider.CleanupAsync(new(
-            workspaceId, TestInstanceId, lifecycleOperationId, 3, null, null, null));
+            workspaceId, TestInstanceId, lifecycleOperationId, 3, null,
+            new ElsaPlacementAssignmentReference(assignment.Id.ToString("D")), null));
 
         Assert.Equal("deletion.provider-confirmed-absent", result.DiagnosticCode);
         Assert.Equal(ElsaInstanceCleanupObservationKind.ConfirmedAbsent, result.Kind);
@@ -404,10 +428,11 @@ public sealed class AzureElsaInstanceProviderTests
         var operationId = Guid.NewGuid();
 
         var result = await provider.CleanupAsync(new(
-            Guid.NewGuid(), TestInstanceId, operationId, 1, null, null, null));
+            Guid.NewGuid(), TestInstanceId, operationId, 1, null,
+            new ElsaPlacementAssignmentReference(Guid.NewGuid().ToString("D")), null));
 
-        Assert.Equal(ElsaInstanceCleanupObservationKind.Unknown, result.Kind);
-        Assert.Equal("deletion.provider-plan-unavailable", result.DiagnosticCode);
+        Assert.Equal(ElsaInstanceCleanupObservationKind.Ambiguous, result.Kind);
+        Assert.Equal("deletion.provider-assignment-invalid", result.DiagnosticCode);
         Assert.Empty(service.DeleteSubmissions);
     }
 

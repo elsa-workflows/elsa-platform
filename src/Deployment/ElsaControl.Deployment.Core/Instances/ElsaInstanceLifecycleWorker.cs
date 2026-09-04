@@ -210,7 +210,8 @@ public sealed class ElsaInstanceLifecycleWorker(
                         submission.OperationId,
                         submission.AttemptNumber,
                         submitted.CorrelationId,
-                        _timeProvider.GetUtcNow()), cancellationToken);
+                        _timeProvider.GetUtcNow(),
+                        submitted.PlacementAssignmentId), cancellationToken);
             }
             catch (OperationCanceledException)
             {
