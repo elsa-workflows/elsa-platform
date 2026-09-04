@@ -48,9 +48,9 @@ internal static class AzureProviderRunnerComposition
         var secretSection = configuration.GetSection("Deployment:AzureProvider:Secrets");
         if (secretSection.GetChildren().Any())
         {
-            // Production composition uses a managed identity resolver, which only supports
-            // immutable, versioned Key Vault locators. Keep the validation at startup so a
-            // generic provider-neutral secret:// locator cannot survive until seeding.
+            // External secrets require immutable, versioned Key Vault locators. The exact
+            // provider-owned SQL instruction is the only internal exception; generic
+            // provider-neutral secret:// locators must not survive until seeding.
             _ = ConfiguredAzureSecretResolver.ReadNamedReferences(configuration);
         }
 
