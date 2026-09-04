@@ -232,11 +232,15 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSourceTests : IAs
         var provider = new AzureElsaInstanceProvider(
             new AzureProviderOperationService(operationStore),
             operationStore,
+            operationStore,
+            options:
             new AzureElsaInstanceProviderOptions
             {
                 Enabled = true,
                 TemplateFingerprint = new string('b', 64),
-                ProviderScopeFingerprint = new string('a', 64)
+                ProviderScopeFingerprint = new string('a', 64),
+                SubscriptionId = "11111111-1111-1111-1111-111111111111",
+                ResourceGroupNamePrefix = "rg-elsa"
             });
 
         var submission = await provider.SubmitAsync(new(

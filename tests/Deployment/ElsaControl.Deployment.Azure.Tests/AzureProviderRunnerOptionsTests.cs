@@ -105,6 +105,26 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
     }
 
     [Fact]
+    public void Provider_scope_fingerprint_binds_the_managed_identity_client_id()
+    {
+        var options = ValidOptions();
+        var scope = ValidScope();
+        var original = options.ComputeProviderScopeFingerprint(scope);
+
+        Assert.NotEqual(
+            original,
+            (options with { AzureCliClientId = "44444444-4444-4444-4444-444444444444" }).ComputeProviderScopeFingerprint(scope));
+    }
+
+    [Theory]
+    [InlineData("33333333-3333-3333-3333-33333333333A")]
+    [InlineData("not-a-guid")]
+    public void Rejects_an_unsafe_managed_identity_client_id(string clientId)
+    {
+        Assert.Throws<ArgumentException>(() => (ValidOptions() with { AzureCliClientId = clientId }).Validate());
+    }
+
+    [Fact]
     public void Concrete_execution_requires_the_exact_durable_authority_fingerprint()
     {
         var options = ValidOptions();
@@ -112,9 +132,12 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
         var context = new AzureProviderExecutionContext(
             Guid.NewGuid(),
             Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
             "operation-identity",
             "idempotency-key",
             "target-key",
+            "provider-assignment",
             new string('a', 64),
             new string('b', 64),
             options.ComputeProviderScopeFingerprint(scope));
@@ -175,7 +198,7 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
     [InlineData("file:///tmp/secret", false)]
     public void Secret_resolution_request_accepts_only_approved_opaque_locators(string reference, bool accepted)
     {
-        var request = new AzureSecretResolutionRequest(Guid.NewGuid(), "database", reference);
+        var request = SecretRequest("database", reference);
         if (accepted)
             request.Validate();
         else
@@ -189,7 +212,7 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
     public void Secret_resolution_request_rejects_noncanonical_names(string name)
     {
         Assert.Throws<ArgumentException>(() =>
-            new AzureSecretResolutionRequest(Guid.NewGuid(), name, "secret://vault/database").Validate());
+            SecretRequest(name, "secret://vault/database").Validate());
     }
 
     [Fact]
@@ -197,7 +220,7 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
     {
         var resolver = new UnconfiguredAzureSecretResolver();
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await resolver.ResolveAsync(new(Guid.NewGuid(), "database", "secret://vault/database")));
+            await resolver.ResolveAsync(SecretRequest("database", "secret://vault/database")));
     }
 
     public void Dispose() => Directory.Delete(_templateRoot, recursive: true);
@@ -205,6 +228,7 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
     private AzureProviderRunnerOptions ValidOptions() => new()
     {
         Enabled = true,
+        AzureCliClientId = "33333333-3333-3333-3333-333333333333",
         AzureCliPath = Path.Combine(_templateRoot, "az"),
         SqlCmdPath = Path.Combine(_templateRoot, "sqlcmd"),
         CurlPath = Path.Combine(_templateRoot, "curl"),
@@ -222,4 +246,12 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
         "registry-rg",
         "valenceruntimeimages",
         "westeurope");
+
+    private static AzureSecretResolutionRequest SecretRequest(string name, string reference) => new(
+        Guid.NewGuid(),
+        Guid.NewGuid(),
+        Guid.NewGuid(),
+        "provider-assignment",
+        name,
+        reference);
 }

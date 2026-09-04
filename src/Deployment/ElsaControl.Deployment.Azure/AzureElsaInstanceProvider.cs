@@ -12,11 +12,15 @@ namespace ElsaControl.Deployment.Azure;
 public sealed class AzureElsaInstanceProvider(
     IAzureProviderOperationService operationService,
     IAzureProviderOperationStore operationStore,
+    IAzureProviderResourceAssignmentStore assignmentStore,
+    TimeProvider? timeProvider = null,
     AzureElsaInstanceProviderOptions? options = null) :
     IElsaInstanceProviderSubmissionPort,
-    IElsaInstanceProviderReconciliationPort
+    IElsaInstanceProviderReconciliationPort,
+    IElsaInstanceProviderCleanupPort
 {
     private readonly AzureElsaInstanceProviderOptions _options = options ?? new();
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     public async Task<ElsaInstanceProviderSubmissionResult> SubmitAsync(
         ElsaInstanceProviderSubmission request,
@@ -38,6 +42,19 @@ public sealed class AzureElsaInstanceProvider(
             if (!translation.IsAccepted)
                 throw new InvalidOperationException("The resolved plan is outside the governed Azure provider profile.");
 
+            var assignment = await assignmentStore.CreateOrGetAsync(
+                new(
+                    request.WorkspaceId,
+                    request.OrganizationId!.Value,
+                    request.InstanceId,
+                    _options.ProviderScopeFingerprint!,
+                    _options.SubscriptionId,
+                    _options.ResourceGroupNamePrefix,
+                    target.WorkloadName,
+                    location,
+                    _options.ResourceGroupNamingVersion),
+                _timeProvider.GetUtcNow(),
+                cancellationToken);
             submission = new(
                 IdempotencyKey(request.OperationId),
                 _options.TemplateFingerprint,
@@ -45,7 +62,8 @@ public sealed class AzureElsaInstanceProvider(
                 _options.ProviderScopeFingerprint,
                 request.OrganizationId,
                 request.InstanceId,
-                request.OperationAction);
+                request.OperationAction,
+                assignment.Id);
         }
         catch (ElsaInstanceProviderSubmissionException)
         {
@@ -147,6 +165,72 @@ public sealed class AzureElsaInstanceProvider(
         };
     }
 
+    public async Task<ElsaInstanceCleanupObservation> CleanupAsync(
+        ElsaInstanceCleanupRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        request.Validate();
+        EnsureEnabled();
+
+        var reconcile = await operationStore.GetLatestReconcileAsync(
+            request.WorkspaceId,
+            WorkloadName(request.InstanceId),
+            _options.ProviderScopeFingerprint,
+            cancellationToken);
+        if (reconcile is null ||
+            reconcile.WorkspaceId != request.WorkspaceId ||
+            reconcile.InstanceId != request.InstanceId ||
+            reconcile.OrganizationId is null ||
+            reconcile.Action != AzureProviderOperationAction.Reconcile ||
+            !string.Equals(reconcile.TargetKey, WorkloadName(request.InstanceId), StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(reconcile.ProviderScopeFingerprint, NormalizeScope(_options.ProviderScopeFingerprint), StringComparison.Ordinal) ||
+            AzureProviderOperationService.TryRestorePlan(reconcile) is not { } plan)
+            return CleanupUnknown(request, "deletion.provider-plan-unavailable");
+
+        AzureProviderOperation operation;
+        try
+        {
+            operation = await operationService.SubmitDeleteAsync(
+                request.WorkspaceId,
+                new AzureProviderOperationSubmission(
+                    IdempotencyKey(request.OperationId),
+                    reconcile.TemplateFingerprint,
+                    plan,
+                    reconcile.ProviderScopeFingerprint,
+                    reconcile.OrganizationId,
+                    request.InstanceId,
+                    ElsaInstanceOperationAction.Delete,
+                    reconcile.ProviderAssignmentId),
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return CleanupUnknown(request, "deletion.provider-unavailable");
+        }
+
+        if (operation.WorkspaceId != request.WorkspaceId ||
+            operation.InstanceId != request.InstanceId ||
+            operation.Action != AzureProviderOperationAction.Delete ||
+            !string.Equals(operation.TargetKey, WorkloadName(request.InstanceId), StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(operation.ProviderScopeFingerprint, NormalizeScope(_options.ProviderScopeFingerprint), StringComparison.Ordinal))
+            return CleanupUnknown(request, "deletion.provider-correlation-invalid", ElsaInstanceCleanupObservationKind.Ambiguous);
+
+        return operation.Status == AzureProviderOperationStatus.Succeeded &&
+               operation.Phase == AzureProviderOperationPhase.CleanupVerified &&
+               operation.Resources == new AzureProviderResourceReferences() &&
+               operation.Endpoint is null
+            ? new(ElsaInstanceCleanupObservationKind.ConfirmedAbsent, request.OperationId,
+                request.AttemptNumber, "deletion.provider-confirmed-absent")
+            : CleanupUnknown(request, operation.Status is AzureProviderOperationStatus.Failed or AzureProviderOperationStatus.Cancelled
+                ? "deletion.provider-cleanup-failed"
+                : "deletion.provider-cleanup-pending");
+    }
+
     private void EnsureEnabled()
     {
         try
@@ -173,6 +257,12 @@ public sealed class AzureElsaInstanceProvider(
         new(ElsaInstanceProviderObservationKind.Ambiguous, ElsaObservedLifecycle.Unknown,
             ElsaInstanceProviderHealthGate.Unknown, request.OperationId, request.AttemptNumber,
             "provider-operation-endpoint-invalid");
+
+    private static ElsaInstanceCleanupObservation CleanupUnknown(
+        ElsaInstanceCleanupRequest request,
+        string code,
+        ElsaInstanceCleanupObservationKind kind = ElsaInstanceCleanupObservationKind.Unknown) =>
+        new(kind, request.OperationId, request.AttemptNumber, code);
 
     private static ElsaCurrentDeploymentReference? CurrentDeployment(AzureProviderOperation operation) =>
         new(operation.OperationIdentity, $"attempt-{operation.AttemptNumber}", operation.Endpoint);

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ElsaControl.Deployment.Abstractions.Instances;
+using ElsaControl.Deployment.Azure;
 using ElsaControl.Deployment.Core.Cockpit;
 using ElsaControl.Deployment.Core.Workspace;
 using ElsaControl.PackageCatalog.Core.Accounts;
@@ -839,6 +840,7 @@ internal sealed class AzureProviderOperationConfiguration : IEntityTypeConfigura
         builder.Property(x => x.TargetKey).HasMaxLength(128).IsRequired();
         builder.Property(x => x.OrganizationId);
         builder.Property(x => x.InstanceId);
+        builder.Property(x => x.ProviderAssignmentId);
         builder.Property(x => x.LifecycleAction).HasConversion<string>().HasMaxLength(64);
         builder.Property(x => x.IdempotencyKey).HasMaxLength(512).IsRequired();
         builder.Property(x => x.RequestHash).HasMaxLength(64).IsRequired();
@@ -897,7 +899,54 @@ internal sealed class AzureProviderOperationConfiguration : IEntityTypeConfigura
         builder.HasIndex(x => new { x.Status, x.LeaseExpiresAt, x.UpdatedAt, x.Id });
         builder.HasIndex(x => new { x.WorkspaceId, x.TargetKey, x.CreatedAt });
         builder.HasOne(x => x.Workspace).WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(x => x.ProviderAssignment).WithMany(x => x.Operations).HasForeignKey(x => x.ProviderAssignmentId).OnDelete(DeleteBehavior.Restrict);
         builder.HasMany(x => x.Transitions).WithOne(x => x.Operation).HasForeignKey(x => x.OperationId).OnDelete(DeleteBehavior.Restrict);
+    }
+
+    private static void ConfigureDateTime(PropertyBuilder<DateTimeOffset> property) =>
+        property.HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
+
+    private static void ConfigureNullableDateTime(PropertyBuilder<DateTimeOffset?> property) =>
+        property.HasConversion(value => value.HasValue ? value.Value.UtcTicks : (long?)null,
+            value => value.HasValue ? new DateTimeOffset(value.Value, TimeSpan.Zero) : null);
+}
+
+internal sealed class AzureProviderResourceAssignmentConfiguration : IEntityTypeConfiguration<AzureProviderResourceAssignmentEntity>
+{
+    public void Configure(EntityTypeBuilder<AzureProviderResourceAssignmentEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.ProviderScopeFingerprint).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.NamingVersion).IsRequired();
+        builder.Property(x => x.SubscriptionId).HasMaxLength(36).IsRequired();
+        builder.Property(x => x.ResourceGroupName).HasMaxLength(90).IsRequired();
+        builder.Property(x => x.WorkloadName).HasMaxLength(16).IsRequired();
+        builder.Property(x => x.OwnershipKey).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.Location).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.State).HasConversion<string>().HasMaxLength(32).IsRequired();
+        builder.Property(x => x.Version).IsConcurrencyToken().ValueGeneratedNever();
+        builder.Property(x => x.FoundationDeploymentId).HasMaxLength(512);
+        builder.Property(x => x.WorkloadDeploymentId).HasMaxLength(512);
+        builder.Property(x => x.WorkloadResourceId).HasMaxLength(1024);
+        builder.Property(x => x.WorkloadRevisionName).HasMaxLength(128);
+        builder.Property(x => x.StableTrafficRevisionName).HasMaxLength(128);
+        builder.Property(x => x.WorkloadIdentityResourceId).HasMaxLength(1024);
+        builder.Property(x => x.WorkloadIdentityClientId).HasMaxLength(128);
+        builder.Property(x => x.WorkloadIdentityPrincipalId).HasMaxLength(128);
+        builder.Property(x => x.KeyVaultResourceId).HasMaxLength(1024);
+        builder.Property(x => x.KeyVaultUri).HasMaxLength(2048);
+        builder.Property(x => x.SqlServerResourceId).HasMaxLength(1024);
+        builder.Property(x => x.SqlServerFqdn).HasMaxLength(512);
+        builder.Property(x => x.ContainerAppsEnvironmentResourceId).HasMaxLength(1024);
+        builder.Property(x => x.RegistryResourceId).HasMaxLength(1024);
+        builder.Property(x => x.AcrPullDeploymentId).HasMaxLength(512);
+        builder.Property(x => x.AcrPullRoleAssignmentId).HasMaxLength(1024);
+        ConfigureDateTime(builder.Property(x => x.CreatedAt));
+        ConfigureDateTime(builder.Property(x => x.UpdatedAt));
+        ConfigureNullableDateTime(builder.Property(x => x.DeletedAt));
+        builder.HasIndex(x => new { x.WorkspaceId, x.InstanceId, x.ProviderScopeFingerprint }).IsUnique();
+        builder.HasIndex(x => new { x.State, x.UpdatedAt, x.Id });
+        builder.HasOne(x => x.Workspace).WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
     }
 
     private static void ConfigureDateTime(PropertyBuilder<DateTimeOffset> property) =>

@@ -68,7 +68,8 @@ public sealed record AzureProviderOperationRequest(
     string? SqlQuartzPackageVersion = null,
     Guid? OrganizationId = null,
     Guid? InstanceId = null,
-    ElsaInstanceOperationAction? LifecycleAction = null);
+    ElsaInstanceOperationAction? LifecycleAction = null,
+    Guid? ProviderAssignmentId = null);
 
 public sealed record AzureProviderResourceReferences(
     string? ResourceGroupName = null,
@@ -134,7 +135,8 @@ public sealed record AzureProviderOperation(
     string? SqlQuartzPackageVersion = null,
     Guid? OrganizationId = null,
     Guid? InstanceId = null,
-    ElsaInstanceOperationAction? LifecycleAction = null)
+    ElsaInstanceOperationAction? LifecycleAction = null,
+    Guid? ProviderAssignmentId = null)
 {
     [JsonIgnore]
     public IReadOnlyDictionary<string, string> SafeSecretReferences => SecretReferences ?? EmptySecretReferences;

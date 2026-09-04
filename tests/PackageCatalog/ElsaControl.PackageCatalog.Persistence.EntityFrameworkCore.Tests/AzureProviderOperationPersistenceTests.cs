@@ -57,11 +57,15 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         var now = DateTimeOffset.UtcNow;
         using var db = CreateContext();
         var store = new AzureProviderOperationStore(db);
+        var organizationId = Guid.NewGuid();
+        var instanceId = Guid.NewGuid();
+        var assignment = await Assignment(store, organizationId, instanceId, now);
         var operation = await store.CreateOrGetAsync(Request() with
         {
-            OrganizationId = Guid.NewGuid(),
-            InstanceId = Guid.NewGuid(),
-            LifecycleAction = ElsaInstanceOperationAction.Reconcile
+            OrganizationId = organizationId,
+            InstanceId = instanceId,
+            LifecycleAction = ElsaInstanceOperationAction.Reconcile,
+            ProviderAssignmentId = assignment.Id
         }, now);
         var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
             _workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now));
@@ -94,11 +98,13 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         var instanceId = Guid.NewGuid();
         using var db = CreateContext();
         var store = new AzureProviderOperationStore(db);
+        var assignment = await Assignment(store, organizationId, instanceId, now);
         var held = await store.CreateOrGetAsync(Request() with
         {
             OrganizationId = organizationId,
             InstanceId = instanceId,
-            LifecycleAction = ElsaInstanceOperationAction.Reconcile
+            LifecycleAction = ElsaInstanceOperationAction.Reconcile,
+            ProviderAssignmentId = assignment.Id
         }, now);
         var claimedHeld = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
             _workspaceId, held.Id, "worker-held", "lease-held", TimeSpan.FromMinutes(1), now));
@@ -111,7 +117,8 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
             IdempotencyKey = "safe-stop",
             OrganizationId = organizationId,
             InstanceId = instanceId,
-            LifecycleAction = ElsaInstanceOperationAction.Stop
+            LifecycleAction = ElsaInstanceOperationAction.Stop,
+            ProviderAssignmentId = assignment.Id
         }, now.AddMinutes(1));
 
         Assert.Equal(AzureProviderOperationStatus.Accepted, safeExit.Status);
@@ -234,6 +241,54 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         var transitions = await store.ListTransitionsAsync(_workspaceId, operation.Id);
         Assert.Contains(transitions, x => x.Code == "operation.recovery.required");
         Assert.Contains(transitions, x => x.Code == "operation.recovery.claimed");
+    }
+
+    [Fact]
+    public async Task Provider_worker_preserves_stale_operation_until_explicit_provider_observation()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var organizationId = Guid.NewGuid();
+        var instanceId = Guid.NewGuid();
+        var assignment = await Assignment(store, organizationId, instanceId, now);
+        var request = Request() with
+        {
+            ReleaseManifestDigest = "sha256:" + new string('d', 64),
+            ReleaseManifestSignatureDigest = "sha256:" + new string('e', 64),
+            ReleaseManifestReference = "oci://evidence.example/manifest",
+            ReleaseManifestSignatureReference = "oci://evidence.example/signature",
+            SqlWorkflowPackageVersion = "3.8.0",
+            SqlQuartzPackageVersion = "3.8.0",
+            SecretReferences = new Dictionary<string, string>
+            {
+                ["database:connectionstring"] = "secret://vault/database",
+                ["identity:signingkey"] = "secret://vault/signingkey",
+                ["admin:password"] = "secret://vault/admin"
+            },
+            OrganizationId = organizationId,
+            InstanceId = instanceId,
+            LifecycleAction = ElsaInstanceOperationAction.Reconcile,
+            ProviderAssignmentId = assignment.Id
+        };
+        var operation = await store.CreateOrGetAsync(request, now);
+        _ = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker-stale", "lease-stale", TimeSpan.FromMinutes(1), now));
+        Assert.Equal(1, await store.RecoverStaleAsync(now.AddMinutes(2)));
+
+        var runner = new RecoveringCompletingRunner();
+        var worker = new AzureProviderOperationWorker(
+            store,
+            new AzureProviderExecutor(store, runner, new FixedTimeProvider(now.AddMinutes(2))),
+            new PersistedAzureProviderPlanSource(),
+            new FixedTimeProvider(now.AddMinutes(2)));
+
+        Assert.Equal(0, await worker.ProcessOnceAsync());
+        var firstRecovery = Assert.IsType<AzureProviderOperation>(await store.GetAsync(_workspaceId, operation.Id));
+        Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, firstRecovery.Status);
+        Assert.Equal(operation.RequestHash, firstRecovery.RequestHash);
+        Assert.Equal(1, firstRecovery.AttemptNumber);
+        Assert.Empty(runner.Commands);
     }
 
     [Fact]
@@ -371,7 +426,7 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     }
 
     [Fact]
-    public async Task Recovery_required_finalization_stays_reserved_and_unpollable()
+    public async Task Recovery_required_finalization_remains_reserved_and_is_returned_for_resume()
     {
         var now = DateTimeOffset.UtcNow;
         using var db = CreateContext();
@@ -396,7 +451,8 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
 
         Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, finalized?.Status);
         Assert.Null(finalized?.CompletedAt);
-        Assert.Empty(await store.ListRunnableAsync(now.AddMinutes(2), 10));
+        var runnable = Assert.Single(await store.ListRunnableAsync(now.AddMinutes(2), 10));
+        Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, runnable.Status);
         Assert.NotNull(await store.ClaimRecoveryAsync(
             _workspaceId,
             operation.Id,
@@ -408,7 +464,7 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     }
 
     [Fact]
-    public async Task Recovery_required_operation_is_not_returned_for_automatic_polling()
+    public async Task Recovery_required_operation_is_returned_for_automatic_polling()
     {
         var now = DateTimeOffset.UtcNow;
         using var db = CreateContext();
@@ -430,7 +486,8 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
             now,
             claimed.Version));
 
-        Assert.Empty(await store.ListRunnableAsync(now.AddMinutes(2), 10));
+        var runnable = Assert.Single(await store.ListRunnableAsync(now.AddMinutes(2), 10));
+        Assert.Equal(operation.Id, runnable.Id);
     }
 
     [Fact]
@@ -710,6 +767,23 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
 
     private CatalogDbContext CreateContext() => new(new DbContextOptionsBuilder<CatalogDbContext>().UseSqlite(_connection).Options);
 
+    private async Task<AzureProviderResourceAssignment> Assignment(
+        AzureProviderOperationStore store,
+        Guid organizationId,
+        Guid instanceId,
+        DateTimeOffset now) =>
+        await ((IAzureProviderResourceAssignmentStore)store).CreateOrGetAsync(
+            new(
+                _workspaceId,
+                organizationId,
+                instanceId,
+                new string('a', 64),
+                "11111111-1111-1111-1111-111111111111",
+                "rg-elsa",
+                $"e{instanceId:N}"[..16],
+                "westeurope"),
+            now);
+
     private AzureProviderOperationRequest Request() => new(
         _workspaceId, "workload-a", AzureProviderOperationAction.Reconcile, "request-1",
         new('a', 64), new('b', 64), "3.8.0", "3.8", "combined", "Dedicated", "westeurope",
@@ -737,6 +811,67 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     {
         public Task<AzureProviderRunnerResult> RunAsync(AzureProviderRunnerCommand command, CancellationToken cancellationToken = default) =>
             throw new Xunit.Sdk.XunitException("The provider runner must not be called for malformed persisted metadata.");
+    }
+
+    private sealed class RecoveringCompletingRunner : IAzureProviderRunner
+    {
+        public List<AzureProviderRunnerCommand> Commands { get; } = [];
+
+        public Task<AzureProviderRunnerResult> RunAsync(AzureProviderRunnerCommand command, CancellationToken cancellationToken = default)
+        {
+            Commands.Add(command);
+            var resources = CompleteResources();
+            if (Commands.Count == 1)
+                return Task.FromResult(new AzureProviderRunnerResult(
+                    AzureProviderRunnerOutcome.Uncertain,
+                    AzureProviderOperationPhase.Planned,
+                    resources,
+                    AzureProviderHealth.Unknown,
+                    null,
+                    [],
+                    "azure.step.uncertain",
+                    "The provider result is uncertain."));
+
+            var observed = command.Step is AzureProviderRunnerStep.Health or AzureProviderRunnerStep.Promotion;
+            var phase = command.Step switch
+            {
+                AzureProviderRunnerStep.Foundation => AzureProviderOperationPhase.FoundationSubmitted,
+                AzureProviderRunnerStep.AcrPull or AzureProviderRunnerStep.SeedSecrets => AzureProviderOperationPhase.FoundationSubmitted,
+                AzureProviderRunnerStep.SqlBootstrap => AzureProviderOperationPhase.FoundationReady,
+                AzureProviderRunnerStep.Workload => AzureProviderOperationPhase.WorkloadReady,
+                AzureProviderRunnerStep.Health => AzureProviderOperationPhase.HealthVerified,
+                AzureProviderRunnerStep.Promotion => AzureProviderOperationPhase.TrafficPromoted,
+                _ => AzureProviderOperationPhase.CleanupVerified
+            };
+            return Task.FromResult(new AzureProviderRunnerResult(
+                AzureProviderRunnerOutcome.Completed,
+                phase,
+                resources,
+                observed ? AzureProviderHealth.Healthy : AzureProviderHealth.Unknown,
+                observed ? "https://workload.example.test" : null,
+                [],
+                "azure.step.completed",
+                "The provider step completed."));
+        }
+
+        private static AzureProviderResourceReferences CompleteResources() => new(
+            ResourceGroupName: "rg-safe",
+            FoundationDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-safe/providers/Microsoft.Resources/deployments/foundation",
+            WorkloadDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-safe/providers/Microsoft.Resources/deployments/workload",
+            WorkloadResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-safe/providers/Microsoft.App/containerApps/workload-a",
+            WorkloadRevisionName: "workload-a--candidate",
+            StableTrafficRevisionName: "workload-a--stable",
+            WorkloadIdentityResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-safe/providers/Microsoft.ManagedIdentity/userAssignedIdentities/workload-a",
+            WorkloadIdentityClientId: "22222222-2222-2222-2222-222222222222",
+            WorkloadIdentityPrincipalId: "33333333-3333-3333-3333-333333333333",
+            KeyVaultResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-safe/providers/Microsoft.KeyVault/vaults/workload-a",
+            KeyVaultUri: "https://workload-a.vault.azure.net/",
+            SqlServerResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-safe/providers/Microsoft.Sql/servers/workload-a",
+            SqlServerFqdn: "workload-a.database.windows.net",
+            ContainerAppsEnvironmentResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-safe/providers/Microsoft.App/managedEnvironments/workload-a",
+            RegistryResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry/providers/Microsoft.ContainerRegistry/registries/workload",
+            AcrPullDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry/providers/Microsoft.Resources/deployments/acr-pull",
+            AcrPullRoleAssignmentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry/providers/Microsoft.ContainerRegistry/registries/workload/providers/Microsoft.Authorization/roleAssignments/44444444-4444-4444-4444-444444444444");
     }
 
     public void Dispose() => _connection.Dispose();

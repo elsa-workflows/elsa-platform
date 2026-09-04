@@ -5,9 +5,8 @@ using System.Collections.ObjectModel;
 namespace ElsaControl.Api.Workspace;
 
 /// <summary>
-/// Resolves only exact, preconfigured safe secret locators. Values are held in
-/// process memory for the request and are never part of provider contracts,
-/// diagnostics or durable records.
+/// Development-only resolver for exact preconfigured secret locators. Production runner
+/// composition rejects raw values before this resolver can be constructed.
 /// </summary>
 internal sealed class ConfiguredAzureSecretResolver : IAzureSecretResolver
 {
@@ -37,12 +36,15 @@ internal sealed class ConfiguredAzureSecretResolver : IAzureSecretResolver
     {
         ArgumentNullException.ThrowIfNull(configuration);
         var references = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var referencesByLocator = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var child in configuration.GetSection("Deployment:AzureProvider:Secrets").GetChildren())
         {
             var name = child["Name"]?.Trim();
             var reference = child["Reference"]?.Trim();
             if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(reference) ||
-                !references.TryAdd(name, reference))
+                !IsSafeConfiguredValue(child["Value"]) ||
+                !references.TryAdd(name, reference) ||
+                !referencesByLocator.Add(reference))
                 throw new InvalidOperationException("Azure provider named secret references are invalid or duplicated.");
         }
 

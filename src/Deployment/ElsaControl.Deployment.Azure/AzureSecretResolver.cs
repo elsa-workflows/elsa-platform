@@ -5,14 +5,20 @@ namespace ElsaControl.Deployment.Azure;
 
 public sealed record AzureSecretResolutionRequest(
     Guid WorkspaceId,
+    Guid OrganizationId,
+    Guid InstanceId,
+    string ProviderAssignmentId,
     string Name,
     string Reference,
     AzureProviderResourceReferences? Resources = null)
 {
     public void Validate()
     {
-        if (WorkspaceId == Guid.Empty)
-            throw new ArgumentException("Workspace ID is required.", nameof(WorkspaceId));
+        if (WorkspaceId == Guid.Empty || OrganizationId == Guid.Empty || InstanceId == Guid.Empty)
+            throw new ArgumentException("The provider secret ownership identity is invalid.", nameof(WorkspaceId));
+        if (string.IsNullOrWhiteSpace(ProviderAssignmentId) || ProviderAssignmentId.Length > 128 ||
+            ProviderAssignmentId.Any(char.IsControl) || ProviderAssignmentId.Any(char.IsWhiteSpace))
+            throw new ArgumentException("The provider assignment identity is invalid.", nameof(ProviderAssignmentId));
         if (string.IsNullOrWhiteSpace(Name) || Name.Length > 256 ||
             !System.Text.RegularExpressions.Regex.IsMatch(
                 Name,

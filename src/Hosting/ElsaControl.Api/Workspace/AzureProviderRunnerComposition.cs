@@ -37,6 +37,8 @@ internal static class AzureProviderRunnerComposition
         }
 
         var options = runnerSection.Get<AzureProviderRunnerOptions>() ?? new();
+        if (string.IsNullOrWhiteSpace(options.AzureCliClientId))
+            options = options with { AzureCliClientId = configuration["AZURE_CLIENT_ID"] };
         if (!options.Enabled)
             throw new InvalidOperationException("Azure provider worker is enabled but its concrete runner is not enabled.");
         options.Validate();
@@ -50,6 +52,10 @@ internal static class AzureProviderRunnerComposition
             scopeSection[nameof(AzureProviderTargetScope.RegistryName)] ?? "",
             scopeSection[nameof(AzureProviderTargetScope.Location)] ?? "");
         scope.Validate();
+        if (configuration.GetSection("Deployment:AzureProvider:Secrets").GetChildren()
+            .Any(child => child["Value"] is not null))
+            throw new InvalidOperationException(
+                "Azure provider worker configuration must not contain raw secret values.");
         var secretResolver = ConfiguredAzureSecretResolver.Create(configuration);
         services.AddScoped<IAzureSecretResolver>(_ => secretResolver);
         services.AddScoped<IAzureProviderRunner>(_ => new AzureBicepProviderRunner(options, scope, secretResolver));

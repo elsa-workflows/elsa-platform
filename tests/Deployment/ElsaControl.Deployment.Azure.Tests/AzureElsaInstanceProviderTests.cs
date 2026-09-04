@@ -26,7 +26,8 @@ public sealed class AzureElsaInstanceProviderTests
         var provider = new AzureElsaInstanceProvider(
             service,
             new CapturingOperationStore(),
-            EnabledOptions());
+            new InMemoryAssignmentStore(),
+            options: EnabledOptions());
         var request = CreateSubmission(workspaceId, instanceId, operationId, plan);
 
         var first = await provider.SubmitAsync(request);
@@ -62,7 +63,8 @@ public sealed class AzureElsaInstanceProviderTests
         var provider = new AzureElsaInstanceProvider(
             new CapturingOperationService(operation),
             new CapturingOperationStore(operation),
-            EnabledOptions());
+            new InMemoryAssignmentStore(),
+            options: EnabledOptions());
 
         var observation = await provider.ObserveAsync(new(
             workspaceId,
@@ -103,7 +105,8 @@ public sealed class AzureElsaInstanceProviderTests
         var provider = new AzureElsaInstanceProvider(
             new CapturingOperationService(operation),
             new CapturingOperationStore(operation),
-            EnabledOptions());
+            new InMemoryAssignmentStore(),
+            options: EnabledOptions());
 
         var request = new ElsaInstanceProviderReconciliationRequest(
             workspaceId,
@@ -156,7 +159,8 @@ public sealed class AzureElsaInstanceProviderTests
         var provider = new AzureElsaInstanceProvider(
             new CapturingOperationService(operation),
             new CapturingOperationStore(operation),
-            EnabledOptions());
+            new InMemoryAssignmentStore(),
+            options: EnabledOptions());
 
         var observation = await provider.ObserveAsync(new(
             workspaceId,
@@ -185,7 +189,8 @@ public sealed class AzureElsaInstanceProviderTests
         var provider = new AzureElsaInstanceProvider(
             new CapturingOperationService(null),
             new CapturingOperationStore(),
-            EnabledOptions());
+            new InMemoryAssignmentStore(),
+            options: EnabledOptions());
 
         var observation = await provider.ObserveAsync(new(
             workspaceId,
@@ -222,11 +227,15 @@ public sealed class AzureElsaInstanceProviderTests
         var provider = new AzureElsaInstanceProvider(
             new CapturingOperationService(operation),
             new CapturingOperationStore(operation),
+            new InMemoryAssignmentStore(),
+            options:
             new AzureElsaInstanceProviderOptions
             {
                 Enabled = true,
                 TemplateFingerprint = new string('b', 64),
-                ProviderScopeFingerprint = mismatch == "scope" ? new string('b', 64) : new string('a', 64)
+                ProviderScopeFingerprint = mismatch == "scope" ? new string('b', 64) : new string('a', 64),
+                SubscriptionId = "11111111-1111-1111-1111-111111111111",
+                ResourceGroupNamePrefix = "rg-elsa"
             });
 
         var observation = await provider.ObserveAsync(new(
@@ -253,7 +262,8 @@ public sealed class AzureElsaInstanceProviderTests
         var provider = new AzureElsaInstanceProvider(
             service,
             new CapturingOperationStore(),
-            new AzureElsaInstanceProviderOptions());
+            new InMemoryAssignmentStore(),
+            options: new AzureElsaInstanceProviderOptions());
 
         var exception = await Assert.ThrowsAsync<ElsaInstanceProviderSubmissionException>(() => provider.SubmitAsync(
             CreateSubmission(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), plan)));
@@ -266,7 +276,7 @@ public sealed class AzureElsaInstanceProviderTests
     {
         var plan = Translate("5.0", "5.0.0");
         var service = new CapturingOperationService(CreateOperation(Guid.NewGuid(), plan, Guid.NewGuid()));
-        var provider = new AzureElsaInstanceProvider(service, new CapturingOperationStore(), EnabledOptions());
+        var provider = new AzureElsaInstanceProvider(service, new CapturingOperationStore(), new InMemoryAssignmentStore(), options: EnabledOptions());
 
         var exception = await Assert.ThrowsAsync<ElsaInstanceProviderSubmissionException>(() => provider.SubmitAsync(
             CreateSubmission(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), plan) with { OrganizationId = null }));
@@ -282,7 +292,7 @@ public sealed class AzureElsaInstanceProviderTests
         var operationId = Guid.NewGuid();
         var translated = Translate("5.0", "5.0.0");
         var service = new CapturingOperationService(CreateOperation(workspaceId, translated, operationId));
-        var provider = new AzureElsaInstanceProvider(service, new CapturingOperationStore(), EnabledOptions());
+        var provider = new AzureElsaInstanceProvider(service, new CapturingOperationStore(), new InMemoryAssignmentStore(), options: EnabledOptions());
         var request = CreateSubmission(workspaceId, Guid.NewGuid(), operationId, translated);
         var resolvedPlan = request.Plan;
         request = request with
@@ -314,7 +324,8 @@ public sealed class AzureElsaInstanceProviderTests
         var provider = new AzureElsaInstanceProvider(
             new ThrowingOperationService(),
             new CapturingOperationStore(),
-            EnabledOptions());
+            new InMemoryAssignmentStore(),
+            options: EnabledOptions());
 
         var exception = await Assert.ThrowsAsync<ElsaInstanceProviderSubmissionException>(() => provider.SubmitAsync(
             CreateSubmission(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), plan)));
@@ -335,12 +346,79 @@ public sealed class AzureElsaInstanceProviderTests
         EnabledOptions().Validate();
     }
 
+    [Fact]
+    public async Task Cleanup_submits_delete_from_the_exact_admitted_reconcile_plan_and_confirms_only_verified_absence()
+    {
+        var workspaceId = Guid.NewGuid();
+        var lifecycleOperationId = Guid.NewGuid();
+        var plan = Translate("5.0", "5.0.0");
+        plan = plan with { WorkloadName = AzureElsaInstanceProvider.WorkloadName(TestInstanceId) };
+        var reconcile = CreateOperation(workspaceId, plan, Guid.NewGuid()) with
+        {
+            OrganizationId = TestOrganizationId,
+            InstanceId = TestInstanceId,
+            LifecycleAction = ElsaInstanceOperationAction.Reconcile,
+            SqlWorkflowPackageVersion = plan.SqlWorkflowPackageVersion,
+            SqlQuartzPackageVersion = plan.SqlQuartzPackageVersion
+        };
+        reconcile = reconcile with
+        {
+            RequestHash = AzureProviderOperationValidation.ComputeRequestHash(
+                AzureProviderOperationService.CreateOperationRequest(reconcile)),
+            OperationIdentity = AzureProviderOperationValidation.ComputeOperationIdentity(
+                AzureProviderOperationService.CreateOperationRequest(reconcile))
+        };
+        Assert.NotNull(AzureProviderOperationService.TryRestorePlan(reconcile));
+        var delete = reconcile with
+        {
+            Id = Guid.NewGuid(),
+            Action = AzureProviderOperationAction.Delete,
+            IdempotencyKey = AzureElsaInstanceProvider.IdempotencyKey(lifecycleOperationId) + ":delete",
+            LifecycleAction = ElsaInstanceOperationAction.Delete,
+            Status = AzureProviderOperationStatus.Succeeded,
+            Phase = AzureProviderOperationPhase.CleanupVerified,
+            Resources = new(),
+            Endpoint = null
+        };
+        var service = new CapturingOperationService(reconcile) { DeleteOperation = delete };
+        var provider = new AzureElsaInstanceProvider(service, new CapturingOperationStore(reconcile), new InMemoryAssignmentStore(), options: EnabledOptions());
+
+        var result = await provider.CleanupAsync(new(
+            workspaceId, TestInstanceId, lifecycleOperationId, 3, null, null, null));
+
+        Assert.Equal("deletion.provider-confirmed-absent", result.DiagnosticCode);
+        Assert.Equal(ElsaInstanceCleanupObservationKind.ConfirmedAbsent, result.Kind);
+        Assert.Equal(lifecycleOperationId, result.OperationId);
+        Assert.Equal(3, result.AttemptNumber);
+        var submission = Assert.Single(service.DeleteSubmissions);
+        Assert.Equal(ElsaInstanceOperationAction.Delete, submission.LifecycleAction);
+        Assert.Equal(plan.Fingerprint, submission.Plan.Fingerprint);
+        Assert.Equal(AzureElsaInstanceProvider.IdempotencyKey(lifecycleOperationId), submission.IdempotencyKey);
+    }
+
+    [Fact]
+    public async Task Cleanup_without_a_restorable_correlated_reconcile_plan_fails_closed_without_submission()
+    {
+        var service = new CapturingOperationService(null);
+        var provider = new AzureElsaInstanceProvider(service, new CapturingOperationStore(), new InMemoryAssignmentStore(), options: EnabledOptions());
+        var operationId = Guid.NewGuid();
+
+        var result = await provider.CleanupAsync(new(
+            Guid.NewGuid(), TestInstanceId, operationId, 1, null, null, null));
+
+        Assert.Equal(ElsaInstanceCleanupObservationKind.Unknown, result.Kind);
+        Assert.Equal("deletion.provider-plan-unavailable", result.DiagnosticCode);
+        Assert.Empty(service.DeleteSubmissions);
+    }
+
     private static AzureElsaInstanceProviderOptions EnabledOptions() =>
         new()
         {
             Enabled = true,
             TemplateFingerprint = new string('b', 64),
-            ProviderScopeFingerprint = new string('a', 64)
+            ProviderScopeFingerprint = new string('a', 64),
+            SubscriptionId = "11111111-1111-1111-1111-111111111111",
+            ResourceGroupNamePrefix = "rg-elsa"
         };
 
     private static AzureWorkloadPlan Translate(string releaseLine, string version) =>
@@ -363,7 +441,8 @@ public sealed class AzureElsaInstanceProviderTests
             new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()),
             "westeurope",
             TestOrganizationId,
-            ElsaInstanceOperationAction.Reconcile);
+            ElsaInstanceOperationAction.Reconcile,
+            operationId.ToString("D"));
 
     private static ResolvedElsaApplicationPlan ToResolvedPlan(AzureWorkloadPlan plan) =>
         AzureWorkloadPlanTranslatorTests.CreatePlan(plan.ReleaseLine, plan.ElsaVersion);
@@ -409,11 +488,14 @@ public sealed class AzureElsaInstanceProviderTests
             plan.ReleaseManifestReference,
             plan.ReleaseManifestSignatureReference,
             plan.SecretReferences,
-            ProviderScopeFingerprint: new string('a', 64));
+            ProviderScopeFingerprint: new string('a', 64),
+            ProviderAssignmentId: operationId);
 
     private sealed class CapturingOperationService(AzureProviderOperation? operation) : IAzureProviderOperationService, IAzureProviderOperationReplayService
     {
         public List<AzureProviderOperationSubmission> Submissions { get; } = [];
+        public List<AzureProviderOperationSubmission> DeleteSubmissions { get; } = [];
+        public AzureProviderOperation? DeleteOperation { get; init; }
 
         public Task<AzureProviderOperation> SubmitAsync(
             Guid workspaceId,
@@ -436,8 +518,11 @@ public sealed class AzureElsaInstanceProviderTests
         public Task<AzureProviderOperation> SubmitDeleteAsync(
             Guid workspaceId,
             AzureProviderOperationSubmission submission,
-            CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+            CancellationToken cancellationToken = default)
+        {
+            DeleteSubmissions.Add(submission);
+            return Task.FromResult(DeleteOperation ?? operation!);
+        }
 
         public Task<AzureProviderOperationStatusResponse?> GetStatusAsync(
             Guid workspaceId,
@@ -474,5 +559,41 @@ public sealed class AzureElsaInstanceProviderTests
         public Task<AzureProviderOperation?> FinalizeAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderOperationStatus status, string code, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) => Task.FromResult<AzureProviderOperation?>(null);
         public Task<int> RecoverStaleAsync(DateTimeOffset now, CancellationToken cancellationToken = default) => Task.FromResult(0);
         public Task<IReadOnlyList<AzureProviderOperationTransition>> ListTransitionsAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<AzureProviderOperationTransition>>([]);
+    }
+
+    private sealed class InMemoryAssignmentStore : IAzureProviderResourceAssignmentStore
+    {
+        private AzureProviderResourceAssignment? _assignment;
+
+        public Task<AzureProviderResourceAssignment> CreateOrGetAsync(
+            AzureProviderResourceAssignmentRequest request,
+            DateTimeOffset now,
+            CancellationToken cancellationToken = default)
+        {
+            _assignment ??= new(
+                Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
+                request.WorkspaceId,
+                request.OrganizationId,
+                request.InstanceId,
+                request.ProviderScopeFingerprint,
+                request.NamingVersion,
+                request.SubscriptionId,
+                AzureProviderResourceAssignmentNaming.ResourceGroupName(request.ResourceGroupNamePrefix, request.InstanceId, request.NamingVersion),
+                request.WorkloadName,
+                new string('f', 64),
+                request.Location,
+                AzureProviderAssignmentState.Reserved,
+                new(),
+                null,
+                1,
+                now,
+                now);
+            return Task.FromResult(_assignment);
+        }
+
+        public Task<AzureProviderResourceAssignment?> GetAsync(
+            Guid workspaceId,
+            Guid assignmentId,
+            CancellationToken cancellationToken = default) => Task.FromResult(_assignment);
     }
 }

@@ -262,7 +262,8 @@ public sealed class InMemoryElsaInstanceLifecycleStore(
                                 target,
                                 instance.PlacementIntent.RegionCode,
                                 instance.OrganizationId,
-                                operation.Action);
+                                operation.Action,
+                                instance.PlacementAssignmentReference?.AssignmentId ?? operation.Id.ToString("D"));
                             candidate.Validate();
                             submission = candidate;
                         }

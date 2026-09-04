@@ -69,6 +69,8 @@ public sealed record AzureProviderRunnerOptions
     public bool Enabled { get; init; }
     /// <summary>Absolute Azure CLI executable bound into provider authority.</summary>
     public string AzureCliPath { get; init; } = "";
+    /// <summary>Required user-assigned managed identity client ID used by Azure CLI login.</summary>
+    public string? AzureCliClientId { get; init; }
     /// <summary>Absolute sqlcmd executable bound into provider authority.</summary>
     public string SqlCmdPath { get; init; } = "";
     /// <summary>Absolute curl executable used for the post-promotion health probe.</summary>
@@ -98,6 +100,7 @@ public sealed record AzureProviderRunnerOptions
             targetScopeFingerprint = scope.ComputeFingerprint(),
             azureCliPath = Path.GetFullPath(AzureCliPath),
             azureCliDigest = ComputeFileDigest(AzureCliPath),
+            azureCliClientId = AzureCliClientId?.ToLowerInvariant(),
             sqlCmdPath = Path.GetFullPath(SqlCmdPath),
             sqlCmdDigest = ComputeFileDigest(SqlCmdPath),
             curlPath = Path.GetFullPath(CurlPath),
@@ -136,6 +139,9 @@ public sealed record AzureProviderRunnerOptions
         if (!Enabled)
             throw new InvalidOperationException("The concrete Azure provider runner is not enabled.");
         ValidateExecutable(AzureCliPath, nameof(AzureCliPath));
+        if (!Guid.TryParseExact(AzureCliClientId, "D", out _) ||
+            !string.Equals(AzureCliClientId, AzureCliClientId?.ToLowerInvariant(), StringComparison.Ordinal))
+            throw new ArgumentException("The Azure CLI managed identity client ID must be a canonical GUID.", nameof(AzureCliClientId));
         ValidateExecutable(SqlCmdPath, nameof(SqlCmdPath));
         ValidateExecutable(CurlPath, nameof(CurlPath));
         if (string.IsNullOrWhiteSpace(TemplateRoot) || !Path.IsPathFullyQualified(TemplateRoot))

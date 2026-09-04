@@ -25,6 +25,8 @@ public sealed class ElsaInstanceLifecycleCompositionTests : IDisposable
             descriptor.ServiceType == typeof(IElsaInstanceProviderSubmissionPort));
         Assert.DoesNotContain(services, descriptor =>
             descriptor.ServiceType == typeof(IElsaInstanceProviderReconciliationPort));
+        Assert.DoesNotContain(services, descriptor =>
+            descriptor.ServiceType == typeof(IElsaInstanceProviderCleanupPort));
     }
 
     [Fact]
@@ -42,10 +44,14 @@ public sealed class ElsaInstanceLifecycleCompositionTests : IDisposable
             descriptor.ServiceType == typeof(IElsaInstanceProviderSubmissionPort));
         Assert.Contains(services, descriptor =>
             descriptor.ServiceType == typeof(IElsaInstanceProviderReconciliationPort));
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IElsaInstanceProviderCleanupPort));
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<AzureElsaInstanceProviderOptions>();
         Assert.Equal(authority.TemplateFingerprint, options.TemplateFingerprint);
         Assert.Equal(authority.ProviderScopeFingerprint, options.ProviderScopeFingerprint);
+        Assert.Equal(authority.Scope.SubscriptionId, options.SubscriptionId);
+        Assert.Equal(authority.Scope.ResourceGroupName, options.ResourceGroupNamePrefix);
     }
 
     [Fact]
@@ -72,6 +78,7 @@ public sealed class ElsaInstanceLifecycleCompositionTests : IDisposable
         {
             Enabled = true,
             AzureCliPath = tool,
+            AzureCliClientId = "33333333-3333-3333-3333-333333333333",
             SqlCmdPath = tool,
             CurlPath = tool,
             TemplateRoot = _root,

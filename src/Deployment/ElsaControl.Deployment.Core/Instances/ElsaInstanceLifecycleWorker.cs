@@ -197,7 +197,8 @@ public sealed class ElsaInstanceLifecycleWorker(
                 item.Resolution.DeploymentTarget,
                 item.Instance.PlacementIntent.RegionCode,
                 item.Instance.OrganizationId,
-                item.Operation.Action);
+                item.Operation.Action,
+                item.Instance.PlacementAssignmentReference?.AssignmentId ?? item.Operation.Id.ToString("D"));
             try
             {
                 var submitted = await _provider.SubmitAsync(submission, cancellationToken);

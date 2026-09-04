@@ -47,13 +47,15 @@ public sealed record ElsaInstanceProviderSubmission(
     ElsaInstanceLifecycleDeploymentTarget DeploymentTarget,
     string? Location = null,
     Guid? OrganizationId = null,
-    ElsaInstanceOperationAction? OperationAction = null)
+    ElsaInstanceOperationAction? OperationAction = null,
+    string? PlacementAssignmentId = null)
 {
     public void Validate()
     {
         if (WorkspaceId == Guid.Empty || InstanceId == Guid.Empty || OperationId == Guid.Empty ||
             OrganizationId is null || OrganizationId == Guid.Empty || OperationAction is null ||
-            !Enum.IsDefined(OperationAction.Value) || AttemptNumber < 1)
+            !Enum.IsDefined(OperationAction.Value) || AttemptNumber < 1 ||
+            string.IsNullOrWhiteSpace(PlacementAssignmentId) || !Guid.TryParseExact(PlacementAssignmentId, "D", out _))
             throw new InvalidOperationException("Provider submission identity is invalid.");
         ArgumentNullException.ThrowIfNull(Plan);
         DeploymentTarget.Validate();

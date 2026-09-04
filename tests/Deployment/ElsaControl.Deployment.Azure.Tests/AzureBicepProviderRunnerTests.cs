@@ -32,6 +32,48 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Assigned_foundation_targets_only_the_dedicated_resource_group()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args is ["group", "exists", ..], "false");
+        process.Success(args => args is ["group", "create", ..]);
+        process.Success(args => args.Contains("deployment") && args.Contains("group") && args.Contains("create"),
+            FoundationOutputs().Replace("proof-rg", "rg-elsa-dedicated", StringComparison.Ordinal));
+        var command = _fixture.Command(AzureProviderRunnerStep.Foundation);
+        var assignmentId = Guid.Parse(command.Context.ProviderAssignmentId);
+        command = command with
+        {
+            Assignment = new(
+                assignmentId,
+                command.Context.WorkspaceId,
+                command.Context.OrganizationId,
+                command.Context.InstanceId,
+                command.Context.ProviderScopeFingerprint!,
+                1,
+                _fixture.Scope.SubscriptionId,
+                "rg-elsa-dedicated",
+                command.Plan.WorkloadName,
+                new string('f', 64),
+                command.Plan.Location,
+                AzureProviderAssignmentState.Reserved,
+                new(),
+                null,
+                1,
+                DateTimeOffset.UtcNow,
+                DateTimeOffset.UtcNow)
+        };
+
+        var result = await _fixture.Runner(process).RunAsync(command);
+
+        Assert.Equal(AzureProviderRunnerOutcome.Completed, result.Outcome);
+        Assert.Equal("rg-elsa-dedicated", result.Resources.ResourceGroupName);
+        Assert.All(process.Calls, call =>
+            Assert.DoesNotContain("proof-rg", string.Join(" ", call), StringComparison.Ordinal));
+        Assert.All(process.Calls.Where(call => call.Contains("group")), call =>
+            Assert.Contains("rg-elsa-dedicated", call));
+    }
+
+    [Fact]
     public async Task Foundation_uncertainty_preserves_deterministic_partial_cleanup_handles()
     {
         var process = new FakeCommandProcess();
@@ -927,6 +969,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
             {
                 Enabled = true,
                 AzureCliPath = _tool,
+                AzureCliClientId = "33333333-3333-3333-3333-333333333333",
                 SqlCmdPath = _tool,
                 CurlPath = _tool,
                 TemplateRoot = _root,
@@ -967,7 +1010,10 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         public string RegistryRoleAssignmentId => RegistryId + "/providers/Microsoft.Authorization/roleAssignments/cccccccc-cccc-cccc-cccc-cccccccccccc";
         public string AppId => "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.App/containerApps/proof-app";
         public string WorkloadDeploymentId => "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.Resources/deployments/workload";
-        public AzureProviderExecutionContext Context => new(Guid.NewGuid(), Guid.NewGuid(), "operation", "idempotency", "proof", Plan.Fingerprint, Options.ComputeTemplateAuthorityFingerprint(), Options.ComputeProviderScopeFingerprint(Scope));
+        public AzureProviderExecutionContext Context => new(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+            "operation", "idempotency", "proof", "44444444-4444-4444-4444-444444444444",
+            Plan.Fingerprint, Options.ComputeTemplateAuthorityFingerprint(), Options.ComputeProviderScopeFingerprint(Scope));
 
         public AzureBicepProviderRunner Runner(FakeCommandProcess process, IAzureSecretResolver? resolver = null) => new(Options, Scope, process, resolver);
         public AzureProviderRunnerCommand Command(AzureProviderRunnerStep step, AzureProviderResourceReferences? resources = null) => new(step, Plan, resources ?? new(), null, false, 1, Context);

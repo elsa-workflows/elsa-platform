@@ -42,6 +42,7 @@ public sealed class AzureProviderExecutorTests
             Assert.Equal(WorkspaceId, command.Context.WorkspaceId);
             Assert.Equal(result.Operation.Id, command.Context.OperationId);
             Assert.Equal(result.Operation.OperationIdentity, command.Context.OperationIdentity);
+            Assert.Equal("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", command.Context.ProviderAssignmentId);
             Assert.Equal("request-1", command.Context.IdempotencyKey);
             Assert.Equal("workload-a", command.Context.TargetKey);
             Assert.Equal(new string('a', 64), command.Context.PlanFingerprint);
@@ -824,7 +825,8 @@ public sealed class AzureProviderExecutorTests
         "3.8.0-preview.5413",
         Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
         Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
-        ElsaInstanceOperationAction.Reconcile);
+        ElsaInstanceOperationAction.Reconcile,
+        Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"));
 
     private static AzureWorkloadPlan CreatePlan() => new(
         "workload-a",
@@ -1073,7 +1075,8 @@ public sealed class AzureProviderExecutorTests
             {
                 OrganizationId = normalized.OrganizationId,
                 InstanceId = normalized.InstanceId,
-                LifecycleAction = normalized.LifecycleAction
+                LifecycleAction = normalized.LifecycleAction,
+                ProviderAssignmentId = normalized.ProviderAssignmentId
             };
             if (RejectCreateWithStatus is { } conflictStatus)
             {

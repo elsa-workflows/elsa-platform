@@ -41,9 +41,35 @@ public sealed class AzureProviderOperationMigrationTests
         Assert.Contains("RegistryResourceId", columns);
         Assert.Contains("AcrPullDeploymentId", columns);
         Assert.Contains("AcrPullRoleAssignmentId", columns);
+        Assert.Contains("ProviderAssignmentId", columns);
         Assert.Contains("ProviderScopeFingerprint", columns);
         Assert.Contains("SqlWorkflowPackageVersion", columns);
         Assert.Contains("SqlQuartzPackageVersion", columns);
+        Assert.Contains("AzureProviderResourceAssignments", tables);
+        Assert.Contains("IX_AzureProviderOperations_ProviderAssignmentId", indexes);
+        Assert.Contains("IX_AzureProviderResourceAssignments_State_UpdatedAt_Id", indexes);
+        Assert.Contains("IX_AzureProviderResourceAssignments_WorkspaceId_InstanceId_ProviderScopeFingerprint", indexes);
+        var assignmentColumns = await db.Database.SqlQueryRaw<string>(
+            "SELECT name AS Value FROM pragma_table_info('AzureProviderResourceAssignments')").ToListAsync();
+        var expectedAssignmentColumns = new[]
+        {
+            "Id", "WorkspaceId", "OrganizationId", "InstanceId", "ProviderScopeFingerprint", "NamingVersion",
+            "SubscriptionId", "ResourceGroupName", "WorkloadName", "OwnershipKey", "Location", "State", "Version",
+            "LastOperationId", "FoundationDeploymentId", "WorkloadDeploymentId", "WorkloadResourceId",
+            "WorkloadRevisionName", "StableTrafficRevisionName", "WorkloadIdentityResourceId", "WorkloadIdentityClientId",
+            "WorkloadIdentityPrincipalId", "KeyVaultResourceId", "KeyVaultUri", "SqlServerResourceId", "SqlServerFqdn",
+            "ContainerAppsEnvironmentResourceId", "RegistryResourceId", "AcrPullDeploymentId", "AcrPullRoleAssignmentId",
+            "CreatedAt", "UpdatedAt", "DeletedAt"
+        };
+        Assert.All(expectedAssignmentColumns, column => Assert.Contains(column, assignmentColumns));
+        var assignmentForeignKeys = await db.Database.SqlQueryRaw<string>(
+            "SELECT \"table\" || ':' || \"on_delete\" AS Value FROM pragma_foreign_key_list('AzureProviderResourceAssignments')")
+            .ToListAsync();
+        Assert.Contains("Workspaces:RESTRICT", assignmentForeignKeys);
+        var operationForeignKeys = await db.Database.SqlQueryRaw<string>(
+            "SELECT \"table\" || ':' || \"on_delete\" AS Value FROM pragma_foreign_key_list('AzureProviderOperations')")
+            .ToListAsync();
+        Assert.Contains("AzureProviderResourceAssignments:RESTRICT", operationForeignKeys);
         var releaseColumns = await db.Database.SqlQueryRaw<string>(
             "SELECT name AS Value FROM pragma_table_info('GovernedReleaseCatalog')").ToListAsync();
         Assert.Contains("ComponentDeclarationsFormat", releaseColumns);

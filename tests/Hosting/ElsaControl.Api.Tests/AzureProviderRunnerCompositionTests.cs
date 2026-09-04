@@ -28,7 +28,7 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
     }
 
     [Fact]
-    public void Enabled_worker_composes_the_validated_concrete_runner()
+    public void Enabled_worker_rejects_raw_secret_values_before_composing_the_runner()
     {
         Directory.CreateDirectory(_root);
         File.WriteAllText(Path.Combine(_root, "main.bicep"), "targetScope = 'resourceGroup'");
@@ -47,6 +47,7 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
             ["Deployment:AzureProvider:Runner:SqlBootstrapLogin"] = "bootstrap",
             ["Deployment:AzureProvider:Runner:SqlBootstrapIp"] = "203.0.113.10",
             ["Deployment:AzureProvider:Runner:ExpiryUtc"] = "2026-09-02",
+            ["AZURE_CLIENT_ID"] = "33333333-3333-3333-3333-333333333333",
             ["Deployment:AzureProvider:Runner:TargetScope:SubscriptionId"] = "11111111-1111-1111-1111-111111111111",
             ["Deployment:AzureProvider:Runner:TargetScope:ResourceGroupName"] = "proof-rg",
             ["Deployment:AzureProvider:Runner:TargetScope:RegistrySubscriptionId"] = "22222222-2222-2222-2222-222222222222",
@@ -65,15 +66,10 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
         });
         var services = new ServiceCollection();
 
-        var authority = AzureProviderRunnerComposition.AddRunner(services, configuration);
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            AzureProviderRunnerComposition.AddRunner(services, configuration));
 
-        Assert.NotNull(authority);
-        Assert.Equal(authority.Options.ComputeTemplateAuthorityFingerprint(), authority.TemplateFingerprint);
-        Assert.Equal(authority.Options.ComputeProviderScopeFingerprint(authority.Scope), authority.ProviderScopeFingerprint);
-        using var provider = services.BuildServiceProvider();
-        using var scope = provider.CreateScope();
-        Assert.IsType<AzureBicepProviderRunner>(scope.ServiceProvider.GetRequiredService<IAzureProviderRunner>());
-        Assert.IsType<ConfiguredAzureSecretResolver>(scope.ServiceProvider.GetRequiredService<IAzureSecretResolver>());
+        Assert.Equal("Azure provider worker configuration must not contain raw secret values.", exception.Message);
     }
 
     [Fact]
@@ -111,6 +107,41 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
     }
 
     [Fact]
+    public void Named_secret_references_fail_closed_when_a_value_binding_is_missing()
+    {
+        Assert.Throws<InvalidOperationException>(() => ConfiguredAzureSecretResolver.ReadNamedReferences(
+            Configuration(new Dictionary<string, string?>
+            {
+                ["Deployment:AzureProvider:Secrets:0:Name"] = "database:connectionstring",
+                ["Deployment:AzureProvider:Secrets:0:Reference"] = "secret://vault/database",
+                ["Deployment:AzureProvider:Secrets:0:Value"] = "runtime-only-secret",
+                ["Deployment:AzureProvider:Secrets:1:Name"] = "identity:signingkey",
+                ["Deployment:AzureProvider:Secrets:1:Reference"] = "secret://vault/identity-signing-key",
+                ["Deployment:AzureProvider:Secrets:1:Value"] = "runtime-only-signing-key",
+                ["Deployment:AzureProvider:Secrets:2:Name"] = "admin:password",
+                ["Deployment:AzureProvider:Secrets:2:Reference"] = "secret://vault/admin-password"
+            })));
+    }
+
+    [Fact]
+    public void Named_secret_references_fail_closed_when_a_reference_is_shared_by_aliases()
+    {
+        Assert.Throws<InvalidOperationException>(() => ConfiguredAzureSecretResolver.ReadNamedReferences(
+            Configuration(new Dictionary<string, string?>
+            {
+                ["Deployment:AzureProvider:Secrets:0:Name"] = "database:connectionstring",
+                ["Deployment:AzureProvider:Secrets:0:Reference"] = "secret://vault/shared",
+                ["Deployment:AzureProvider:Secrets:0:Value"] = "runtime-only-database",
+                ["Deployment:AzureProvider:Secrets:1:Name"] = "identity:signingkey",
+                ["Deployment:AzureProvider:Secrets:1:Reference"] = "secret://vault/shared",
+                ["Deployment:AzureProvider:Secrets:1:Value"] = "runtime-only-identity",
+                ["Deployment:AzureProvider:Secrets:2:Name"] = "admin:password",
+                ["Deployment:AzureProvider:Secrets:2:Reference"] = "secret://vault/admin-password",
+                ["Deployment:AzureProvider:Secrets:2:Value"] = "runtime-only-admin-password"
+            })));
+    }
+
+    [Fact]
     public async Task Configured_resolver_preserves_secret_whitespace_without_exposing_value()
     {
         const string secret = "  runtime-only-secret\t ";
@@ -122,7 +153,8 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
             })));
 
         await using var lease = await resolver.ResolveAsync(new(
-            Guid.NewGuid(), "database:connectionstring", "secret://vault/database"));
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "provider-assignment",
+            "database:connectionstring", "secret://vault/database"));
 
         Assert.Equal(secret, lease.Value.ToString());
         Assert.Equal(nameof(AzureSecretLease), lease.ToString());

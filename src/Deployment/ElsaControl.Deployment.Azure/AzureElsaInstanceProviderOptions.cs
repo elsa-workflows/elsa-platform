@@ -16,6 +16,12 @@ public sealed record AzureElsaInstanceProviderOptions
     /// <summary>Provider scope fingerprint bound by the runner.</summary>
     public string? ProviderScopeFingerprint { get; init; }
 
+    public string SubscriptionId { get; init; } = "";
+
+    public string ResourceGroupNamePrefix { get; init; } = "";
+
+    public int ResourceGroupNamingVersion { get; init; } = 1;
+
     public void Validate()
     {
         if (!Enabled)
@@ -24,6 +30,11 @@ public sealed record AzureElsaInstanceProviderOptions
             throw new ArgumentException("A valid Azure template fingerprint is required.", nameof(TemplateFingerprint));
         if (!IsFingerprint(ProviderScopeFingerprint))
             throw new ArgumentException("The Azure provider scope fingerprint is invalid.", nameof(ProviderScopeFingerprint));
+        if (!Guid.TryParseExact(SubscriptionId, "D", out _) ||
+            !string.Equals(SubscriptionId, SubscriptionId.ToLowerInvariant(), StringComparison.Ordinal))
+            throw new ArgumentException("The Azure subscription ID is invalid.", nameof(SubscriptionId));
+        _ = AzureProviderResourceAssignmentNaming.ResourceGroupName(
+            ResourceGroupNamePrefix, Guid.Parse("11111111-1111-1111-1111-111111111111"), ResourceGroupNamingVersion);
     }
 
     private static bool IsFingerprint(string? value) =>

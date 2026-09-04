@@ -1793,11 +1793,15 @@ public sealed class ElsaInstanceLifecycleStoreTests
         var provider = new AzureElsaInstanceProvider(
             new AzureProviderOperationService(operationStore, new FixedTimeProvider(Now)),
             operationStore,
+            operationStore,
+            options:
             new AzureElsaInstanceProviderOptions
             {
                 Enabled = true,
                 TemplateFingerprint = new string('b', 64),
-                ProviderScopeFingerprint = providerScopeFingerprint
+                ProviderScopeFingerprint = providerScopeFingerprint,
+                SubscriptionId = "11111111-1111-1111-1111-111111111111",
+                ResourceGroupNamePrefix = "rg-elsa"
             });
         var submission = await provider.SubmitAsync(new(
             workspace.Id,
@@ -1809,7 +1813,8 @@ public sealed class ElsaInstanceLifecycleStoreTests
             deploymentTarget,
             "westeurope",
             accepted.Instance.OrganizationId,
-            ElsaInstanceOperationAction.Reconcile));
+            ElsaInstanceOperationAction.Reconcile,
+            accepted.Operation.Id.ToString("D")));
         Assert.False(submission.Replayed);
 
         var providerOperation = Assert.Single(await operationStore.ListRunnableAsync(Now, 16));

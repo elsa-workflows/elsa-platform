@@ -316,6 +316,8 @@ public static class AzureProviderOperationValidation
         if ((request.OrganizationId is null) != (request.InstanceId is null)) errors.Add("instanceBinding.incomplete");
         if (request.LifecycleAction is { } lifecycleAction && !Enum.IsDefined(lifecycleAction)) errors.Add("lifecycleAction.invalid");
         if (request.OrganizationId is not null && request.LifecycleAction is null) errors.Add("lifecycleAction.required");
+        if (request.ProviderAssignmentId is { } assignmentId && assignmentId == Guid.Empty) errors.Add("providerAssignment.invalid");
+        if (request.OrganizationId is not null && request.ProviderAssignmentId is null) errors.Add("providerAssignment.required");
         if (!Enum.IsDefined(request.Action)) errors.Add("action.invalid");
         Required(request.TargetKey, "target");
         Required(request.IdempotencyKey, "idempotency");
@@ -411,7 +413,7 @@ public static class AzureProviderOperationValidation
             : $"{legacyValue}|{normalized.ProviderScopeFingerprint}";
         var withBinding = normalized.OrganizationId is null
             ? value
-            : $"{value}|{normalized.OrganizationId:D}|{normalized.InstanceId:D}|{normalized.LifecycleAction}";
+            : $"{value}|{normalized.OrganizationId:D}|{normalized.InstanceId:D}|{normalized.LifecycleAction}|{normalized.ProviderAssignmentId:D}";
         var withPackageMetadata = normalized.SqlWorkflowPackageVersion is null && normalized.SqlQuartzPackageVersion is null
             ? withBinding
             : $"{withBinding}|{normalized.SqlWorkflowPackageVersion}|{normalized.SqlQuartzPackageVersion}";
@@ -471,6 +473,7 @@ public static class AzureProviderOperationValidation
         normalized.OrganizationId,
         normalized.InstanceId,
         LifecycleAction = normalized.LifecycleAction?.ToString(),
+        normalized.ProviderAssignmentId,
         normalized.TargetKey,
         Action = normalized.Action.ToString(),
         normalized.PlanFingerprint,

@@ -13,7 +13,8 @@ namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 
 public sealed class AzureProviderOperationStore(CatalogDbContext db) :
     IAzureProviderOperationStore,
-    IAzureProviderOperationAuthorizationStore
+    IAzureProviderOperationAuthorizationStore,
+    IAzureProviderResourceAssignmentStore
 {
     private static readonly IReadOnlyDictionary<string, string> EmptySecretReferences =
         new ReadOnlyDictionary<string, string>(
@@ -89,6 +90,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
             WorkspaceId = normalized.WorkspaceId,
             OrganizationId = normalized.OrganizationId,
             InstanceId = normalized.InstanceId,
+            ProviderAssignmentId = normalized.ProviderAssignmentId,
             LifecycleAction = normalized.LifecycleAction,
             TargetKey = normalized.TargetKey,
             Action = normalized.Action,
@@ -190,6 +192,60 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
     public async Task<AzureProviderOperation?> GetAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default) =>
         await db.AzureProviderOperations.AsNoTracking().SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == operationId, cancellationToken) is { } entity ? ToModel(entity) : null;
 
+    async Task<AzureProviderResourceAssignment> IAzureProviderResourceAssignmentStore.CreateOrGetAsync(
+        AzureProviderResourceAssignmentRequest request,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ValidateAssignmentRequest(request);
+        var existing = await db.AzureProviderResourceAssignments
+            .SingleOrDefaultAsync(x => x.WorkspaceId == request.WorkspaceId &&
+                                       x.InstanceId == request.InstanceId &&
+                                       x.ProviderScopeFingerprint == request.ProviderScopeFingerprint,
+                cancellationToken);
+        if (existing is not null)
+            return ToModel(existing);
+
+        var assignmentId = Guid.NewGuid();
+        var resourceGroupName = AzureProviderResourceAssignmentNaming.ResourceGroupName(
+            request.ResourceGroupNamePrefix, request.InstanceId, request.NamingVersion);
+        var entity = new AzureProviderResourceAssignmentEntity
+        {
+            Id = assignmentId,
+            WorkspaceId = request.WorkspaceId,
+            OrganizationId = request.OrganizationId,
+            InstanceId = request.InstanceId,
+            ProviderScopeFingerprint = request.ProviderScopeFingerprint.ToLowerInvariant(),
+            NamingVersion = request.NamingVersion,
+            SubscriptionId = request.SubscriptionId.ToLowerInvariant(),
+            ResourceGroupName = resourceGroupName,
+            WorkloadName = request.WorkloadName,
+            OwnershipKey = AzureProviderResourceAssignmentNaming.OwnershipKey(
+                assignmentId, request.InstanceId, request.ProviderScopeFingerprint),
+            Location = request.Location.ToLowerInvariant(),
+            State = AzureProviderAssignmentState.Reserved,
+            Version = 1,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        db.AzureProviderResourceAssignments.Add(entity);
+        await db.SaveChangesAsync(cancellationToken);
+        return ToModel(entity);
+    }
+
+    async Task<AzureProviderResourceAssignment?> IAzureProviderResourceAssignmentStore.GetAsync(
+        Guid workspaceId,
+        Guid assignmentId,
+        CancellationToken cancellationToken)
+    {
+        if (workspaceId == Guid.Empty || assignmentId == Guid.Empty)
+            throw new ArgumentException("The Azure assignment identity is invalid.");
+        var entity = await db.AzureProviderResourceAssignments.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == assignmentId, cancellationToken);
+        return entity is null ? null : ToModel(entity);
+    }
+
     public async Task<IReadOnlyList<AzureProviderOperation>> ListRunnableAsync(
         DateTimeOffset now,
         int limit,
@@ -201,7 +257,15 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
         var operations = await db.AzureProviderOperations.AsNoTracking()
             .Where(x => (x.Status == AzureProviderOperationStatus.Accepted ||
                          x.Status == AzureProviderOperationStatus.Queued ||
-                         x.Status == AzureProviderOperationStatus.EntitlementHeld) &&
+                         x.Status == AzureProviderOperationStatus.EntitlementHeld ||
+                         x.Status == AzureProviderOperationStatus.RecoveryRequired) &&
+                        // A persisted plan that has already failed the safe
+                        // restoration boundary remains reserved for explicit
+                        // operator handling. Do not let it starve valid
+                        // recovery work in the automatic provider poller.
+                        !db.AzureProviderOperationTransitions.Any(transition =>
+                            transition.OperationId == x.Id &&
+                            transition.Code == "azure.plan.unrestorable") &&
                         x.CompletedAt == null &&
                         (x.LeaseExpiresAt == null || x.LeaseExpiresAt <= now))
             .OrderBy(x => x.UpdatedAt)
@@ -665,7 +729,45 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
             x.SqlQuartzPackageVersion,
             x.OrganizationId,
             x.InstanceId,
-            x.LifecycleAction);
+            x.LifecycleAction,
+            x.ProviderAssignmentId);
+    }
+
+    private static AzureProviderResourceAssignment ToModel(AzureProviderResourceAssignmentEntity x) => new(
+        x.Id,
+        x.WorkspaceId,
+        x.OrganizationId,
+        x.InstanceId,
+        x.ProviderScopeFingerprint,
+        x.NamingVersion,
+        x.SubscriptionId,
+        x.ResourceGroupName,
+        x.WorkloadName,
+        x.OwnershipKey,
+        x.Location,
+        x.State,
+        new AzureProviderResourceReferences(
+            x.ResourceGroupName, x.FoundationDeploymentId, x.WorkloadDeploymentId, x.WorkloadResourceId,
+            x.WorkloadRevisionName, x.StableTrafficRevisionName, x.WorkloadIdentityResourceId,
+            x.WorkloadIdentityClientId, x.WorkloadIdentityPrincipalId, x.KeyVaultResourceId, x.KeyVaultUri,
+            x.SqlServerResourceId, x.SqlServerFqdn, x.ContainerAppsEnvironmentResourceId,
+            x.RegistryResourceId, x.AcrPullDeploymentId, x.AcrPullRoleAssignmentId),
+        x.LastOperationId,
+        x.Version,
+        x.CreatedAt,
+        x.UpdatedAt,
+        x.DeletedAt);
+
+    private static void ValidateAssignmentRequest(AzureProviderResourceAssignmentRequest request)
+    {
+        if (request.WorkspaceId == Guid.Empty || request.OrganizationId == Guid.Empty || request.InstanceId == Guid.Empty ||
+            request.ProviderScopeFingerprint is not { Length: 64 } || !request.ProviderScopeFingerprint.All(char.IsAsciiHexDigit) ||
+            !Guid.TryParseExact(request.SubscriptionId, "D", out _) ||
+            string.IsNullOrWhiteSpace(request.WorkloadName) || request.WorkloadName.Length > 16 ||
+            string.IsNullOrWhiteSpace(request.Location) || request.Location.Any(char.IsControl))
+            throw new ArgumentException("The Azure provider assignment request is invalid.", nameof(request));
+        _ = AzureProviderResourceAssignmentNaming.ResourceGroupName(
+            request.ResourceGroupNamePrefix, request.InstanceId, request.NamingVersion);
     }
 
     private static (IReadOnlyList<AzureProviderDiagnostic> Diagnostics, bool Invalid) ReadDiagnostics(string? json)

@@ -1884,7 +1884,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                     target,
                     instance.RegionCode,
                     instance.OrganizationId,
-                    (ElsaInstanceOperationAction)operation.Action);
+                    (ElsaInstanceOperationAction)operation.Action,
+                    instance.PlacementAssignmentId ?? operation.Id.ToString("D"));
                 candidate.Validate();
                 pending.Add(new(operation.WorkspaceId, operation.Id, candidate));
             }
