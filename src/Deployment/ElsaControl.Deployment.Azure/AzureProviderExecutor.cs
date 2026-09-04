@@ -949,7 +949,18 @@ public sealed class AzureProviderExecutor
         CancellationToken cancellationToken)
     {
         if (operation.ProviderAssignmentId is null)
+        {
+            // Unbound legacy rows are held by RevalidateCommercialAsync so they can be
+            // explicitly repaired. Once the durable organization/instance lifecycle binding is
+            // present, however, a missing assignment is corruption and must not reach
+            // CreateExecutionContext or the provider runner.
+            if (operation.OrganizationId is { } organizationId && organizationId != Guid.Empty &&
+                operation.InstanceId is { } instanceId && instanceId != Guid.Empty &&
+                operation.LifecycleAction is not null)
+                throw new InvalidOperationException("The provider assignment binding is unavailable.");
+
             return null;
+        }
         if (_assignmentStore is null)
             return null;
 

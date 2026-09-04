@@ -149,6 +149,36 @@ public sealed class AzureProviderExecutorTests
         Assert.Empty(runner.Steps);
     }
 
+    [Theory]
+    [InlineData(AzureProviderOperationAction.Reconcile)]
+    [InlineData(AzureProviderOperationAction.Delete)]
+    public async Task Missing_assignment_binding_is_failed_durably_before_any_provider_call(
+        AzureProviderOperationAction action)
+    {
+        var store = new FakeOperationStore { OmitProviderAssignmentId = true };
+        var runner = new RecordingRunner();
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now));
+        var request = CreateRequest(action) with
+        {
+            LifecycleAction = action == AzureProviderOperationAction.Delete
+                ? ElsaInstanceOperationAction.Delete
+                : ElsaInstanceOperationAction.Reconcile
+        };
+
+        var result = action == AzureProviderOperationAction.Delete
+            ? await executor.DeleteAsync(request, CreatePlan())
+            : await executor.ApplyAsync(request, CreatePlan());
+
+        Assert.Equal(AzureProviderExecutionOutcome.Failed, result.Outcome);
+        Assert.Equal(AzureProviderOperationStatus.Failed, result.Operation.Status);
+        Assert.Equal("azure.assignment.invalid", result.Code);
+        Assert.Empty(runner.Steps);
+        var transitions = await store.ListTransitionsAsync(WorkspaceId, result.Operation.Id);
+        Assert.Contains(transitions, transition =>
+            transition.Code == "azure.assignment.invalid" &&
+            transition.Status == AzureProviderOperationStatus.Failed);
+    }
+
     [Fact]
     public async Task Constrained_stop_reaches_the_provider_runner()
     {
@@ -1085,6 +1115,7 @@ public sealed class AzureProviderExecutorTests
         public bool LoseLeaseOnHeartbeat { get; init; }
         public AzureProviderResourceReferences? LatestReconcileResources { get; init; }
         public AzureProviderOperationStatus? ConcurrentWinnerStatus { get; init; }
+        public bool OmitProviderAssignmentId { get; init; }
 
         public async Task<AzureProviderOperationCreateResult> CreateOrGetWithResultAsync(
             AzureProviderOperationRequest request,
@@ -1140,7 +1171,7 @@ public sealed class AzureProviderExecutorTests
                 OrganizationId = normalized.OrganizationId,
                 InstanceId = normalized.InstanceId,
                 LifecycleAction = normalized.LifecycleAction,
-                ProviderAssignmentId = normalized.ProviderAssignmentId
+                ProviderAssignmentId = OmitProviderAssignmentId ? null : normalized.ProviderAssignmentId
             };
             if (RejectCreateWithStatus is { } conflictStatus)
             {
