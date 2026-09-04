@@ -94,7 +94,14 @@ public sealed class CommercialLifecycleAcceptanceProofTests
         Assert.Equal(OrganizationSubscriptionState.Retained, (await CurrentEntitlementAsync(db)).SubscriptionState);
         var notices = await db.OrganizationBillingLifecycleNotices.AsNoTracking().ToListAsync();
         Assert.Equal(4, notices.Count);
-        Assert.Equal(4, notices.Select(x => x.Kind).Distinct().Count());
+        Assert.Equal(
+            [
+                OrganizationBillingLifecycleNoticeKind.ConstraintStarted,
+                OrganizationBillingLifecycleNoticeKind.SuspensionStarted,
+                OrganizationBillingLifecycleNoticeKind.ExportAvailable,
+                OrganizationBillingLifecycleNoticeKind.DeletionScheduled
+            ],
+            notices.Select(x => x.Kind).Order().ToArray());
         Assert.All(notices, x => Assert.Equal(organization.Id, x.OrganizationId));
         Assert.DoesNotContain(notices, x => x.LastFailureCode is not null);
 
@@ -125,6 +132,7 @@ public sealed class CommercialLifecycleAcceptanceProofTests
         var providerEvents = await db.BillingProviderEvents.AsNoTracking().ToListAsync();
         Assert.Equal(3, providerEvents.Count);
         var audits = await db.OrganizationAuditRecords.AsNoTracking().ToListAsync();
+        Assert.NotEmpty(audits);
         Assert.All(audits,
             audit => Assert.Equal(organization.Id, audit.OrganizationId));
         var cleanups = await db.OrganizationBillingCleanups.AsNoTracking().ToListAsync();
