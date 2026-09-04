@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Azure;
@@ -31,6 +32,55 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
     private const int MaximumTimeoutSeconds = 7_200;
     private const int MinimumPollSeconds = 1;
     private const int MaximumPollSeconds = 30;
+    private static readonly JsonSerializerOptions CatalogJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
+    [Fact]
+    public async Task Catalog_projection_deserializes_camel_case()
+    {
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("""
+            {
+              "schemaVersion": "2.0.0",
+              "manifestReference": "oci://example/release-manifest@sha256:abc",
+              "manifestDigest": "sha256:manifest",
+              "payloadDigest": "sha256:payload",
+              "signatureEvidenceReference": "oci://example/signature@sha256:def",
+              "signatureEvidenceDigest": "sha256:signature",
+              "registryClass": "paid",
+              "distribution": {
+                "id": "valence-runtime",
+                "generation": "producer-2.0.0",
+                "releaseLine": "3.8",
+                "releaseVersion": "3.8.0-preview.5413",
+                "channel": "preview",
+                "producerLifecycle": "preview",
+                "edition": "commercial",
+                "sourceRepository": "https://github.com/example/runtime",
+                "sourceCommit": "abc123",
+                "sourceRunId": "run-1"
+              },
+              "topology": {
+                "id": "combined",
+                "packageManifestSchema": "producer-2.0.0",
+                "runtimeKinds": [],
+                "capabilities": [],
+                "componentVersions": [],
+                "components": [],
+                "evidence": []
+              },
+              "catalogLifecycle": "supported",
+              "admittedAt": "2026-09-05T00:00:00Z"
+            }
+            """));
+
+        var entry = await JsonSerializer.DeserializeAsync<GovernedReleaseCatalogEntry>(stream, CatalogJsonOptions);
+
+        Assert.NotNull(entry);
+        Assert.Equal("valence-runtime", entry.Distribution.Id);
+        Assert.Equal("combined", entry.Topology.Id);
+    }
 
     [ProductionAzureFact]
     public async Task Production_composition_applies_reconciles_reloads_and_deletes_one_instance()
@@ -529,7 +579,7 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
         try
         {
             await using var stream = File.OpenRead(path);
-            return await JsonSerializer.DeserializeAsync<GovernedReleaseCatalogEntry>(stream, cancellationToken: cancellationToken)
+            return await JsonSerializer.DeserializeAsync<GovernedReleaseCatalogEntry>(stream, CatalogJsonOptions, cancellationToken)
                 ?? throw new ProofFailureException();
         }
         catch (JsonException)
