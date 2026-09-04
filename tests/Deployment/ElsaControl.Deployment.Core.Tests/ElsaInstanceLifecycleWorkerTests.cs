@@ -104,6 +104,7 @@ public sealed class ElsaInstanceLifecycleWorkerTests
         Assert.Equal(ElsaInstanceCommercialOperation.LifecycleConstrained, held.FailureCode);
         Assert.Equal(0, result.ProviderInvocations);
         Assert.Empty(provider.Submissions);
+        Assert.True(store.HoldPersisted);
     }
 
     [Fact]
@@ -695,6 +696,7 @@ public sealed class ElsaInstanceLifecycleWorkerTests
         private readonly InMemoryElsaInstanceLifecycleStore _inner = new(timeProvider);
 
         public IReadOnlyCollection<ElsaInstanceOperation> Operations => _inner.Operations;
+        public bool HoldPersisted { get; private set; }
 
         public void RegisterResolutionInput(Guid operationId, ElsaInstanceLifecycleResolutionInput input) =>
             _inner.RegisterResolutionInput(operationId, input);
@@ -727,6 +729,7 @@ public sealed class ElsaInstanceLifecycleWorkerTests
             Guid workspaceId, Guid instanceId, Guid operationId, DateTimeOffset authorizedAt,
             CancellationToken cancellationToken = default)
         {
+            HoldPersisted = true;
             return Task.FromResult(new ElsaInstanceCommercialGateDecision(
                 false,
                 ElsaInstanceCommercialOperation.LifecycleConstrained,
