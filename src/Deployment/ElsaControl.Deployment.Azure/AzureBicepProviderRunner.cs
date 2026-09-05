@@ -1705,14 +1705,21 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             Directory.Delete(directory, recursive: false);
     }
 
-    private sealed class DeploymentOutputs : Dictionary<string, OutputValue>
+    private sealed class DeploymentOutputs : Dictionary<string, OutputValue?>
     {
-        public string? String(string name) => TryGetValue(name, out var value) ? value.Value : null;
+        public string? String(string name)
+        {
+            if (!TryGetValue(name, out var output) || output?.Value is not JsonElement value ||
+                value.ValueKind != JsonValueKind.String)
+                return null;
+
+            return value.GetString();
+        }
     }
 
     private sealed class OutputValue
     {
-        [JsonPropertyName("value")] public string? Value { get; set; }
+        [JsonPropertyName("value")] public JsonElement? Value { get; set; }
     }
 
     private sealed class RoleAssignment

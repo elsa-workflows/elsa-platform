@@ -68,6 +68,47 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Foundation_accepts_irrelevant_mixed_typed_outputs_when_consumed_values_are_strings()
+    {
+        var result = await RunFoundationAsync(FoundationOutputs());
+
+        Assert.Equal(AzureProviderRunnerOutcome.Completed, result.Outcome);
+        Assert.Equal("proof-rg", result.Resources.ResourceGroupName);
+    }
+
+    [Theory]
+    [InlineData("7")]
+    [InlineData("true")]
+    [InlineData("{\"kind\":\"metadata\"}")]
+    [InlineData("[1,2]")]
+    [InlineData("null")]
+    public async Task Foundation_rejects_non_string_consumed_output_values(string value)
+    {
+        var result = await RunFoundationAsync(FoundationOutputsWithResourceGroupValue(value));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Failed, result.Outcome);
+        Assert.Equal("azure.foundation.output-invalid", result.Code);
+    }
+
+    [Fact]
+    public async Task Foundation_rejects_missing_consumed_output_values()
+    {
+        var result = await RunFoundationAsync(FoundationOutputsWithoutResourceGroup());
+
+        Assert.Equal(AzureProviderRunnerOutcome.Failed, result.Outcome);
+        Assert.Equal("azure.foundation.output-invalid", result.Code);
+    }
+
+    [Fact]
+    public async Task Foundation_rejects_null_consumed_output_entries()
+    {
+        var result = await RunFoundationAsync(FoundationOutputsWithNullResourceGroupEntry());
+
+        Assert.Equal(AzureProviderRunnerOutcome.Failed, result.Outcome);
+        Assert.Equal("azure.foundation.output-invalid", result.Code);
+    }
+
+    [Fact]
     public async Task Assigned_foundation_targets_only_the_dedicated_resource_group()
     {
         var process = new FakeCommandProcess();
@@ -981,9 +1022,42 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
           "keyVaultUri": { "value": "https://proof-kv.vault.azure.net/" },
           "sqlServerId": { "value": "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.Sql/servers/proof-sql" },
           "sqlServerFqdn": { "value": "proof-sql.database.windows.net" },
-          "containerAppsEnvironmentId": { "value": "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.App/managedEnvironments/proof-aca" }
+          "containerAppsEnvironmentId": { "value": "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.App/managedEnvironments/proof-aca" },
+          "sqlShortTermRetentionDays": { "value": 7 },
+          "unusedBoolean": { "value": true },
+          "unusedObject": { "value": { "kind": "metadata" } },
+          "unusedArray": { "value": [1, 2] },
+          "unusedNull": { "value": null },
+          "unusedNullEntry": null
         }
         """;
+
+    private static string FoundationOutputsWithResourceGroupValue(string value) =>
+        FoundationOutputs().Replace(
+            "  \"resourceGroupName\": { \"value\": \"proof-rg\" },",
+            $"  \"resourceGroupName\": {{ \"value\": {value} }},",
+            StringComparison.Ordinal);
+
+    private static string FoundationOutputsWithoutResourceGroup() =>
+        FoundationOutputs().Replace(
+            "  \"resourceGroupName\": { \"value\": \"proof-rg\" },\n",
+            string.Empty,
+            StringComparison.Ordinal);
+
+    private static string FoundationOutputsWithNullResourceGroupEntry() =>
+        FoundationOutputs().Replace(
+            "  \"resourceGroupName\": { \"value\": \"proof-rg\" },",
+            "  \"resourceGroupName\": null,",
+            StringComparison.Ordinal);
+
+    private Task<AzureProviderRunnerResult> RunFoundationAsync(string outputs)
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args is ["group", "exists", ..], "false");
+        process.Success(args => args is ["group", "create", ..]);
+        process.Success(args => args.Contains("deployment") && args.Contains("group") && args.Contains("create"), outputs);
+        return _fixture.Runner(process).RunAsync(_fixture.Command(AzureProviderRunnerStep.Foundation));
+    }
 
     private string WorkloadOutputs() => """
         {
