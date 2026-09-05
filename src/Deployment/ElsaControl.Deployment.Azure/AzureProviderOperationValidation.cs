@@ -40,7 +40,9 @@ public static class AzureProviderOperationValidation
     {
         if (checkpoint is null) throw new ArgumentNullException(nameof(checkpoint));
         if (checkpoint.Resources is null) throw new ArgumentException("Resources are required.", nameof(checkpoint));
-        if (!Enum.IsDefined(checkpoint.Phase) || !Enum.IsDefined(checkpoint.Health) || !IsSafeCode(checkpoint.Code))
+        if (!Enum.IsDefined(checkpoint.Phase) || !Enum.IsDefined(checkpoint.Health) ||
+            checkpoint.AttemptedStep is { } attemptedStep && !Enum.IsDefined(attemptedStep) ||
+            !IsSafeCode(checkpoint.Code))
             throw new ArgumentException("Checkpoint code, phase, and health are required.", nameof(checkpoint));
         if (string.IsNullOrWhiteSpace(checkpoint.Message) || checkpoint.Message.Length > 2000 || checkpoint.Message.Any(char.IsControl) || ContainsSensitiveMarker(checkpoint.Message))
             throw new ArgumentException("Checkpoint message is unsafe.", nameof(checkpoint));

@@ -24,15 +24,44 @@ public enum AzureProviderOperationStatus
 
 public enum AzureProviderOperationPhase
 {
-    Planned,
-    FoundationSubmitted,
-    FoundationReady,
-    WorkloadSubmitted,
-    WorkloadReady,
-    HealthVerified,
-    TrafficPromoted,
-    CleanupSubmitted,
-    CleanupVerified
+    Planned = 0,
+    FoundationSubmitted = 1,
+    FoundationReady = 2,
+    WorkloadSubmitted = 3,
+    WorkloadReady = 4,
+    HealthVerified = 5,
+    TrafficPromoted = 6,
+    CleanupSubmitted = 7,
+    CleanupVerified = 8,
+    /// <summary>Fresh recovery observed foundation complete before its first checkpoint.</summary>
+    FoundationObserved = 9,
+    /// <summary>Fresh recovery observed registry access complete.</summary>
+    AcrPullObserved = 10,
+    /// <summary>Fresh recovery observed secret seeding complete.</summary>
+    SeedSecretsObserved = 11
+}
+
+public static class AzureProviderOperationPhaseOrdering
+{
+    public static int Compare(AzureProviderOperationPhase left, AzureProviderOperationPhase right) =>
+        Rank(left).CompareTo(Rank(right));
+
+    private static int Rank(AzureProviderOperationPhase phase) => phase switch
+    {
+        AzureProviderOperationPhase.Planned => 0,
+        AzureProviderOperationPhase.FoundationSubmitted => 10,
+        AzureProviderOperationPhase.FoundationObserved => 11,
+        AzureProviderOperationPhase.AcrPullObserved => 12,
+        AzureProviderOperationPhase.SeedSecretsObserved => 13,
+        AzureProviderOperationPhase.FoundationReady => 20,
+        AzureProviderOperationPhase.WorkloadSubmitted => 30,
+        AzureProviderOperationPhase.WorkloadReady => 40,
+        AzureProviderOperationPhase.HealthVerified => 50,
+        AzureProviderOperationPhase.TrafficPromoted => 60,
+        AzureProviderOperationPhase.CleanupSubmitted => 70,
+        AzureProviderOperationPhase.CleanupVerified => 80,
+        _ => throw new ArgumentOutOfRangeException(nameof(phase))
+    };
 }
 
 public enum AzureProviderHealth
@@ -136,7 +165,8 @@ public sealed record AzureProviderOperation(
     Guid? OrganizationId = null,
     Guid? InstanceId = null,
     ElsaInstanceOperationAction? LifecycleAction = null,
-    Guid? ProviderAssignmentId = null)
+    Guid? ProviderAssignmentId = null,
+    AzureProviderRunnerStep? AttemptedStep = null)
 {
     [JsonIgnore]
     public IReadOnlyDictionary<string, string> SafeSecretReferences => SecretReferences ?? EmptySecretReferences;
@@ -170,4 +200,5 @@ public sealed record AzureProviderCheckpoint(
     string? Endpoint,
     AzureProviderHealth Health,
     IReadOnlyList<AzureProviderDiagnostic> Diagnostics,
-    bool ReplaceResources = false);
+    bool ReplaceResources = false,
+    AzureProviderRunnerStep? AttemptedStep = null);
