@@ -122,17 +122,70 @@ public static class ManagedLifecycleTelemetry
         ElsaObservedLifecycle observedLifecycle,
         ElsaInstanceHealth health,
         ElsaInstanceOperationState? operationState,
-        string? diagnosticCode) =>
-        new()
+        string? diagnosticCode) => CreateTags(
+            action,
+            outcome,
+            desiredLifecycle,
+            observedLifecycle,
+            health,
+            operationState,
+            diagnosticCode,
+            includeDiagnosticCode: true,
+            boundedEnums: false);
+
+    private static TagList MetricTags(
+        ElsaInstanceOperationAction action,
+        string outcome,
+        ElsaDesiredLifecycle? desiredLifecycle,
+        ElsaObservedLifecycle observedLifecycle,
+        ElsaInstanceHealth health,
+        ElsaInstanceOperationState? operationState) => CreateTags(
+            action,
+            outcome,
+            desiredLifecycle,
+            observedLifecycle,
+            health,
+            operationState,
+            diagnosticCode: null,
+            includeDiagnosticCode: false,
+            boundedEnums: true);
+
+    private static TagList CreateTags(
+        ElsaInstanceOperationAction action,
+        string outcome,
+        ElsaDesiredLifecycle? desiredLifecycle,
+        ElsaObservedLifecycle observedLifecycle,
+        ElsaInstanceHealth health,
+        ElsaInstanceOperationState? operationState,
+        string? diagnosticCode,
+        bool includeDiagnosticCode,
+        bool boundedEnums)
+    {
+        var tags = new TagList
         {
-            { ActionTag, EnumValue(action) },
+            { ActionTag, boundedEnums ? MetricEnumValue(action) : EnumValue(action) },
             { OutcomeTag, OutcomeValue(outcome) },
-            { DesiredLifecycleTag, desiredLifecycle is { } desired ? EnumValue(desired) : Unknown },
-            { ObservedLifecycleTag, EnumValue(observedLifecycle) },
-            { HealthTag, EnumValue(health) },
-            { OperationStateTag, operationState is { } state ? EnumValue(state) : Unknown },
-            { DiagnosticCodeTag, DiagnosticValue(diagnosticCode) }
+            {
+                DesiredLifecycleTag,
+                desiredLifecycle is { } desired
+                    ? boundedEnums ? MetricEnumValue(desired) : EnumValue(desired)
+                    : Unknown
+            },
+            { ObservedLifecycleTag, boundedEnums ? MetricEnumValue(observedLifecycle) : EnumValue(observedLifecycle) },
+            { HealthTag, boundedEnums ? MetricEnumValue(health) : EnumValue(health) },
+            {
+                OperationStateTag,
+                operationState is { } state
+                    ? boundedEnums ? MetricEnumValue(state) : EnumValue(state)
+                    : Unknown
+            }
         };
+
+        if (includeDiagnosticCode)
+            tags.Add(DiagnosticCodeTag, DiagnosticValue(diagnosticCode));
+
+        return tags;
+    }
 
     private static void Apply(Activity? activity, in TagList tags)
     {
@@ -171,6 +224,9 @@ public static class ManagedLifecycleTelemetry
             { Length: 0 } => Unknown,
             var text => ToSnakeCase(text)
         };
+
+    private static string MetricEnumValue<T>(T value) where T : struct, Enum =>
+        Enum.IsDefined(typeof(T), value) ? EnumValue(value) : Unknown;
 
     private static string OutcomeValue(string value)
     {
@@ -262,7 +318,13 @@ public static class ManagedLifecycleTelemetry
                 operationState,
                 null);
             Apply(_activity, tags);
-            _lastTags = tags;
+            _lastTags = ManagedLifecycleTelemetry.MetricTags(
+                _action,
+                Unknown,
+                desiredLifecycle,
+                observedLifecycle,
+                health,
+                operationState);
         }
 
         public void Complete(
@@ -283,10 +345,17 @@ public static class ManagedLifecycleTelemetry
                 operationState,
                 diagnosticCode);
             Apply(_activity, tags);
-            CompletionCounter.Add(1, tags);
+            var metricTags = ManagedLifecycleTelemetry.MetricTags(
+                _action,
+                outcome,
+                desiredLifecycle,
+                observedLifecycle,
+                health,
+                operationState);
+            CompletionCounter.Add(1, metricTags);
             if (_recordsEndpointHealth)
-                EndpointHealthCounter.Add(1, tags);
-            RecordDuration(tags);
+                EndpointHealthCounter.Add(1, metricTags);
+            RecordDuration(metricTags);
             _activity?.SetStatus(_errorRecorded ? ActivityStatusCode.Error : ActivityStatusCode.Ok);
         }
 
@@ -307,7 +376,13 @@ public static class ManagedLifecycleTelemetry
                 operationState,
                 diagnosticCode);
             Apply(_activity, tags);
-            _lastTags = tags;
+            _lastTags = ManagedLifecycleTelemetry.MetricTags(
+                _action,
+                "already_completed",
+                desiredLifecycle,
+                observedLifecycle,
+                health,
+                operationState);
             _durationRecorded = true;
             _activity?.SetStatus(ActivityStatusCode.Ok);
         }
@@ -329,8 +404,15 @@ public static class ManagedLifecycleTelemetry
                 operationState,
                 diagnosticCode);
             Apply(_activity, tags);
-            ErrorCounter.Add(1, tags);
-            _lastTags = tags;
+            var metricTags = ManagedLifecycleTelemetry.MetricTags(
+                _action,
+                "error",
+                desiredLifecycle,
+                observedLifecycle,
+                health,
+                operationState);
+            ErrorCounter.Add(1, metricTags);
+            _lastTags = metricTags;
             _errorRecorded = true;
             _activity?.SetStatus(ActivityStatusCode.Error);
         }
@@ -351,8 +433,15 @@ public static class ManagedLifecycleTelemetry
                 health,
                 operationState,
                 diagnosticCode);
-            TransitionCounter.Add(1, tags);
-            _lastTags = tags;
+            var metricTags = ManagedLifecycleTelemetry.MetricTags(
+                _action,
+                "transition",
+                desiredLifecycle,
+                observedLifecycle,
+                health,
+                operationState);
+            TransitionCounter.Add(1, metricTags);
+            _lastTags = metricTags;
         }
 
         public void SetCorrelation(
@@ -368,14 +457,13 @@ public static class ManagedLifecycleTelemetry
             ElsaInstanceHealth health,
             ElsaInstanceOperationState? operationState)
         {
-            var tags = ManagedLifecycleTelemetry.Tags(
+            var tags = ManagedLifecycleTelemetry.MetricTags(
                 _action,
                 "retry",
                 desiredLifecycle,
                 observedLifecycle,
                 health,
-                operationState,
-                null);
+                operationState);
             RetryCounter.Add(1, tags);
         }
 
