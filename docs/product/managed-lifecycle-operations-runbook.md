@@ -103,10 +103,10 @@ Durably completed reconciliation replays remain visible as spans with outcome
 `already_completed`, but do not increment completion, duration, or endpoint
 health measurements again.
 
-Use the operation outcome, lifecycle/health state, operation state, and
-diagnostic code tags to filter these signals. Metric diagnostics use an explicit
-fixed-code allow-list and collapse anything else to `unknown`. The allowed tag
-list and redaction rules are defined in
+Use the operation outcome, lifecycle/health state, and operation state to filter
+the metric signals. Activity and trace diagnostic code tags use an explicit
+fixed-code allow-list and collapse anything else to `unknown`; diagnostics are
+not metric labels. The allowed tag list and redaction rules are defined in
 [Tenant and redaction rules](#tenant-and-redaction-rules).
 
 ## Deadline and retry boundaries
@@ -246,10 +246,11 @@ cutover.
 - API responses and authorized operator records may contain safe enum state,
   UTC timestamps, attempt counts, opaque control-plane IDs, trace IDs, stable
   diagnostic codes, and deterministic deduplication identities.
-- Metrics are low-cardinality. The managed lifecycle meter allows only
-  `action`, `outcome`, `desired_lifecycle`, `observed_lifecycle`, `health`,
-  `operation_state`, and `diagnostic_code`; never add organization, workspace,
-  instance, operation, provider, endpoint, resource, name, or message labels.
+- Metrics are low-cardinality. The managed lifecycle meter allows exactly
+  `action`, `outcome`, `desired_lifecycle`, `observed_lifecycle`, `health`, and
+  `operation_state`; `diagnostic_code` is activity/trace-only and never a metric
+  label. Never add organization, workspace, instance, operation, provider,
+  endpoint, resource, name, or message labels.
 - Logs/traces may correlate an authorized incident with opaque IDs where the
   access policy permits it, but must not include customer names, provider/Azure
   resource IDs, endpoint URLs or credentials, tokens, passwords, secret values,
