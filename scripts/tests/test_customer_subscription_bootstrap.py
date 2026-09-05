@@ -42,8 +42,8 @@ class CustomerSubscriptionBootstrapTests(unittest.TestCase):
     def test_no_implicit_target_subscription_or_real_identifiers(self):
         self.assertTrue(self.template["$schema"].endswith("subscriptionDeploymentTemplate.json#"))
         serialized = json.dumps(self.template)
-        self.assertNotRegex(serialized, r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
-        self.assertNotRegex(serialized, r"[\w.+-]+@[\w.-]+\.[a-z]{2,}")
+        self.assertNotRegex(serialized, r"(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+        self.assertNotRegex(serialized, r"(?i)[\w.+-]+@[\w.-]+\.[a-z]{2,}")
         self.assertNotIn("Microsoft.Authorization/roleAssignments", serialized)
         self.assertNotIn("Microsoft.Web/sites", serialized)
 
@@ -64,7 +64,10 @@ class CustomerSubscriptionBootstrapTests(unittest.TestCase):
             self.assertEqual("Forecasted" if name.startswith("forecast") else "Actual", notification["thresholdType"])
             self.assertEqual(["[parameters('budgetContactEmail')]"], notification["contactEmails"])
             self.assertNotIn("contactGroups", notification)
-        self.assertEqual([50, 80, 100, 100], [notification["threshold"] for notification in notifications.values()])
+        self.assertEqual(
+            {"actual50": 50, "actual80": 80, "actual100": 100, "forecast100": 100},
+            {name: notification["threshold"] for name, notification in notifications.items()},
+        )
         self.assertNotIn("budgetContactEmail", json.dumps(self.template.get("outputs", {})))
 
 

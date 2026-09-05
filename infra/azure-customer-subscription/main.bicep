@@ -22,7 +22,7 @@ param budgetEndDate string
 
 @secure()
 @minLength(3)
-@description('Existing operational billing contact; intentionally not persisted as a deployment parameter or output.')
+@description('Existing operational billing contact. Its secure value is masked in deployment history and never emitted as an output; the parameter name remains visible.')
 param budgetContactEmail string
 
 var resourceTags = {
