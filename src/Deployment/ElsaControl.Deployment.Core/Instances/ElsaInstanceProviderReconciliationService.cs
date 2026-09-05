@@ -75,7 +75,7 @@ public sealed class ElsaInstanceProviderReconciliationService(
                     operation.State);
             var request = new ElsaInstanceProviderReconciliationRequest(
                 workspaceId, instance.Id, operation.Id, operation.AttemptNumber, instance.DesiredLifecycle,
-                instance.ResolvedPlanReference, instance.CurrentDeploymentReference);
+                instance.ResolvedPlanReference, instance.CurrentDeploymentReference, instance.Version);
             ElsaInstanceProviderObservation observation;
             var providerUnavailable = false;
             string? uncertainCode = null;
