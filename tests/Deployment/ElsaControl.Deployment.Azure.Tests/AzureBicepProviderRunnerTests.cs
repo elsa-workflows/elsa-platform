@@ -440,6 +440,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.Equal(AzureProviderRunnerOutcome.Failed, result.Outcome);
         Assert.Equal(AzureProviderHealth.Failed, result.Health);
         Assert.Equal("azure.health.unhealthy", result.Code);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "azure.step.health.failed");
         Assert.DoesNotContain(process.Calls, call => call.Contains("traffic"));
     }
 
@@ -681,6 +682,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
 
         Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
         Assert.Equal("azure.sql.bootstrap-uncertain", result.Code);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "azure.step.sql-bootstrap.process.non-zero-exit");
         var bootstrap = Assert.Single(process.Calls, arguments => arguments.Contains("-i"));
         Assert.Contains("-b", bootstrap);
         Assert.Contains(process.Calls, arguments => arguments.Contains("firewall-rule") && arguments.Contains("delete"));
@@ -708,6 +710,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
 
         Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
         Assert.Single(process.Calls, call => call.Contains("--authentication-method"));
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "azure.step.sql-bootstrap.process.termination-uncertain");
     }
 
     [Fact]

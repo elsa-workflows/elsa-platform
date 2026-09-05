@@ -387,6 +387,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         {
             (temporaryDirectory, scriptPath) = await WriteSqlBootstrapFileAsync(command.Resources.WorkloadIdentityClientId, command.Plan.WorkloadName, cancellationToken);
             var sqlSucceeded = false;
+            AzureCommandProcessFailureKind? bootstrapFailureKind = null;
             for (var attempt = 0; attempt < _options.ObservationAttempts; attempt++)
             {
                 EnsureMutationAuthority(command);
@@ -400,6 +401,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                     sqlSucceeded = true;
                     break;
                 }
+                bootstrapFailureKind = bootstrap.FailureKind;
                 if (bootstrap.Status == AzureCommandProcessStatus.Cancelled || cancellationToken.IsCancellationRequested)
                     break;
                 if (bootstrap.Status == AzureCommandProcessStatus.TerminationUncertain ||
@@ -415,8 +417,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             firewallCleaned = true;
             if (!sqlSucceeded)
                 return cancellationToken.IsCancellationRequested
-                    ? Uncertain(command, AzureProviderOperationPhase.FoundationReady, "azure.sql.cancelled", "SQL bootstrap was interrupted before completion.")
-                    : Uncertain(command, AzureProviderOperationPhase.FoundationReady, "azure.sql.bootstrap-uncertain", "SQL bootstrap did not produce a confirmed result.");
+                    ? Uncertain(command, AzureProviderOperationPhase.FoundationReady, "azure.sql.cancelled", "SQL bootstrap was interrupted before completion.", processFailureKind: bootstrapFailureKind)
+                    : Uncertain(command, AzureProviderOperationPhase.FoundationReady, "azure.sql.bootstrap-uncertain", "SQL bootstrap did not produce a confirmed result.", processFailureKind: bootstrapFailureKind);
 
             return Completed(command, AzureProviderOperationPhase.FoundationReady, command.Resources);
         }
@@ -530,7 +532,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             command.Resources,
             AzureProviderHealth.Failed,
             null,
-            [],
+            AzureProviderSafeDiagnostics.Failure(command.Step, AzureProviderRunnerOutcome.Failed, "azure.health.unhealthy"),
             "azure.health.unhealthy",
             "The candidate did not become healthy within the bounded observation window.");
     }
