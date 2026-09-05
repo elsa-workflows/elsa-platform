@@ -9,6 +9,7 @@ public sealed class AdmittedAzureProofPlanFactoryTests
 {
     private static readonly Guid ProofOrganizationId = Guid.Parse("19519519-5195-4195-8195-195195195195");
     private static readonly Guid ProofInstanceId = Guid.Parse("29529529-5295-4295-8295-295295295295");
+    private static readonly Guid AssignmentId = Guid.Parse("39539539-5395-4395-8395-395395395395");
     private const string ManifestDigest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     private const string ImageDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     private const string SignatureDigest = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
@@ -17,7 +18,7 @@ public sealed class AdmittedAzureProofPlanFactoryTests
     public void Creates_deterministic_submission_from_admitted_plan()
     {
         var factory = new AdmittedAzureProofPlanFactory(
-            Resolution(), new("proof", "westeurope"), new string('c', 64), new string('d', 64), ["studio", "server"], ProofOrganizationId, ProofInstanceId);
+            Resolution(), new("proof", "westeurope"), new string('c', 64), new string('d', 64), ["studio", "server"], ProofOrganizationId, ProofInstanceId, AssignmentId);
         var selection = Selection();
         var environment = new DeploymentProofEnvironment("proof", "westeurope", "azure", []);
 
@@ -30,13 +31,14 @@ public sealed class AdmittedAzureProofPlanFactoryTests
         Assert.Equal(new string('c', 64), first.TemplateFingerprint);
         Assert.Equal(new string('d', 64), first.ProviderScopeFingerprint);
         Assert.Equal("3.8.0-preview.5413", first.Plan.ElsaVersion);
+        Assert.Equal(AssignmentId, first.ProviderAssignmentId);
     }
 
     [Fact]
     public void Creates_submission_for_governed_north_europe_fallback()
     {
         var factory = new AdmittedAzureProofPlanFactory(
-            Resolution(), new("proof", "northeurope"), new string('c', 64), new string('d', 64), ["studio", "server"], ProofOrganizationId, ProofInstanceId);
+            Resolution(), new("proof", "northeurope"), new string('c', 64), new string('d', 64), ["studio", "server"], ProofOrganizationId, ProofInstanceId, AssignmentId);
 
         var submission = factory.Create(
             Selection(), new DeploymentProofEnvironment("proof", "northeurope", "azure", []));
@@ -48,7 +50,7 @@ public sealed class AdmittedAzureProofPlanFactoryTests
     public void Rejects_selection_or_environment_mismatch_with_value_free_error()
     {
         var factory = new AdmittedAzureProofPlanFactory(
-            Resolution(), new("proof", "westeurope"), new string('c', 64), new string('d', 64), ["studio", "server"], ProofOrganizationId, ProofInstanceId);
+            Resolution(), new("proof", "westeurope"), new string('c', 64), new string('d', 64), ["studio", "server"], ProofOrganizationId, ProofInstanceId, AssignmentId);
 
         var environmentError = Assert.Throws<DeploymentProofStageException>(() => factory.Create(
             Selection(), new("secret-environment", "eastus", "azure", [])));

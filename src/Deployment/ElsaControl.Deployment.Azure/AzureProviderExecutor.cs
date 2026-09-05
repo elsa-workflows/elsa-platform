@@ -19,6 +19,7 @@ public sealed class AzureProviderExecutor
     private readonly TimeSpan _heartbeatInterval;
     private readonly string _workerId;
     private readonly IElsaInstanceCommercialGate? _commercialGate;
+    private readonly IAzureProviderResourceAssignmentStore? _assignmentStore;
 
     public AzureProviderExecutor(
         IAzureProviderOperationStore store,
@@ -27,7 +28,8 @@ public sealed class AzureProviderExecutor
         TimeSpan? leaseDuration = null,
         string? workerId = null,
         TimeSpan? heartbeatInterval = null,
-        IElsaInstanceCommercialGate? commercialGate = null)
+        IElsaInstanceCommercialGate? commercialGate = null,
+        IAzureProviderResourceAssignmentStore? assignmentStore = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _runner = runner ?? throw new ArgumentNullException(nameof(runner));
@@ -41,6 +43,7 @@ public sealed class AzureProviderExecutor
         _workerId = workerId ?? $"azure-executor-{Guid.NewGuid():N}";
         AzureProviderOperationValidation.ValidateWorkerId(_workerId);
         _commercialGate = commercialGate;
+        _assignmentStore = assignmentStore;
     }
 
     /// <summary>
@@ -126,6 +129,21 @@ public sealed class AzureProviderExecutor
                 "The Azure operation is owned by another worker or changed concurrently.");
         }
 
+        AzureProviderResourceAssignment? assignment;
+        try
+        {
+            assignment = await LoadAssignmentAsync(claimed, cancellationToken);
+        }
+        catch (InvalidOperationException)
+        {
+            return await FinalizeResultAsync(
+                claimed,
+                leaseToken,
+                AzureProviderOperationStatus.Failed,
+                "azure.assignment.invalid",
+                "The durable Azure provider assignment is unavailable or invalid.");
+        }
+
         // Every provider mutation, including cleanup, must pass the durable
         // identity-binding boundary before the first remote runner call.
         var commercialResult = await RevalidateCommercialAsync(claimed, leaseToken, cancellationToken);
@@ -134,26 +152,32 @@ public sealed class AzureProviderExecutor
 
         if (claimed.Action == AzureProviderOperationAction.Delete)
         {
-            // Delete is a separate idempotent operation from reconcile. Carry the latest
-            // provider-owned resource snapshot into it so cleanup cannot silently become a
-            // vacuous no-op after a successful apply.
-            var latestReconcile = await _store.GetLatestReconcileAsync(
-                claimed.WorkspaceId,
-                claimed.TargetKey,
-                claimed.ProviderScopeFingerprint,
-                CancellationToken.None);
-            if (latestReconcile is not null)
-                claimed = claimed with { Resources = latestReconcile.Resources };
+            // The durable assignment is the ownership authority. A legacy unbound test seam may
+            // still recover the latest reconcile snapshot, but production delete never infers
+            // ownership from whichever operation happened to be most recent.
+            if (assignment is not null)
+                claimed = claimed with { Resources = assignment.Resources };
+            else
+            {
+                var latestReconcile = await _store.GetLatestReconcileAsync(
+                    claimed.WorkspaceId,
+                    claimed.TargetKey,
+                    claimed.ProviderScopeFingerprint,
+                    CancellationToken.None);
+                if (latestReconcile is not null)
+                    claimed = claimed with { Resources = latestReconcile.Resources };
+            }
 
-            return await ExecuteDeleteAsync(request.Plan, claimed, leaseToken, cancellationToken);
+            return await ExecuteDeleteAsync(request.Plan, claimed, assignment, leaseToken, cancellationToken);
         }
 
-        return await ExecuteReconcileAsync(request.Plan, claimed, leaseToken, cancellationToken);
+        return await ExecuteReconcileAsync(request.Plan, claimed, assignment, leaseToken, cancellationToken);
     }
 
     private async Task<AzureProviderExecutionResult> ExecuteReconcileAsync(
         AzureWorkloadPlan plan,
         AzureProviderOperation operation,
+        AzureProviderResourceAssignment? assignment,
         string leaseToken,
         CancellationToken cancellationToken)
     {
@@ -197,7 +221,8 @@ public sealed class AzureProviderExecutor
                     operation.Resources.StableTrafficRevisionName,
                     operation.AttemptNumber > 1,
                     operation.AttemptNumber,
-                    CreateExecutionContext(operation));
+                    CreateExecutionContext(operation),
+                    assignment);
                 AzureProviderRunnerResult runnerResult;
                 try
                 {
@@ -243,7 +268,7 @@ public sealed class AzureProviderExecutor
                         return await GetConcurrentResultAsync(operation);
                     operation = failureOperation;
                     if (step == AzureProviderRunnerStep.Promotion)
-                        return await HandlePromotionFailureAsync(plan, operation, leaseToken, runnerResult, CancellationToken.None);
+                        return await HandlePromotionFailureAsync(plan, operation, assignment, leaseToken, runnerResult, CancellationToken.None);
 
                     return await FinalizeResultAsync(
                         operation,
@@ -400,6 +425,7 @@ public sealed class AzureProviderExecutor
     private async Task<AzureProviderExecutionResult> ExecuteDeleteAsync(
         AzureWorkloadPlan plan,
         AzureProviderOperation operation,
+        AzureProviderResourceAssignment? assignment,
         string leaseToken,
         CancellationToken cancellationToken)
     {
@@ -440,7 +466,8 @@ public sealed class AzureProviderExecutor
                 operation.Resources.StableTrafficRevisionName,
                 operation.AttemptNumber > 1,
                 operation.AttemptNumber,
-                CreateExecutionContext(operation));
+                CreateExecutionContext(operation),
+                assignment);
             var run = await RunRunnerAsync(command, operation, leaseToken, cancellationToken);
             runnerResult = run.Result;
             operation = run.Operation;
@@ -527,6 +554,7 @@ public sealed class AzureProviderExecutor
     private async Task<AzureProviderExecutionResult> HandlePromotionFailureAsync(
         AzureWorkloadPlan plan,
         AzureProviderOperation operation,
+        AzureProviderResourceAssignment? assignment,
         string leaseToken,
         AzureProviderRunnerResult promotion,
         CancellationToken cancellationToken)
@@ -554,7 +582,8 @@ public sealed class AzureProviderExecutor
             operation.Resources.StableTrafficRevisionName,
             operation.AttemptNumber > 1,
             operation.AttemptNumber,
-            CreateExecutionContext(operation));
+            CreateExecutionContext(operation),
+            assignment);
         try
         {
             var run = await RunRunnerAsync(rollbackCommand, operation, leaseToken, cancellationToken);
@@ -900,17 +929,58 @@ public sealed class AzureProviderExecutor
         };
 
     private static IReadOnlyList<AzureProviderDiagnostic> SafeDiagnostics(IReadOnlyList<AzureProviderDiagnostic> diagnostics) =>
-        diagnostics.Select(diagnostic => new AzureProviderDiagnostic(diagnostic.Code, diagnostic.Code)).ToArray();
+        AzureProviderSafeDiagnostics.Normalize(diagnostics);
 
     private static AzureProviderExecutionContext CreateExecutionContext(AzureProviderOperation operation) => new(
         operation.WorkspaceId,
+        operation.OrganizationId ?? throw new InvalidOperationException("The provider organization binding is unavailable."),
+        operation.InstanceId ?? throw new InvalidOperationException("The provider instance binding is unavailable."),
         operation.Id,
         operation.OperationIdentity,
         operation.IdempotencyKey,
         operation.TargetKey,
+        (operation.ProviderAssignmentId ?? throw new InvalidOperationException("The provider assignment binding is unavailable.")).ToString("D"),
         operation.PlanFingerprint,
         operation.TemplateFingerprint,
         operation.ProviderScopeFingerprint);
+
+    private async Task<AzureProviderResourceAssignment?> LoadAssignmentAsync(
+        AzureProviderOperation operation,
+        CancellationToken cancellationToken)
+    {
+        if (operation.ProviderAssignmentId is null)
+        {
+            // Unbound legacy rows are held by RevalidateCommercialAsync so they can be
+            // explicitly repaired. Once the durable organization/instance lifecycle binding is
+            // present, however, a missing assignment is corruption and must not reach
+            // CreateExecutionContext or the provider runner.
+            if (operation.OrganizationId is { } organizationId && organizationId != Guid.Empty &&
+                operation.InstanceId is { } instanceId && instanceId != Guid.Empty &&
+                operation.LifecycleAction is not null)
+                throw new InvalidOperationException("The provider assignment binding is unavailable.");
+
+            return null;
+        }
+        if (_assignmentStore is null)
+            return null;
+
+        var assignment = await _assignmentStore.GetAsync(
+            operation.WorkspaceId,
+            operation.ProviderAssignmentId.Value,
+            cancellationToken);
+        if (assignment is null ||
+            assignment.Id != operation.ProviderAssignmentId ||
+            assignment.WorkspaceId != operation.WorkspaceId ||
+            assignment.OrganizationId != operation.OrganizationId ||
+            assignment.InstanceId != operation.InstanceId ||
+            !string.Equals(assignment.ProviderScopeFingerprint, operation.ProviderScopeFingerprint, StringComparison.Ordinal) ||
+            !string.Equals(assignment.WorkloadName, operation.TargetKey, StringComparison.OrdinalIgnoreCase) ||
+            assignment.State == AzureProviderAssignmentState.Deleted ||
+            operation.Action != AzureProviderOperationAction.Delete &&
+            assignment.State is AzureProviderAssignmentState.Unknown or AzureProviderAssignmentState.Deleting)
+            throw new InvalidOperationException("The provider assignment binding is invalid.");
+        return assignment;
+    }
 
     private sealed class LeaseLostException : Exception;
 

@@ -274,3 +274,85 @@ Validate this runbook against controlled persistence/API fixtures for:
 These checks prove deterministic contracts and safe response paths. They are not
 production SLO measurements and do not establish Azure Monitor, PagerDuty, or
 another vendor's alerting/delivery behavior.
+
+## Opt-in production-composition Azure lifecycle proof (#265)
+
+The live proof is an explicitly gated `WebApplicationFactory<Program>` run. It
+uses the production `Program` registrations, real migrated SQLite persistence,
+the in-process lifecycle and provider workers, and the real Azure CLI/SQL
+bootstrap tools. It is not the standalone proof host and does not replace
+producer admission or public API/ingress proof.
+
+Before starting the host, provision a fresh isolated instance identity and
+resource-group scope, attach the canonical managed identity, and grant only
+the capabilities required by the provider preflight: subscription-level
+resource-group creation and descendant mutation, registry pull, private blob
+evidence upload, Key Vault secret retrieval, and the SQL bootstrap authority.
+The staged production configuration contains two versioned external Key Vault
+references (signing and admin) plus the provider-owned
+`secret://azure-managed/sql-connection` sentinel. It contains no secret
+values. Supply a previously admitted, externally verified catalog-entry
+projection as the fixture; producer admission is an upstream prerequisite, not
+part of this proof.
+
+The initial public Azure profile requires unrestricted egress. Set the stamp's
+server-owned `RuntimeBuilder:InstancePlans:DefaultEgress` to `unrestricted`
+explicitly when using that profile. Omission retains the platform's `restricted`
+default; enabling Azure does not relax it automatically. Unsupported policy
+values fail startup. This is not a claim that the initial Azure profile enforces
+restricted outbound connectivity.
+
+The test content root and production settings file are an early-startup
+packaging contract. Stage the supplied safe configuration at
+`<api-content-root>/appsettings.Production.json` before starting the test
+process, and point the test configuration variable at that exact absolute
+file. Set the environment before `WebApplicationFactory` is created:
+
+```bash
+export ASPNETCORE_ENVIRONMENT=Production
+unset DOTNET_ENVIRONMENT
+export ASPNETCORE_TEST_CONTENTROOT_ELSACONTROL_API=/src/src/Hosting/ElsaControl.Api
+export ELSA_CONTROL_LIVE_AZURE_LIFECYCLE_PROOF=1
+export ELSA_CONTROL_LIVE_AZURE_LIFECYCLE_PROOF_CONFIG=/src/src/Hosting/ElsaControl.Api/appsettings.Production.json
+dotnet /usr/share/dotnet/sdk/10.0.300/vstest.console.dll \
+  /run/elsa-control/tests/ElsaControl.Api.Tests.dll \
+  '--TestCaseFilter:FullyQualifiedName~ProductionAzureLifecycleProofTests.Production_composition_applies_reconciles_reloads_and_deletes_one_instance' \
+  '--Logger:console;verbosity=minimal'
+```
+
+The test rejects a non-production initial environment, a conflicting
+`DOTNET_ENVIRONMENT`, a relative or missing test content root, or a
+configuration path other than that content root's
+`appsettings.Production.json`. This is intentional: a late
+`ConfigureWebHost`/`ConfigureAppConfiguration` callback cannot supply values
+needed by imperative reads during minimal-hosting startup. The normal staged
+production file must be the authority. The gate is explicitly skipped when
+`ELSA_CONTROL_LIVE_AZURE_LIFECYCLE_PROOF` is absent; it must never silently
+fall back to mocks or a test-only DI composition.
+
+Each wait is bounded by `LiveProof:TimeoutSeconds` (30 seconds to two hours)
+and `LiveProof:PollSeconds` (one to 30 seconds). The proof creates, reconciles,
+disposes and reloads the application, reconciles again, and confirms deletion
+through the lifecycle service. Failure cleanup is always attempted. Retain
+only the isolated database and value-free evidence privately; do not upload
+configuration, keys, tokens, logs, exception messages, or provider payloads.
+
+`ControlPlane:Origin` must be an HTTPS origin so persisted plan URIs are
+well-formed. The lifecycle provider reads the persisted plan in-process; this
+proof does not dereference that URI and therefore does not establish an
+externally reachable plan endpoint, public API acceptance, or ingress behavior.
+
+### Asynchronous delete completion
+
+A correlated provider Delete in Accepted, Queued or Running is normal cleanup in
+progress, not an operator recovery event. The lifecycle worker retains its deletion
+reservation and defers the next observation for one minute. Confirmed absence may
+tombstone the instance only when the provider evidence belongs to the same lifecycle
+Delete, assignment, workspace, organization, target and provider scope.
+
+Provider RecoveryRequired, failed/unavailable observations and correlation failures
+remain on the explicit recovery path; the ordinary worker does not replay them.
+Delete idempotency lineage accepts the exact lifecycle root and canonical retry-ID
+segments. Very long legacy retry chains that collapse into an unattributable hashed
+key require explicit operator recovery, even if provider cleanup succeeded. Do not
+force lifecycle completion merely because resource absence is visible in Azure.

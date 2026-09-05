@@ -25,8 +25,10 @@ public sealed class ElsaInstanceDeletionWorker(
                 break;
             try
             {
-                results.Add(Map(await ProcessClaimedAsync(
-                    item, workerId.Trim(), () => providerInvocations++, cancellationToken)));
+                var processed = await ProcessClaimedAsync(
+                    item, workerId.Trim(), () => providerInvocations++, cancellationToken);
+                if (processed is not null)
+                    results.Add(Map(processed));
             }
             catch (OperationCanceledException)
             {
@@ -60,7 +62,7 @@ public sealed class ElsaInstanceDeletionWorker(
         return new(results, providerInvocations);
     }
 
-    private async Task<ElsaInstanceDeletionResult> ProcessClaimedAsync(
+    private async Task<ElsaInstanceDeletionResult?> ProcessClaimedAsync(
         ElsaInstanceDeletionWorkItem item,
         string workerId,
         Action providerInvoked,
@@ -96,6 +98,14 @@ public sealed class ElsaInstanceDeletionWorker(
         var correlated = observation.OperationId == item.Operation.Id &&
                          observation.AttemptNumber == item.Operation.AttemptNumber;
         var fingerprint = observation.ComputeFingerprint();
+        if (correlated && observation.Kind == ElsaInstanceCleanupObservationKind.InProgress)
+        {
+            if (!await store.DeferDeletionAsync(item, workerId, _timeProvider.GetUtcNow(),
+                    observation.DiagnosticCode, cancellationToken))
+                throw new ElsaInstanceLifecycleConflictException(
+                    "Deletion work item changed before async cleanup could be deferred.");
+            return null;
+        }
         if (correlated && observation.Kind == ElsaInstanceCleanupObservationKind.ConfirmedAbsent)
         {
             var deletedAt = _timeProvider.GetUtcNow();

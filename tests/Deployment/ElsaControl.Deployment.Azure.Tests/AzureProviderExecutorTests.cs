@@ -42,6 +42,7 @@ public sealed class AzureProviderExecutorTests
             Assert.Equal(WorkspaceId, command.Context.WorkspaceId);
             Assert.Equal(result.Operation.Id, command.Context.OperationId);
             Assert.Equal(result.Operation.OperationIdentity, command.Context.OperationIdentity);
+            Assert.Equal("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", command.Context.ProviderAssignmentId);
             Assert.Equal("request-1", command.Context.IdempotencyKey);
             Assert.Equal("workload-a", command.Context.TargetKey);
             Assert.Equal(new string('a', 64), command.Context.PlanFingerprint);
@@ -146,6 +147,36 @@ public sealed class AzureProviderExecutorTests
         Assert.Equal(AzureProviderOperationStatus.EntitlementHeld, result.Operation.Status);
         Assert.Equal(ElsaInstanceCommercialOperation.BindingRequired, result.Code);
         Assert.Empty(runner.Steps);
+    }
+
+    [Theory]
+    [InlineData(AzureProviderOperationAction.Reconcile)]
+    [InlineData(AzureProviderOperationAction.Delete)]
+    public async Task Missing_assignment_binding_is_failed_durably_before_any_provider_call(
+        AzureProviderOperationAction action)
+    {
+        var store = new FakeOperationStore { OmitProviderAssignmentId = true };
+        var runner = new RecordingRunner();
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now));
+        var request = CreateRequest(action) with
+        {
+            LifecycleAction = action == AzureProviderOperationAction.Delete
+                ? ElsaInstanceOperationAction.Delete
+                : ElsaInstanceOperationAction.Reconcile
+        };
+
+        var result = action == AzureProviderOperationAction.Delete
+            ? await executor.DeleteAsync(request, CreatePlan())
+            : await executor.ApplyAsync(request, CreatePlan());
+
+        Assert.Equal(AzureProviderExecutionOutcome.Failed, result.Outcome);
+        Assert.Equal(AzureProviderOperationStatus.Failed, result.Operation.Status);
+        Assert.Equal("azure.assignment.invalid", result.Code);
+        Assert.Empty(runner.Steps);
+        var transitions = await store.ListTransitionsAsync(WorkspaceId, result.Operation.Id);
+        Assert.Contains(transitions, transition =>
+            transition.Code == "azure.assignment.invalid" &&
+            transition.Status == AzureProviderOperationStatus.Failed);
     }
 
     [Fact]
@@ -429,6 +460,46 @@ public sealed class AzureProviderExecutorTests
     }
 
     [Fact]
+    public async Task Untrusted_runner_diagnostics_are_dropped_before_checkpoint_persistence()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner { UntrustedDiagnostics = true };
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+
+        var result = await executor.ApplyAsync(CreateRequest(), CreatePlan());
+
+        Assert.Equal(AzureProviderExecutionOutcome.Succeeded, result.Outcome);
+        Assert.DoesNotContain(result.Operation.Diagnostics, diagnostic => diagnostic.Code == "azure.provider.detail");
+        Assert.All(result.Operation.Diagnostics, diagnostic => Assert.Equal(diagnostic.Code, diagnostic.Message));
+    }
+
+    [Fact]
+    public async Task Read_only_step_failure_retains_only_fixed_diagnostics_in_the_durable_checkpoint()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner
+        {
+            FailureStep = AzureProviderRunnerStep.AcrPull,
+            FailureCode = "azure.provider.detail",
+            FailureMessage = "untrusted runner detail",
+            FailureDiagnostics =
+            [
+                new AzureProviderDiagnostic("azure.step.acr-pull.process.non-zero-exit", "untrusted process output"),
+                new AzureProviderDiagnostic("azure.provider.detail", "untrusted provider detail")
+            ]
+        };
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+
+        var result = await executor.ApplyAsync(CreateRequest(), CreatePlan());
+
+        Assert.Equal(AzureProviderExecutionOutcome.Failed, result.Outcome);
+        Assert.Equal(AzureProviderOperationStatus.Failed, result.Operation.Status);
+        Assert.Contains(result.Operation.Diagnostics, diagnostic => diagnostic.Code == "azure.step.acr-pull.process.non-zero-exit");
+        Assert.DoesNotContain(result.Operation.Diagnostics, diagnostic => diagnostic.Code == "azure.provider.detail");
+        Assert.All(result.Operation.Diagnostics, diagnostic => Assert.Equal(diagnostic.Code, diagnostic.Message));
+    }
+
+    [Fact]
     public async Task Execution_requires_both_verified_manifest_digests()
     {
         var store = new FakeOperationStore();
@@ -702,6 +773,39 @@ public sealed class AzureProviderExecutorTests
         Assert.Equal(store.LatestReconcileResources, runner.Commands.Single().Resources);
     }
 
+    [Theory]
+    [InlineData(AzureProviderAssignmentState.Active)]
+    [InlineData(AzureProviderAssignmentState.Unknown)]
+    [InlineData(AzureProviderAssignmentState.Deleting)]
+    public async Task Bound_delete_uses_assignment_resources_instead_of_latest_reconcile_history(AzureProviderAssignmentState state)
+    {
+        var historical = new AzureProviderResourceReferences(ResourceGroupName: "historical-rg");
+        var assigned = new AzureProviderResourceReferences(
+            ResourceGroupName: "assigned-rg",
+            WorkloadResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/assigned-rg/providers/Microsoft.App/containerApps/app");
+        var store = new FakeOperationStore();
+        var request = CreateRequest(AzureProviderOperationAction.Delete) with
+        {
+            LifecycleAction = ElsaInstanceOperationAction.Delete
+        };
+        var runner = new RecordingRunner { CleanupResources = new(ResourceGroupName: "still-present") };
+        var assignmentStore = new FixedAssignmentStore(assigned, request.ProviderScopeFingerprint!, state);
+        var commercialGate = new ToggleCommercialGate { Allowed = true };
+        var executor = new AzureProviderExecutor(
+            store,
+            runner,
+            new StaticTimeProvider(Now),
+            TimeSpan.FromMinutes(5),
+            commercialGate: commercialGate,
+            assignmentStore: assignmentStore);
+
+        var result = await executor.DeleteAsync(request, CreatePlan());
+
+        Assert.True(runner.Commands.Count > 0, $"{result.Code}: {result.Message}");
+        Assert.Equal(assigned, runner.Commands.Single().Resources);
+        Assert.NotEqual(historical, runner.Commands.Single().Resources);
+    }
+
     [Fact]
     public async Task Delete_happy_path_is_idempotent()
     {
@@ -824,7 +928,8 @@ public sealed class AzureProviderExecutorTests
         "3.8.0-preview.5413",
         Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
         Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
-        ElsaInstanceOperationAction.Reconcile);
+        ElsaInstanceOperationAction.Reconcile,
+        Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"));
 
     private static AzureWorkloadPlan CreatePlan() => new(
         "workload-a",
@@ -852,6 +957,37 @@ public sealed class AzureProviderExecutorTests
         public override DateTimeOffset GetUtcNow() => now;
     }
 
+    private sealed class FixedAssignmentStore(AzureProviderResourceReferences resources, string providerScopeFingerprint,
+        AzureProviderAssignmentState state = AzureProviderAssignmentState.Active) : IAzureProviderResourceAssignmentStore
+    {
+        public Task<AzureProviderResourceAssignment> CreateOrGetAsync(
+            AzureProviderResourceAssignmentRequest request,
+            DateTimeOffset now,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<AzureProviderResourceAssignment?> GetAsync(
+            Guid workspaceId,
+            Guid assignmentId,
+            CancellationToken cancellationToken = default) => Task.FromResult<AzureProviderResourceAssignment?>(new(
+                assignmentId,
+                workspaceId,
+                Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+                Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
+                providerScopeFingerprint,
+                1,
+                "11111111-1111-1111-1111-111111111111",
+                resources.ResourceGroupName!,
+                "workload-a",
+                new string('a', 64),
+                "westeurope",
+                state,
+                resources,
+                null,
+                1,
+                Now,
+                Now));
+    }
+
     private sealed class RecordingRunner : IAzureProviderRunner
     {
         public List<AzureProviderRunnerStep> Steps { get; } = [];
@@ -871,6 +1007,11 @@ public sealed class AzureProviderExecutorTests
         public AzureProviderResourceReferences? ResourcesOverride { get; init; }
         public TimeSpan Delay { get; init; }
         public bool HostileDiagnostics { get; init; }
+        public bool UntrustedDiagnostics { get; init; }
+        public AzureProviderRunnerStep? FailureStep { get; init; }
+        public IReadOnlyList<AzureProviderDiagnostic> FailureDiagnostics { get; init; } = [];
+        public string FailureCode { get; init; } = "azure.step.failed";
+        public string FailureMessage { get; init; } = "Azure lifecycle step failed.";
         public string RunnerMessage { get; init; } = "Azure lifecycle step completed.";
         public bool ThrowAfterDelay { get; init; }
         public AzureProviderRunnerStep? WaitForCancellationStep { get; init; }
@@ -928,6 +1069,20 @@ public sealed class AzureProviderExecutorTests
 
         private AzureProviderRunnerResult CreateResult(AzureProviderRunnerCommand command)
         {
+            if (command.Step == FailureStep)
+                return new(
+                    AzureProviderRunnerOutcome.Failed,
+                    command.Step is AzureProviderRunnerStep.Foundation or AzureProviderRunnerStep.AcrPull or AzureProviderRunnerStep.SeedSecrets
+                        ? AzureProviderOperationPhase.FoundationSubmitted
+                        : command.Step == AzureProviderRunnerStep.SqlBootstrap
+                            ? AzureProviderOperationPhase.FoundationReady
+                            : AzureProviderOperationPhase.WorkloadReady,
+                    CompleteResources(),
+                    AzureProviderHealth.Unknown,
+                    null,
+                    FailureDiagnostics,
+                    FailureCode,
+                    FailureMessage);
             if (command.Step == IncompleteNoOpStep)
                 return Result(
                     AzureProviderRunnerOutcome.NoOp,
@@ -981,6 +1136,8 @@ public sealed class AzureProviderExecutorTests
                 : EndpointOverride ?? (phase is AzureProviderOperationPhase.HealthVerified or AzureProviderOperationPhase.TrafficPromoted ? "https://workload.example.test" : null),
             HostileDiagnostics
                 ? [new AzureProviderDiagnostic("azure.provider.detail", "password=do-not-persist\r\nraw response")]
+                : UntrustedDiagnostics
+                    ? [new AzureProviderDiagnostic("azure.provider.detail", "untrusted runner detail")]
                 : [],
             "azure.step.completed",
             RunnerMessage,
@@ -1019,6 +1176,7 @@ public sealed class AzureProviderExecutorTests
         public bool LoseLeaseOnHeartbeat { get; init; }
         public AzureProviderResourceReferences? LatestReconcileResources { get; init; }
         public AzureProviderOperationStatus? ConcurrentWinnerStatus { get; init; }
+        public bool OmitProviderAssignmentId { get; init; }
 
         public async Task<AzureProviderOperationCreateResult> CreateOrGetWithResultAsync(
             AzureProviderOperationRequest request,
@@ -1073,7 +1231,8 @@ public sealed class AzureProviderExecutorTests
             {
                 OrganizationId = normalized.OrganizationId,
                 InstanceId = normalized.InstanceId,
-                LifecycleAction = normalized.LifecycleAction
+                LifecycleAction = normalized.LifecycleAction,
+                ProviderAssignmentId = OmitProviderAssignmentId ? null : normalized.ProviderAssignmentId
             };
             if (RejectCreateWithStatus is { } conflictStatus)
             {

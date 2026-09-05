@@ -57,4 +57,30 @@ public sealed class SqlServerMigrationScriptTests
             activeIndexSql);
         Assert.DoesNotMatch(@"\bNOT\s+IN\b", activeIndexSql);
     }
+
+    [Fact]
+    public void Azure_provider_assignment_migration_persists_assignment_identity_and_references()
+    {
+        var options = new DbContextOptionsBuilder<CatalogDbContext>()
+            .UseSqlServer(
+                @"Server=(localdb)\MSSQLLocalDB;Initial Catalog=ElsaControlMigrationScriptTests;Integrated Security=True;Encrypt=False",
+                sqlServer => sqlServer.MigrationsAssembly(CatalogDatabaseServiceCollectionExtensions.SqlServerMigrationsAssembly))
+            .Options;
+        using var db = new CatalogDbContext(options);
+
+        var script = db.GetService<IMigrator>().GenerateScript(
+            fromMigration: "20260904055356_AddBillingLifecycleNoticesAndCleanup",
+            toMigration: "20260904104524_AddAzureProviderResourceAssignments");
+
+        Assert.Contains("ALTER TABLE [AzureProviderOperations] ADD [ProviderAssignmentId] uniqueidentifier NULL", script, StringComparison.Ordinal);
+        Assert.Contains("CREATE TABLE [AzureProviderResourceAssignments]", script, StringComparison.Ordinal);
+        Assert.Contains("[ProviderScopeFingerprint] nvarchar(64) NOT NULL", script, StringComparison.Ordinal);
+        Assert.Contains("[WorkloadIdentityResourceId] nvarchar(1024) NULL", script, StringComparison.Ordinal);
+        Assert.Contains("[AcrPullRoleAssignmentId] nvarchar(1024) NULL", script, StringComparison.Ordinal);
+        Assert.Contains("CONSTRAINT [FK_AzureProviderResourceAssignments_Workspaces_WorkspaceId]", script, StringComparison.Ordinal);
+        Assert.Contains("CONSTRAINT [FK_AzureProviderOperations_AzureProviderResourceAssignments_ProviderAssignmentId]", script, StringComparison.Ordinal);
+        Assert.Contains("ON DELETE NO ACTION", script, StringComparison.Ordinal);
+        Assert.Contains("CREATE INDEX [IX_AzureProviderResourceAssignments_State_UpdatedAt_Id]", script, StringComparison.Ordinal);
+        Assert.Contains("CREATE UNIQUE INDEX [IX_AzureProviderResourceAssignments_WorkspaceId_InstanceId_ProviderScopeFingerprint]", script, StringComparison.Ordinal);
+    }
 }

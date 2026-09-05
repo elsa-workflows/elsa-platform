@@ -9,6 +9,8 @@ internal sealed class AzureProviderOperationEntity
     public Guid Id { get; set; }
     public Guid WorkspaceId { get; set; }
     public Workspace? Workspace { get; set; }
+    public Guid? ProviderAssignmentId { get; set; }
+    public AzureProviderResourceAssignmentEntity? ProviderAssignment { get; set; }
     public Guid? OrganizationId { get; set; }
     public Guid? InstanceId { get; set; }
     public ElsaInstanceOperationAction? LifecycleAction { get; set; }
@@ -69,6 +71,50 @@ internal sealed class AzureProviderOperationEntity
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
     public List<AzureProviderOperationTransitionEntity> Transitions { get; set; } = [];
+}
+
+/// <summary>
+/// Provider-owned durable placement assignment. The control plane stores only safe Azure
+/// resource references and an opaque assignment identity; provider-specific credentials and
+/// payloads are intentionally not representable here.
+/// </summary>
+internal sealed class AzureProviderResourceAssignmentEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Workspace? Workspace { get; set; }
+    public Guid OrganizationId { get; set; }
+    public Guid InstanceId { get; set; }
+    public string ProviderScopeFingerprint { get; set; } = "";
+    public int NamingVersion { get; set; }
+    public string SubscriptionId { get; set; } = "";
+    public string ResourceGroupName { get; set; } = "";
+    public string WorkloadName { get; set; } = "";
+    public string OwnershipKey { get; set; } = "";
+    public string Location { get; set; } = "";
+    public AzureProviderAssignmentState State { get; set; }
+    public long Version { get; set; }
+    public Guid? LastOperationId { get; set; }
+    public string? FoundationDeploymentId { get; set; }
+    public string? WorkloadDeploymentId { get; set; }
+    public string? WorkloadResourceId { get; set; }
+    public string? WorkloadRevisionName { get; set; }
+    public string? StableTrafficRevisionName { get; set; }
+    public string? WorkloadIdentityResourceId { get; set; }
+    public string? WorkloadIdentityClientId { get; set; }
+    public string? WorkloadIdentityPrincipalId { get; set; }
+    public string? KeyVaultResourceId { get; set; }
+    public string? KeyVaultUri { get; set; }
+    public string? SqlServerResourceId { get; set; }
+    public string? SqlServerFqdn { get; set; }
+    public string? ContainerAppsEnvironmentResourceId { get; set; }
+    public string? RegistryResourceId { get; set; }
+    public string? AcrPullDeploymentId { get; set; }
+    public string? AcrPullRoleAssignmentId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
+    public List<AzureProviderOperationEntity> Operations { get; set; } = [];
 }
 
 internal sealed class AzureProviderOperationTransitionEntity

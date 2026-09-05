@@ -18,12 +18,11 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     private const string AcrPullRoleDefinitionId = "7f951dda-4ed3-4680-a7ca-43fe172d538d";
     private const string KeyVaultSecretsUserRoleDefinitionId = "4633458b-17de-408a-b874-0445c86b69e6";
     private const string KeyVaultSecretsOfficerRoleDefinitionId = "b86a8fe4-44ce-4948-aee5-eccb2c155cd7";
-    private const string TemporaryFirewallRuleName = "elsa108-bootstrap";
     private const string ProofTag = "108";
+    private const string ManagedByTag = "elsa-control";
     private const string SqlConnectionSecretName = "sql-connection";
     private const string SigningKeySecretName = "identity-signing-key";
     private const string AdminPasswordSecretName = "admin-password";
-    private const string AdminUsername = "proof-admin";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true
@@ -109,18 +108,18 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     {
         var resources = command.Resources with
         {
-            ResourceGroupName = _scope.ResourceGroupName,
-            FoundationDeploymentId = DeploymentId(_scope.SubscriptionId, _scope.ResourceGroupName, FoundationDeploymentName(command)),
-            WorkloadIdentityResourceId = ResourceId("Microsoft.ManagedIdentity", "userAssignedIdentities", $"{command.Plan.WorkloadName}-identity"),
-            KeyVaultResourceId = ResourceId("Microsoft.KeyVault", "vaults", $"{command.Plan.WorkloadName}-kv"),
+            ResourceGroupName = ResourceGroupName(command),
+            FoundationDeploymentId = DeploymentId(_scope.SubscriptionId, ResourceGroupName(command), FoundationDeploymentName(command)),
+            WorkloadIdentityResourceId = ResourceId(command, "Microsoft.ManagedIdentity", "userAssignedIdentities", $"{command.Plan.WorkloadName}-identity"),
+            KeyVaultResourceId = ResourceId(command, "Microsoft.KeyVault", "vaults", $"{command.Plan.WorkloadName}-kv"),
             KeyVaultUri = $"https://{command.Plan.WorkloadName}-kv.vault.azure.net/",
-            SqlServerResourceId = ResourceId("Microsoft.Sql", "servers", $"{command.Plan.WorkloadName}-sql"),
+            SqlServerResourceId = ResourceId(command, "Microsoft.Sql", "servers", $"{command.Plan.WorkloadName}-sql"),
             SqlServerFqdn = $"{command.Plan.WorkloadName}-sql.database.windows.net",
-            ContainerAppsEnvironmentResourceId = ResourceId("Microsoft.App", "managedEnvironments", $"{command.Plan.WorkloadName}-aca")
+            ContainerAppsEnvironmentResourceId = ResourceId(command, "Microsoft.App", "managedEnvironments", $"{command.Plan.WorkloadName}-aca")
         };
-        var groupId = ResourceGroupId();
+        var groupId = ResourceGroupId(command);
         var exists = await ExecuteAzAsync(command,
-            ["group", "exists", "--subscription", _scope.SubscriptionId, "--name", _scope.ResourceGroupName, "--output", "tsv", "--only-show-errors"],
+            ["group", "exists", "--subscription", _scope.SubscriptionId, "--name", ResourceGroupName(command), "--output", "tsv", "--only-show-errors"],
             ParseBooleanAsync,
             cancellationToken);
         if (!exists.Succeeded)
@@ -130,10 +129,9 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         {
             EnsureMutationAuthority(command);
             var created = await ExecuteAzAsync<AzureCommandNoOutput>(command,
-                ["group", "create", "--subscription", _scope.SubscriptionId, "--name", _scope.ResourceGroupName,
-                    "--location", _scope.Location, "--tags", $"proof={ProofTag}", $"owner={_options.Owner}",
-                    $"proof-name={command.Plan.WorkloadName}", $"expiry={_options.ExpiryUtc:yyyy-MM-dd}",
-                    $"sqlBootstrapObjectId={_options.SqlBootstrapObjectId}", "--output", "none", "--only-show-errors"],
+                ["group", "create", "--subscription", _scope.SubscriptionId, "--name", ResourceGroupName(command),
+                    "--location", _scope.Location, "--tags", ..ResourceGroupTags(command.Plan.WorkloadName),
+                    "--output", "none", "--only-show-errors"],
                 static _ => AzureCommandNoOutput.Instance,
                 cancellationToken);
             if (!created.Succeeded)
@@ -142,7 +140,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         else
         {
             var tags = await ExecuteAzAsync(command,
-                ["group", "show", "--subscription", _scope.SubscriptionId, "--name", _scope.ResourceGroupName,
+                ["group", "show", "--subscription", _scope.SubscriptionId, "--name", ResourceGroupName(command),
                     "--query", "tags", "--output", "json", "--only-show-errors"],
                 ParseTagsAsync,
                 cancellationToken);
@@ -154,9 +152,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             EnsureMutationAuthority(command);
             var updated = await ExecuteAzAsync<AzureCommandNoOutput>(command,
                 ["tag", "update", "--subscription", _scope.SubscriptionId, "--resource-id", groupId,
-                    "--operation", "Merge", "--tags", $"proof={ProofTag}", $"owner={_options.Owner}",
-                    $"proof-name={command.Plan.WorkloadName}", $"expiry={_options.ExpiryUtc:yyyy-MM-dd}",
-                    $"sqlBootstrapObjectId={_options.SqlBootstrapObjectId}", "--output", "none", "--only-show-errors"],
+                    "--operation", "Merge", "--tags", ..ResourceGroupTags(command.Plan.WorkloadName),
+                    "--output", "none", "--only-show-errors"],
                 static _ => AzureCommandNoOutput.Instance,
                 cancellationToken);
             if (!updated.Succeeded)
@@ -180,7 +177,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
 
         try
         {
-            resources = ProjectFoundation(output.Value!.Value, command.Plan, deploymentName);
+            resources = ProjectFoundation(command, output.Value!.Value, command.Plan, deploymentName);
             return Completed(command, AzureProviderOperationPhase.FoundationSubmitted, resources);
         }
         catch (ArgumentException exception)
@@ -304,7 +301,14 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             try
             {
                 lease = await _secretResolver.ResolveAsync(
-                    new AzureSecretResolutionRequest(command.Context.WorkspaceId, key, reference, command.Resources), cancellationToken);
+                    new AzureSecretResolutionRequest(
+                        command.Context.WorkspaceId,
+                        command.Context.OrganizationId,
+                        command.Context.InstanceId,
+                        command.Context.ProviderAssignmentId,
+                        key,
+                        reference,
+                        command.Resources), cancellationToken);
             }
             catch (OperationCanceledException)
             {
@@ -368,7 +372,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
 
         EnsureMutationAuthority(command);
         var firewall = await ExecuteAzAsync<AzureCommandNoOutput>(command,
-            ["sql", "server", "firewall-rule", "create", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+            ["sql", "server", "firewall-rule", "create", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
                 "--server", SqlServerName(command), "--name", TemporaryFirewallRuleName, "--start-ip-address", _options.SqlBootstrapIp,
                 "--end-ip-address", _options.SqlBootstrapIp, "--output", "none", "--only-show-errors"],
             static _ => AzureCommandNoOutput.Instance,
@@ -383,12 +387,13 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         {
             (temporaryDirectory, scriptPath) = await WriteSqlBootstrapFileAsync(command.Resources.WorkloadIdentityClientId, command.Plan.WorkloadName, cancellationToken);
             var sqlSucceeded = false;
+            AzureCommandProcessFailureKind? bootstrapFailureKind = null;
             for (var attempt = 0; attempt < _options.ObservationAttempts; attempt++)
             {
                 EnsureMutationAuthority(command);
                 var bootstrap = await ExecuteSqlCmdAsync<AzureCommandNoOutput>(command,
-                    ["-S", $"tcp:{command.Resources.SqlServerFqdn},1433", "-d", "Elsa", "--authentication-method", "ActiveDirectoryDefault",
-                        "-i", scriptPath],
+                    ["-S", $"tcp:{command.Resources.SqlServerFqdn},1433", "-d", "Elsa", ..SqlAuthenticationArguments(),
+                        "-b", "-i", scriptPath],
                     static _ => AzureCommandNoOutput.Instance,
                     cancellationToken);
                 if (bootstrap.Succeeded)
@@ -396,6 +401,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                     sqlSucceeded = true;
                     break;
                 }
+                bootstrapFailureKind = bootstrap.FailureKind;
                 if (bootstrap.Status == AzureCommandProcessStatus.Cancelled || cancellationToken.IsCancellationRequested)
                     break;
                 if (bootstrap.Status == AzureCommandProcessStatus.TerminationUncertain ||
@@ -411,8 +417,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             firewallCleaned = true;
             if (!sqlSucceeded)
                 return cancellationToken.IsCancellationRequested
-                    ? Uncertain(command, AzureProviderOperationPhase.FoundationReady, "azure.sql.cancelled", "SQL bootstrap was interrupted before completion.")
-                    : Uncertain(command, AzureProviderOperationPhase.FoundationReady, "azure.sql.bootstrap-uncertain", "SQL bootstrap did not produce a confirmed result.");
+                    ? Uncertain(command, AzureProviderOperationPhase.FoundationReady, "azure.sql.cancelled", "SQL bootstrap was interrupted before completion.", processFailureKind: bootstrapFailureKind)
+                    : Uncertain(command, AzureProviderOperationPhase.FoundationReady, "azure.sql.bootstrap-uncertain", "SQL bootstrap did not produce a confirmed result.", processFailureKind: bootstrapFailureKind);
 
             return Completed(command, AzureProviderOperationPhase.FoundationReady, command.Resources);
         }
@@ -474,7 +480,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         AzureProviderResourceReferences resources;
         try
         {
-            resources = ProjectWorkload(output.Value!.Value, command.Resources, command.Plan, deploymentName, revision.Suffix!, stable);
+            resources = ProjectWorkload(command, output.Value!.Value, command.Resources, command.Plan, deploymentName, revision.Suffix!, stable);
         }
         catch (ArgumentException exception)
         {
@@ -504,7 +510,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         for (var attempt = 0; attempt < _options.ObservationAttempts; attempt++)
         {
             var state = await ExecuteAzAsync(command,
-                ["containerapp", "revision", "show", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+                ["containerapp", "revision", "show", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
                     "--name", AppName(command), "--revision", command.Resources.WorkloadRevisionName,
                     "--query", "properties.healthState", "--output", "tsv", "--only-show-errors"],
                 ParseStringAsync,
@@ -526,7 +532,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             command.Resources,
             AzureProviderHealth.Failed,
             null,
-            [],
+            AzureProviderSafeDiagnostics.Failure(command.Step, AzureProviderRunnerOutcome.Failed, "azure.health.unhealthy"),
             "azure.health.unhealthy",
             "The candidate did not become healthy within the bounded observation window.");
     }
@@ -543,7 +549,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         var endpoint = endpointResult.Value!.Value;
         AzureProviderOperationValidation.ValidateEndpoint(endpoint);
         var candidateState = await ExecuteAzAsync(command,
-            ["containerapp", "revision", "show", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+            ["containerapp", "revision", "show", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
                 "--name", AppName(command), "--revision", command.Resources.WorkloadRevisionName,
                 "--query", "properties.{active:active,health:healthState}", "--output", "json", "--only-show-errors"],
             ParseRevisionStateAsync,
@@ -555,7 +561,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
 
         EnsureMutationAuthority(command);
         var promoted = await ExecuteAzAsync<AzureCommandNoOutput>(command,
-            ["containerapp", "ingress", "traffic", "set", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+            ["containerapp", "ingress", "traffic", "set", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
                 "--name", AppName(command), "--revision-weight", $"{command.Resources.WorkloadRevisionName}=100", "--output", "none", "--only-show-errors"],
             static _ => AzureCommandNoOutput.Instance,
             cancellationToken);
@@ -584,7 +590,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         AzureProviderRunnerCommand command,
         CancellationToken cancellationToken) =>
         ExecuteAzAsync(command,
-            ["containerapp", "show", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+            ["containerapp", "show", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
                 "--name", AppName(command), "--query", "properties.configuration.ingress.fqdn", "--output", "tsv", "--only-show-errors"],
             output =>
             {
@@ -614,7 +620,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             : $"{stable}=100 {candidate}=0";
         EnsureMutationAuthority(command);
         var restored = await ExecuteAzAsync<AzureCommandNoOutput>(command,
-            ["containerapp", "ingress", "traffic", "set", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+            ["containerapp", "ingress", "traffic", "set", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
                 "--name", AppName(command), "--revision-weight", weights, "--output", "none", "--only-show-errors"],
             static _ => AzureCommandNoOutput.Instance,
             cancellationToken);
@@ -637,7 +643,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     {
         var resources = command.Resources;
         var groupExists = await ExecuteAzAsync(command,
-            ["group", "exists", "--subscription", _scope.SubscriptionId, "--name", _scope.ResourceGroupName, "--output", "tsv", "--only-show-errors"],
+            ["group", "exists", "--subscription", _scope.SubscriptionId, "--name", ResourceGroupName(command), "--output", "tsv", "--only-show-errors"],
             ParseBooleanAsync,
             cancellationToken);
         if (!groupExists.Succeeded)
@@ -646,27 +652,27 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         if (groupExists.Value!.Value)
         {
             var tags = await ExecuteAzAsync(command,
-                ["group", "show", "--subscription", _scope.SubscriptionId, "--name", _scope.ResourceGroupName, "--query", "tags", "--output", "json", "--only-show-errors"],
+                ["group", "show", "--subscription", _scope.SubscriptionId, "--name", ResourceGroupName(command), "--query", "tags", "--output", "json", "--only-show-errors"],
                 ParseTagsAsync,
                 cancellationToken);
             if (!tags.Succeeded || tags.Value is null || !OwnsGroup(tags.Value.Value, command.Plan.WorkloadName))
                 return Failed(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.ownership-unverified", "The target resource group is not proven to belong to this workload.");
 
             var inventory = await ExecuteAzAsync(command,
-                ["resource", "list", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName, "--output", "json", "--only-show-errors"],
+                ["resource", "list", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command), "--output", "json", "--only-show-errors"],
                 ParseResourcesAsync,
                 cancellationToken);
             if (!inventory.Succeeded || inventory.Value is null)
                 return Uncertain(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.inventory-uncertain", "The owned resource inventory could not be confirmed.");
-            if (!IsExactInventory(inventory.Value!.Value, command.Plan.WorkloadName))
+            if (!IsExactInventory(command, inventory.Value!.Value, command.Plan.WorkloadName))
                 return Failed(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.ownership-unverified", "The resource inventory contains an unowned resource.");
 
-            var identityId = ResourceId("Microsoft.ManagedIdentity", "userAssignedIdentities", $"{command.Plan.WorkloadName}-identity");
+            var identityId = ResourceId(command, "Microsoft.ManagedIdentity", "userAssignedIdentities", $"{command.Plan.WorkloadName}-identity");
             var identityPresent = inventory.Value.Value.Any(resource => string.Equals(resource.Id, identityId, StringComparison.OrdinalIgnoreCase));
             if (resources.WorkloadIdentityPrincipalId is null && identityPresent)
             {
                 var principal = await ExecuteAzAsync(command,
-                    ["identity", "show", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+                    ["identity", "show", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
                         "--name", $"{command.Plan.WorkloadName}-identity", "--query", "principalId", "--output", "tsv", "--only-show-errors"],
                     ParseStringAsync,
                     cancellationToken);
@@ -685,7 +691,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                 }
             }
 
-            var vaultId = resources.KeyVaultResourceId ?? ResourceId("Microsoft.KeyVault", "vaults", $"{command.Plan.WorkloadName}-kv");
+            var vaultId = resources.KeyVaultResourceId ?? ResourceId(command, "Microsoft.KeyVault", "vaults", $"{command.Plan.WorkloadName}-kv");
             var vaultPresent = inventory.Value.Value.Any(resource =>
                 string.Equals(resource.Id, vaultId, StringComparison.OrdinalIgnoreCase));
             if (vaultPresent)
@@ -695,7 +701,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                         "--output", "json", "--only-show-errors"],
                     ParseRoleAssignmentsAsync,
                     cancellationToken);
-                if (!assignments.Succeeded || assignments.Value is null || !HasSafeVaultAssignmentsForCleanup(assignments.Value.Value, resources, command.Plan.WorkloadName))
+                if (!assignments.Succeeded || assignments.Value is null || !HasSafeVaultAssignmentsForCleanup(command, assignments.Value.Value, resources, command.Plan.WorkloadName))
                     return Failed(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.rbac-unverified", "The owned Key Vault role-assignment inventory is not exact.");
             }
         }
@@ -785,7 +791,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         {
             EnsureMutationAuthority(command);
             await ExecuteAzAsync<AzureCommandNoOutput>(command,
-                ["group", "delete", "--subscription", _scope.SubscriptionId, "--name", _scope.ResourceGroupName, "--yes", "--no-wait", "--output", "none", "--only-show-errors"],
+                ["group", "delete", "--subscription", _scope.SubscriptionId, "--name", ResourceGroupName(command), "--yes", "--no-wait", "--output", "none", "--only-show-errors"],
                 static _ => AzureCommandNoOutput.Instance,
                 cancellationToken);
             if (!await ResourceGroupAbsentAsync(command, cancellationToken))
@@ -793,7 +799,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         }
 
         var vaultName = $"{command.Plan.WorkloadName}-kv";
-        var exactVaultId = resources.KeyVaultResourceId ?? ResourceId("Microsoft.KeyVault", "vaults", vaultName);
+        var exactVaultId = resources.KeyVaultResourceId ?? ResourceId(command, "Microsoft.KeyVault", "vaults", vaultName);
         if (!await PurgeAndVerifyVaultAsync(command, vaultName, exactVaultId, cancellationToken))
             return Uncertain(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.vault-uncertain", "The owned Key Vault could not be proven absent.");
 
@@ -883,7 +889,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     private async Task<(string? Revision, AzureProviderRunnerResult? Error)> ResolveStableTrafficAsync(AzureProviderRunnerCommand command, CancellationToken cancellationToken)
     {
         var count = await ExecuteAzAsync(command,
-            ["resource", "list", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName, "--resource-type", "Microsoft.App/containerApps",
+            ["resource", "list", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command), "--resource-type", "Microsoft.App/containerApps",
                 "--query", "[?name=='" + AppName(command) + "'] | length(@)", "--output", "tsv", "--only-show-errors"],
             ParseIntegerAsync,
             cancellationToken);
@@ -895,7 +901,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             return (null, Failed(command, AzureProviderOperationPhase.WorkloadReady, "azure.traffic.ambiguous", "Expected exactly one governed Container App."));
 
         var traffic = await ExecuteAzAsync(command,
-            ["containerapp", "show", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName, "--name", AppName(command),
+            ["containerapp", "show", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command), "--name", AppName(command),
                 "--query", "properties.configuration.ingress.traffic", "--output", "json", "--only-show-errors"],
             ParseTrafficAsync,
             cancellationToken);
@@ -905,7 +911,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         if (stable is null || traffic.Value.Value.Sum(x => x.Weight) != 100 || string.IsNullOrWhiteSpace(stable.RevisionName))
             return (null, Failed(command, AzureProviderOperationPhase.WorkloadReady, "azure.traffic.ambiguous", "Existing workload traffic has no single 100% revision."));
         var state = await ExecuteAzAsync(command,
-            ["containerapp", "revision", "show", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+            ["containerapp", "revision", "show", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
                 "--name", AppName(command), "--revision", stable.RevisionName, "--query", "properties.{active:active,health:healthState}",
                 "--output", "json", "--only-show-errors"],
             ParseRevisionStateAsync,
@@ -921,7 +927,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     {
         var baseSuffix = command.Plan.Fingerprint[..24];
         var count = await ExecuteAzAsync(command,
-            ["resource", "list", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName, "--resource-type", "Microsoft.App/containerApps",
+            ["resource", "list", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command), "--resource-type", "Microsoft.App/containerApps",
                 "--query", "[?name=='" + AppName(command) + "'] | length(@)", "--output", "tsv", "--only-show-errors"],
             ParseIntegerAsync,
             cancellationToken);
@@ -933,7 +939,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             return (null, Failed(command, AzureProviderOperationPhase.WorkloadReady, "azure.revision.ambiguous", "Expected exactly one governed Container App."));
 
         var current = await ExecuteAzAsync(command,
-            ["resource", "show", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+            ["resource", "show", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
                 "--resource-type", "Microsoft.App/containerApps", "--name", AppName(command), "--query", "properties.template.revisionSuffix",
                 "--output", "tsv", "--only-show-errors"],
             ParseStringAsync,
@@ -944,7 +950,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             return (current.Value!.Value, null);
 
         var names = await ExecuteAzAsync(command,
-            ["containerapp", "revision", "list", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+            ["containerapp", "revision", "list", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
                 "--name", AppName(command), "--query", "[].name", "--output", "json", "--only-show-errors"],
             ParseStringArrayAsync,
             cancellationToken);
@@ -968,7 +974,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         for (var attempt = 0; attempt < _options.ObservationAttempts; attempt++)
         {
             var traffic = await ExecuteAzAsync(command,
-                ["containerapp", "show", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+                ["containerapp", "show", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
                     "--name", AppName(command), "--query", "properties.configuration.ingress.traffic", "--output", "json", "--only-show-errors"],
                 ParseTrafficAsync,
                 cancellationToken);
@@ -993,14 +999,14 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     {
         EnsureMutationAuthority(command);
         await ExecuteAzAsync<AzureCommandNoOutput>(command,
-            ["sql", "server", "firewall-rule", "delete", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+            ["sql", "server", "firewall-rule", "delete", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
                 "--server", serverName, "--name", TemporaryFirewallRuleName, "--output", "none", "--only-show-errors"],
             static _ => AzureCommandNoOutput.Instance,
             cancellationToken);
         for (var attempt = 0; attempt < _options.ObservationAttempts; attempt++)
         {
             var list = await ExecuteAzAsync(command,
-                ["sql", "server", "firewall-rule", "list", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+                ["sql", "server", "firewall-rule", "list", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
                     "--server", serverName, "--output", "json", "--only-show-errors"],
                 ParseFirewallRulesAsync,
                 cancellationToken);
@@ -1019,7 +1025,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     {
         var server = $"{command.Plan.WorkloadName}-sql";
         var count = await ExecuteAzAsync(command,
-            ["sql", "server", "list", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+            ["sql", "server", "list", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
                 "--query", $"[?name=='{server}'] | length(@)", "--output", "tsv", "--only-show-errors"],
             ParseIntegerAsync,
             cancellationToken);
@@ -1031,7 +1037,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             return false;
 
         var admins = await ExecuteAzAsync(command,
-            ["sql", "server", "ad-admin", "list", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+            ["sql", "server", "ad-admin", "list", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
                 "--server", server, "--output", "json", "--only-show-errors"],
             ParseAdminsAsync,
             cancellationToken);
@@ -1043,7 +1049,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         {
             EnsureMutationAuthority(command);
             var created = await ExecuteAzAsync<AzureCommandNoOutput>(command,
-                ["sql", "server", "ad-admin", "create", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+                ["sql", "server", "ad-admin", "create", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
                     "--server", server, "--display-name", _options.SqlBootstrapLogin, "--object-id", _options.SqlBootstrapObjectId,
                     "--output", "none", "--only-show-errors"],
                 static _ => AzureCommandNoOutput.Instance,
@@ -1051,7 +1057,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             if (!created.Succeeded)
                 return null;
             admins = await ExecuteAzAsync(command,
-                ["sql", "server", "ad-admin", "list", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+                ["sql", "server", "ad-admin", "list", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
                     "--server", server, "--output", "json", "--only-show-errors"],
                 ParseAdminsAsync,
                 cancellationToken);
@@ -1066,7 +1072,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
 
         EnsureMutationAuthority(command);
         var enabled = await ExecuteAzAsync<AzureCommandNoOutput>(command,
-            ["sql", "server", "ad-only-auth", "enable", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+            ["sql", "server", "ad-only-auth", "enable", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
                 "--name", server, "--output", "none", "--only-show-errors"],
             static _ => AzureCommandNoOutput.Instance,
             cancellationToken);
@@ -1185,7 +1191,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         for (var attempt = 0; attempt < _options.ObservationAttempts; attempt++)
         {
             var exists = await ExecuteAzAsync(command,
-                ["group", "exists", "--subscription", _scope.SubscriptionId, "--name", _scope.ResourceGroupName, "--output", "tsv", "--only-show-errors"],
+                ["group", "exists", "--subscription", _scope.SubscriptionId, "--name", ResourceGroupName(command), "--output", "tsv", "--only-show-errors"],
                 ParseBooleanAsync,
                 cancellationToken);
             if (exists.Succeeded && exists.Value?.Value == false)
@@ -1262,15 +1268,15 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     }
 
     private IReadOnlyList<string> FoundationDeploymentArguments(AzureProviderRunnerCommand command, string deploymentName) =>
-        ["deployment", "group", "create", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+        ["deployment", "group", "create", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
             "--name", deploymentName, "--template-file", Path.Combine(_options.TemplateRoot, "main.bicep"), "--parameters",
-            $"proofName={command.Plan.WorkloadName}", $"location={_scope.Location}", $"imageRepository={command.Plan.ImageRepository}", $"imageDigest={command.Plan.ImageDigest}",
+            ..TemplateIdentityArguments(command), $"location={_scope.Location}", $"imageRepository={command.Plan.ImageRepository}", $"imageDigest={command.Plan.ImageDigest}",
             $"registryName={_scope.RegistryName}", $"registrySubscriptionId={_scope.RegistrySubscriptionId}",
             $"registryResourceGroupName={_scope.RegistryResourceGroupName}", $"sqlBootstrapObjectId={_options.SqlBootstrapObjectId}",
-            $"sqlBootstrapLogin={_options.SqlBootstrapLogin}", $"expiryUtc={_options.ExpiryUtc:yyyy-MM-dd}", $"owner={_options.Owner}",
+            $"sqlBootstrapLogin={_options.SqlBootstrapLogin}", $"owner={_options.Owner}",
             $"sqlConnectionSecretName={SqlConnectionSecretName}", $"signingKeySecretName={SigningKeySecretName}",
-            $"adminPasswordSecretName={AdminPasswordSecretName}", $"adminUsername={AdminUsername}",
-            $"elsaVersion={command.Plan.ElsaVersion}",
+            $"adminPasswordSecretName={AdminPasswordSecretName}", $"adminUsername={_options.RuntimeAdminUsername}",
+            $"elsaVersion={command.Plan.ElsaVersion}", ..ReleaseIdentityArguments(command),
             $"sqlWorkflowPackageVersion={command.Plan.SqlWorkflowPackageVersion}", $"sqlQuartzPackageVersion={command.Plan.SqlQuartzPackageVersion}",
             $"templateFingerprint={command.Context.TemplateFingerprint}", "deployWorkload=false", "--query", "properties.outputs", "--output", "json", "--only-show-errors"];
 
@@ -1281,15 +1287,15 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             "--query", "properties.outputs", "--output", "json", "--only-show-errors"];
 
     private IReadOnlyList<string> WorkloadDeploymentArguments(AzureProviderRunnerCommand command, string deploymentName, string revision, string? stable) =>
-        ["deployment", "group", "create", "--subscription", _scope.SubscriptionId, "--resource-group", _scope.ResourceGroupName,
+        ["deployment", "group", "create", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
             "--name", deploymentName, "--template-file", Path.Combine(_options.TemplateRoot, "main.bicep"), "--parameters",
-            $"proofName={command.Plan.WorkloadName}", $"location={_scope.Location}", $"imageRepository={command.Plan.ImageRepository}", $"imageDigest={command.Plan.ImageDigest}",
+            ..TemplateIdentityArguments(command), $"location={_scope.Location}", $"imageRepository={command.Plan.ImageRepository}", $"imageDigest={command.Plan.ImageDigest}",
             $"registryName={_scope.RegistryName}", $"registrySubscriptionId={_scope.RegistrySubscriptionId}",
             $"registryResourceGroupName={_scope.RegistryResourceGroupName}", $"sqlBootstrapObjectId={_options.SqlBootstrapObjectId}",
-            $"sqlBootstrapLogin={_options.SqlBootstrapLogin}", $"expiryUtc={_options.ExpiryUtc:yyyy-MM-dd}", $"owner={_options.Owner}",
+            $"sqlBootstrapLogin={_options.SqlBootstrapLogin}", $"owner={_options.Owner}",
             $"sqlConnectionSecretName={SqlConnectionSecretName}", $"signingKeySecretName={SigningKeySecretName}",
-            $"adminPasswordSecretName={AdminPasswordSecretName}", $"adminUsername={AdminUsername}",
-            $"elsaVersion={command.Plan.ElsaVersion}",
+            $"adminPasswordSecretName={AdminPasswordSecretName}", $"adminUsername={_options.RuntimeAdminUsername}",
+            $"elsaVersion={command.Plan.ElsaVersion}", ..ReleaseIdentityArguments(command),
             $"sqlWorkflowPackageVersion={command.Plan.SqlWorkflowPackageVersion}", $"sqlQuartzPackageVersion={command.Plan.SqlQuartzPackageVersion}",
             $"templateFingerprint={command.Context.TemplateFingerprint}", "deployWorkload=true", $"workloadRevisionSuffix={revision}",
             $"stableTrafficRevisionName={stable ?? string.Empty}", "--query", "properties.outputs", "--output", "json", "--only-show-errors"];
@@ -1342,22 +1348,22 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     private void ValidateExactPersistedReferences(AzureProviderRunnerCommand command)
     {
         var resources = command.Resources;
-        if (resources.ResourceGroupName is not null && !string.Equals(resources.ResourceGroupName, _scope.ResourceGroupName, StringComparison.Ordinal))
+        if (resources.ResourceGroupName is not null && !string.Equals(resources.ResourceGroupName, ResourceGroupName(command), StringComparison.Ordinal))
             throw new ArgumentException("The persisted resource group is outside the exact configured scope.", nameof(command));
         if (resources.WorkloadIdentityResourceId is not null)
-            ValidateExactResourceId(resources.WorkloadIdentityResourceId, _scope.SubscriptionId, _scope.ResourceGroupName, "Microsoft.ManagedIdentity", "userAssignedIdentities", $"{command.Plan.WorkloadName}-identity");
+            ValidateExactResourceId(resources.WorkloadIdentityResourceId, _scope.SubscriptionId, ResourceGroupName(command), "Microsoft.ManagedIdentity", "userAssignedIdentities", $"{command.Plan.WorkloadName}-identity");
         if (resources.KeyVaultResourceId is not null)
-            ValidateExactResourceId(resources.KeyVaultResourceId, _scope.SubscriptionId, _scope.ResourceGroupName, "Microsoft.KeyVault", "vaults", $"{command.Plan.WorkloadName}-kv");
+            ValidateExactResourceId(resources.KeyVaultResourceId, _scope.SubscriptionId, ResourceGroupName(command), "Microsoft.KeyVault", "vaults", $"{command.Plan.WorkloadName}-kv");
         if (resources.SqlServerResourceId is not null)
-            ValidateExactResourceId(resources.SqlServerResourceId, _scope.SubscriptionId, _scope.ResourceGroupName, "Microsoft.Sql", "servers", $"{command.Plan.WorkloadName}-sql");
+            ValidateExactResourceId(resources.SqlServerResourceId, _scope.SubscriptionId, ResourceGroupName(command), "Microsoft.Sql", "servers", $"{command.Plan.WorkloadName}-sql");
         if (resources.ContainerAppsEnvironmentResourceId is not null)
-            ValidateExactResourceId(resources.ContainerAppsEnvironmentResourceId, _scope.SubscriptionId, _scope.ResourceGroupName, "Microsoft.App", "managedEnvironments", $"{command.Plan.WorkloadName}-aca");
+            ValidateExactResourceId(resources.ContainerAppsEnvironmentResourceId, _scope.SubscriptionId, ResourceGroupName(command), "Microsoft.App", "managedEnvironments", $"{command.Plan.WorkloadName}-aca");
         if (resources.WorkloadResourceId is not null)
-            ValidateExactResourceId(resources.WorkloadResourceId, _scope.SubscriptionId, _scope.ResourceGroupName, "Microsoft.App", "containerApps", $"{command.Plan.WorkloadName}-app");
+            ValidateExactResourceId(resources.WorkloadResourceId, _scope.SubscriptionId, ResourceGroupName(command), "Microsoft.App", "containerApps", $"{command.Plan.WorkloadName}-app");
         if (resources.FoundationDeploymentId is not null)
-            ValidateExactDeploymentId(resources.FoundationDeploymentId, _scope.SubscriptionId, _scope.ResourceGroupName);
+            ValidateExactDeploymentId(resources.FoundationDeploymentId, _scope.SubscriptionId, ResourceGroupName(command));
         if (resources.WorkloadDeploymentId is not null)
-            ValidateExactDeploymentId(resources.WorkloadDeploymentId, _scope.SubscriptionId, _scope.ResourceGroupName);
+            ValidateExactDeploymentId(resources.WorkloadDeploymentId, _scope.SubscriptionId, ResourceGroupName(command));
         if (resources.RegistryResourceId is not null)
             ValidateExactResourceId(resources.RegistryResourceId, _scope.RegistrySubscriptionId, _scope.RegistryResourceGroupName, "Microsoft.ContainerRegistry", "registries", _scope.RegistryName);
         if (resources.AcrPullDeploymentId is not null)
@@ -1370,11 +1376,11 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             ValidateExactRoleAssignmentId(resources.AcrPullRoleAssignmentId, resources.RegistryResourceId);
     }
 
-    private AzureProviderResourceReferences ProjectFoundation(DeploymentOutputs outputs, AzureWorkloadPlan plan, string deploymentName)
+    private AzureProviderResourceReferences ProjectFoundation(AzureProviderRunnerCommand command, DeploymentOutputs outputs, AzureWorkloadPlan plan, string deploymentName)
     {
         var resources = new AzureProviderResourceReferences(
             ResourceGroupName: Required(outputs.String("resourceGroupName"), "resourceGroupName"),
-            FoundationDeploymentId: DeploymentId(_scope.SubscriptionId, _scope.ResourceGroupName, deploymentName),
+            FoundationDeploymentId: DeploymentId(_scope.SubscriptionId, ResourceGroupName(command), deploymentName),
             WorkloadIdentityResourceId: Required(outputs.String("workloadIdentityId"), "workloadIdentityId"),
             WorkloadIdentityClientId: NormalizeGuid(Required(outputs.String("workloadIdentityClientId"), "workloadIdentityClientId"), "workloadIdentityClientId"),
             WorkloadIdentityPrincipalId: NormalizeGuid(Required(outputs.String("workloadIdentityPrincipalId"), "workloadIdentityPrincipalId"), "workloadIdentityPrincipalId"),
@@ -1384,24 +1390,24 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             SqlServerFqdn: Required(outputs.String("sqlServerFqdn"), "sqlServerFqdn"),
             ContainerAppsEnvironmentResourceId: Required(outputs.String("containerAppsEnvironmentId"), "containerAppsEnvironmentId"));
         AzureProviderOperationValidation.ValidateReferences(resources);
-        ValidateExactResourceId(resources.WorkloadIdentityResourceId!, _scope.SubscriptionId, _scope.ResourceGroupName, "Microsoft.ManagedIdentity", "userAssignedIdentities", $"{plan.WorkloadName}-identity");
-        ValidateExactResourceId(resources.KeyVaultResourceId!, _scope.SubscriptionId, _scope.ResourceGroupName, "Microsoft.KeyVault", "vaults", $"{plan.WorkloadName}-kv");
-        ValidateExactResourceId(resources.SqlServerResourceId!, _scope.SubscriptionId, _scope.ResourceGroupName, "Microsoft.Sql", "servers", $"{plan.WorkloadName}-sql");
-        ValidateExactResourceId(resources.ContainerAppsEnvironmentResourceId!, _scope.SubscriptionId, _scope.ResourceGroupName, "Microsoft.App", "managedEnvironments", $"{plan.WorkloadName}-aca");
-        if (!string.Equals(resources.ResourceGroupName, _scope.ResourceGroupName, StringComparison.Ordinal))
+        ValidateExactResourceId(resources.WorkloadIdentityResourceId!, _scope.SubscriptionId, ResourceGroupName(command), "Microsoft.ManagedIdentity", "userAssignedIdentities", $"{plan.WorkloadName}-identity");
+        ValidateExactResourceId(resources.KeyVaultResourceId!, _scope.SubscriptionId, ResourceGroupName(command), "Microsoft.KeyVault", "vaults", $"{plan.WorkloadName}-kv");
+        ValidateExactResourceId(resources.SqlServerResourceId!, _scope.SubscriptionId, ResourceGroupName(command), "Microsoft.Sql", "servers", $"{plan.WorkloadName}-sql");
+        ValidateExactResourceId(resources.ContainerAppsEnvironmentResourceId!, _scope.SubscriptionId, ResourceGroupName(command), "Microsoft.App", "managedEnvironments", $"{plan.WorkloadName}-aca");
+        if (!string.Equals(resources.ResourceGroupName, ResourceGroupName(command), StringComparison.Ordinal))
             throw new ArgumentException("The foundation returned an unexpected resource group.");
         return resources;
     }
 
-    private AzureProviderResourceReferences ProjectWorkload(DeploymentOutputs outputs, AzureProviderResourceReferences foundation, AzureWorkloadPlan plan, string deploymentName, string revision, string? stable)
+    private AzureProviderResourceReferences ProjectWorkload(AzureProviderRunnerCommand command, DeploymentOutputs outputs, AzureProviderResourceReferences foundation, AzureWorkloadPlan plan, string deploymentName, string revision, string? stable)
     {
         var resourceId = Required(outputs.String("containerAppId"), "containerAppId");
-        ValidateExactResourceId(resourceId, _scope.SubscriptionId, _scope.ResourceGroupName, "Microsoft.App", "containerApps", $"{plan.WorkloadName}-app");
+        ValidateExactResourceId(resourceId, _scope.SubscriptionId, ResourceGroupName(command), "Microsoft.App", "containerApps", $"{plan.WorkloadName}-app");
         var endpoint = Required(outputs.String("containerAppEndpoint"), "containerAppEndpoint");
         AzureProviderOperationValidation.ValidateEndpoint(endpoint);
         var resources = foundation with
         {
-            WorkloadDeploymentId = DeploymentId(_scope.SubscriptionId, _scope.ResourceGroupName, deploymentName),
+            WorkloadDeploymentId = DeploymentId(_scope.SubscriptionId, ResourceGroupName(command), deploymentName),
             WorkloadResourceId = resourceId,
             WorkloadRevisionName = $"{plan.WorkloadName}-app--{revision}",
             StableTrafficRevisionName = stable,
@@ -1410,9 +1416,9 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         return resources;
     }
 
-    private bool IsExactInventory(IReadOnlyList<AzureResource> resources, string workload)
+    private bool IsExactInventory(AzureProviderRunnerCommand command, IReadOnlyList<AzureResource> resources, string workload)
     {
-        var resourceGroupId = ResourceGroupId();
+        var resourceGroupId = ResourceGroupId(command);
         var resourceGroupPrefix = resourceGroupId + "/providers/";
         var roots = new[]
         {
@@ -1443,9 +1449,9 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         return true;
     }
 
-    private bool HasSafeVaultAssignmentsForCleanup(IReadOnlyList<RoleAssignment> assignments, AzureProviderResourceReferences resources, string workload)
+    private bool HasSafeVaultAssignmentsForCleanup(AzureProviderRunnerCommand command, IReadOnlyList<RoleAssignment> assignments, AzureProviderResourceReferences resources, string workload)
     {
-        var vault = resources.KeyVaultResourceId ?? ResourceId("Microsoft.KeyVault", "vaults", $"{workload}-kv");
+        var vault = resources.KeyVaultResourceId ?? ResourceId(command, "Microsoft.KeyVault", "vaults", $"{workload}-kv");
         var owned = assignments.Where(x => string.Equals(x.Scope, vault, StringComparison.OrdinalIgnoreCase)).ToArray();
         if (owned.Length > 2)
             return false;
@@ -1474,21 +1480,23 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     private static AzureProviderRunnerResult ProcessFailure<T>(AzureProviderRunnerCommand command, AzureProviderOperationPhase phase, AzureCommandProcessResult<T> result, AzureProviderResourceReferences resources, bool mutation)
         where T : AzureCommandSafeOutput =>
         result.Status is AzureCommandProcessStatus.TerminationUncertain || result.FailureKind is AzureCommandProcessFailureKind.TerminationUncertain
-            ? Uncertain(command, phase, "azure.step.termination-uncertain", "The Azure lifecycle process could not be proven terminated, so the external result requires recovery.", resources)
+            ? Uncertain(command, phase, "azure.step.termination-uncertain", "The Azure lifecycle process could not be proven terminated, so the external result requires recovery.", resources, result.FailureKind)
             : result.Status == AzureCommandProcessStatus.Cancelled || result.FailureKind == AzureCommandProcessFailureKind.Cancelled
-                ? Uncertain(command, phase, "azure.step.cancelled", "The Azure lifecycle step was interrupted before its result was confirmed.", resources)
+                ? Uncertain(command, phase, "azure.step.cancelled", "The Azure lifecycle step was interrupted before its result was confirmed.", resources, result.FailureKind)
             : mutation
-                ? Uncertain(command, phase, "azure.step.uncertain", "The Azure lifecycle step failed before its external result was confirmed.", resources)
-                : Failed(command, phase, "azure.step.failed", "The Azure lifecycle observation failed.", resources);
+                ? Uncertain(command, phase, "azure.step.uncertain", "The Azure lifecycle step failed before its external result was confirmed.", resources, result.FailureKind)
+                : Failed(command, phase, "azure.step.failed", "The Azure lifecycle observation failed.", resources, result.FailureKind);
 
     private static AzureProviderRunnerResult Completed(AzureProviderRunnerCommand command, AzureProviderOperationPhase phase, AzureProviderResourceReferences resources, bool noOp = false, AzureProviderHealth health = AzureProviderHealth.Unknown, string? endpoint = null, bool stableTrafficRestored = false) =>
         new(noOp ? AzureProviderRunnerOutcome.NoOp : AzureProviderRunnerOutcome.Completed, phase, resources, health, endpoint, [], noOp ? "azure.step.no-op" : "azure.step.completed", noOp ? "The Azure lifecycle step was already converged." : "The Azure lifecycle step completed.", StableTrafficRestored: stableTrafficRestored);
 
-    private static AzureProviderRunnerResult Failed(AzureProviderRunnerCommand command, AzureProviderOperationPhase phase, string code, string message, AzureProviderResourceReferences? resources = null) =>
-        new(AzureProviderRunnerOutcome.Failed, phase, resources ?? command.Resources, AzureProviderHealth.Unknown, null, [], code, message);
+    private static AzureProviderRunnerResult Failed(AzureProviderRunnerCommand command, AzureProviderOperationPhase phase, string code, string message, AzureProviderResourceReferences? resources = null, AzureCommandProcessFailureKind? processFailureKind = null) =>
+        new(AzureProviderRunnerOutcome.Failed, phase, resources ?? command.Resources, AzureProviderHealth.Unknown, null,
+            AzureProviderSafeDiagnostics.Failure(command.Step, AzureProviderRunnerOutcome.Failed, code, processFailureKind), code, message);
 
-    private static AzureProviderRunnerResult Uncertain(AzureProviderRunnerCommand command, AzureProviderOperationPhase phase, string code, string message, AzureProviderResourceReferences? resources = null) =>
-        new(AzureProviderRunnerOutcome.Uncertain, phase, resources ?? command.Resources, AzureProviderHealth.Unknown, null, [], code, message);
+    private static AzureProviderRunnerResult Uncertain(AzureProviderRunnerCommand command, AzureProviderOperationPhase phase, string code, string message, AzureProviderResourceReferences? resources = null, AzureCommandProcessFailureKind? processFailureKind = null) =>
+        new(AzureProviderRunnerOutcome.Uncertain, phase, resources ?? command.Resources, AzureProviderHealth.Unknown, null,
+            AzureProviderSafeDiagnostics.Failure(command.Step, AzureProviderRunnerOutcome.Uncertain, code, processFailureKind), code, message);
 
     private static AzureProviderOperationPhase CurrentPhase(AzureProviderRunnerStep step) => step switch
     {
@@ -1502,18 +1510,36 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         _ => AzureProviderOperationPhase.Planned
     };
 
-    private string ResourceGroupId() => $"/subscriptions/{_scope.SubscriptionId}/resourceGroups/{_scope.ResourceGroupName}";
+    private string ResourceGroupId(AzureProviderRunnerCommand command) => $"/subscriptions/{_scope.SubscriptionId}/resourceGroups/{ResourceGroupName(command)}";
 
-    private string ResourceId(string provider, string type, string name) =>
-        $"{ResourceGroupId()}/providers/{provider}/{type}/{name}";
+    private string ResourceId(AzureProviderRunnerCommand command, string provider, string type, string name) =>
+        $"{ResourceGroupId(command)}/providers/{provider}/{type}/{name}";
 
     private string RegistryResourceId() =>
         $"/subscriptions/{_scope.RegistrySubscriptionId}/resourceGroups/{_scope.RegistryResourceGroupName}/providers/Microsoft.ContainerRegistry/registries/{_scope.RegistryName}";
     private static string AppName(AzureProviderRunnerCommand command) => $"{command.Plan.WorkloadName}-app";
     private static string SqlServerName(AzureProviderRunnerCommand command) => $"{command.Plan.WorkloadName}-sql";
-    private static string FoundationDeploymentName(AzureProviderRunnerCommand command) => $"elsa108-{command.Plan.WorkloadName}-{command.Plan.Fingerprint[..12]}-foundation";
-    private static string WorkloadDeploymentName(AzureProviderRunnerCommand command) => $"elsa108-{command.Plan.WorkloadName}-{command.Plan.Fingerprint[..12]}-workload";
-    private string AcrDeploymentName(AzureProviderRunnerCommand command, string principalId) => $"elsa108-{command.Plan.WorkloadName}-{ShortHash($"{_scope.SubscriptionId}/{_scope.ResourceGroupName}/{principalId}/{_scope.RegistrySubscriptionId}/{_scope.RegistryResourceGroupName}/{_scope.RegistryName}")}-acr";
+    private string ResourceGroupName(AzureProviderRunnerCommand command)
+    {
+        if (command.Assignment is null)
+            return _scope.ResourceGroupName;
+        var assignment = command.Assignment;
+        if (assignment.Id.ToString("D") != command.Context.ProviderAssignmentId ||
+            assignment.WorkspaceId != command.Context.WorkspaceId ||
+            assignment.OrganizationId != command.Context.OrganizationId ||
+            assignment.InstanceId != command.Context.InstanceId ||
+            !string.Equals(assignment.SubscriptionId, _scope.SubscriptionId, StringComparison.Ordinal) ||
+            !string.Equals(assignment.ProviderScopeFingerprint, command.Context.ProviderScopeFingerprint, StringComparison.Ordinal) ||
+            !string.Equals(assignment.WorkloadName, command.Plan.WorkloadName, StringComparison.OrdinalIgnoreCase) ||
+            assignment.State == AzureProviderAssignmentState.Deleted)
+            throw new InvalidOperationException("The Azure provider assignment does not authorize this runner command.");
+        return assignment.ResourceGroupName;
+    }
+    private string FoundationDeploymentName(AzureProviderRunnerCommand command) => $"{DeploymentPrefix}-{command.Plan.WorkloadName}-{command.Plan.Fingerprint[..12]}-foundation";
+    private string WorkloadDeploymentName(AzureProviderRunnerCommand command) => $"{DeploymentPrefix}-{command.Plan.WorkloadName}-{command.Plan.Fingerprint[..12]}-workload";
+    private string AcrDeploymentName(AzureProviderRunnerCommand command, string principalId) => $"{DeploymentPrefix}-{command.Plan.WorkloadName}-{ShortHash($"{_scope.SubscriptionId}/{ResourceGroupName(command)}/{principalId}/{_scope.RegistrySubscriptionId}/{_scope.RegistryResourceGroupName}/{_scope.RegistryName}")}-acr";
+    private string DeploymentPrefix => _options.DisposableProofMode ? "elsa108" : "elsa";
+    private string TemporaryFirewallRuleName => _options.DisposableProofMode ? "elsa108-bootstrap" : "elsa-bootstrap";
     private static string ShortHash(string value) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)))[..12];
     private static string DeploymentId(string subscription, string resourceGroup, string name) => $"/subscriptions/{subscription}/resourceGroups/{resourceGroup}/providers/Microsoft.Resources/deployments/{name}";
     private static string Required(string? value, string name) => !string.IsNullOrWhiteSpace(value) ? value : throw new ArgumentException($"The Azure output {name} is missing.");
@@ -1572,10 +1598,34 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     }
 
     private bool OwnsGroup(IReadOnlyDictionary<string, string> tags, string workload) =>
-        tags.TryGetValue("proof", out var proof) && proof == ProofTag && tags.TryGetValue("owner", out var owner) && string.Equals(owner, _options.Owner, StringComparison.Ordinal) &&
-        tags.TryGetValue("proof-name", out var name) && string.Equals(name, workload, StringComparison.Ordinal) &&
-        tags.TryGetValue("sqlBootstrapObjectId", out var bootstrap) && string.Equals(bootstrap, _options.SqlBootstrapObjectId, StringComparison.Ordinal) &&
-        tags.TryGetValue("expiry", out var expiry) && string.Equals(expiry, _options.ExpiryUtc.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        _options.DisposableProofMode
+            ? tags.TryGetValue("proof", out var proof) && proof == ProofTag &&
+              tags.TryGetValue("owner", out var proofOwner) && string.Equals(proofOwner, _options.Owner, StringComparison.Ordinal) &&
+              tags.TryGetValue("proof-name", out var proofName) && string.Equals(proofName, workload, StringComparison.Ordinal) &&
+              tags.TryGetValue("sqlBootstrapObjectId", out var proofBootstrap) && string.Equals(proofBootstrap, _options.SqlBootstrapObjectId, StringComparison.Ordinal) &&
+              tags.TryGetValue("expiry", out var expiry) && string.Equals(expiry, _options.DisposableExpiryUtc!.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            : tags.TryGetValue("managed-by", out var managedBy) && managedBy == ManagedByTag &&
+              tags.TryGetValue("owner", out var owner) && string.Equals(owner, _options.Owner, StringComparison.Ordinal) &&
+              tags.TryGetValue("workload-name", out var name) && string.Equals(name, workload, StringComparison.Ordinal) &&
+              tags.TryGetValue("sqlBootstrapObjectId", out var bootstrap) && string.Equals(bootstrap, _options.SqlBootstrapObjectId, StringComparison.Ordinal);
+
+    private string[] ResourceGroupTags(string workload) => _options.DisposableProofMode
+        ? [$"proof={ProofTag}", $"owner={_options.Owner}", $"proof-name={workload}",
+            $"expiry={_options.DisposableExpiryUtc!.Value:yyyy-MM-dd}", $"sqlBootstrapObjectId={_options.SqlBootstrapObjectId}"]
+        : [$"managed-by={ManagedByTag}", $"owner={_options.Owner}", $"workload-name={workload}",
+            $"sqlBootstrapObjectId={_options.SqlBootstrapObjectId}"];
+
+    private string[] TemplateIdentityArguments(AzureProviderRunnerCommand command) => _options.DisposableProofMode
+        ? [$"proofName={command.Plan.WorkloadName}", $"expiryUtc={_options.DisposableExpiryUtc!.Value:yyyy-MM-dd}"]
+        : [$"workloadName={command.Plan.WorkloadName}"];
+
+    private string[] ReleaseIdentityArguments(AzureProviderRunnerCommand command) => _options.DisposableProofMode
+        ? []
+        : [$"releaseLine={command.Plan.ReleaseLine}", $"releaseFeedServiceIndex={_options.NormalizeReleaseFeedServiceIndex()}"];
+
+    private string[] SqlAuthenticationArguments() => _options.DisposableProofMode
+        ? ["--authentication-method", "ActiveDirectoryDefault"]
+        : ["--authentication-method", "ActiveDirectoryManagedIdentity", "-U", _options.AzureCliClientId!];
 
     private static SafeValue<bool> ParseBooleanAsync(ReadOnlyMemory<char> output) =>
         bool.TryParse(output.ToString().Trim(), out var value) ? new SafeValue<bool>(value) : throw new FormatException();
@@ -1659,14 +1709,21 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             Directory.Delete(directory, recursive: false);
     }
 
-    private sealed class DeploymentOutputs : Dictionary<string, OutputValue>
+    private sealed class DeploymentOutputs : Dictionary<string, OutputValue?>
     {
-        public string? String(string name) => TryGetValue(name, out var value) ? value.Value : null;
+        public string? String(string name)
+        {
+            if (!TryGetValue(name, out var output) || output?.Value is not JsonElement value ||
+                value.ValueKind != JsonValueKind.String)
+                return null;
+
+            return value.GetString();
+        }
     }
 
     private sealed class OutputValue
     {
-        [JsonPropertyName("value")] public string? Value { get; set; }
+        [JsonPropertyName("value")] public JsonElement? Value { get; set; }
     }
 
     private sealed class RoleAssignment

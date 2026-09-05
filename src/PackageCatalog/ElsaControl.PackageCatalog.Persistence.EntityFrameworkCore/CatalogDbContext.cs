@@ -72,6 +72,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     internal DbSet<Models.DeploymentRunHistoryEventEntity> DeploymentRunHistoryEvents => Set<Models.DeploymentRunHistoryEventEntity>();
     internal DbSet<Models.DeploymentCommandEntity> DeploymentCommands => Set<Models.DeploymentCommandEntity>();
     internal DbSet<Models.DeploymentCommandEventEntity> DeploymentCommandEvents => Set<Models.DeploymentCommandEventEntity>();
+    internal DbSet<Models.AzureProviderResourceAssignmentEntity> AzureProviderResourceAssignments => Set<Models.AzureProviderResourceAssignmentEntity>();
     internal DbSet<Models.AzureProviderOperationEntity> AzureProviderOperations => Set<Models.AzureProviderOperationEntity>();
     internal DbSet<Models.AzureProviderOperationTransitionEntity> AzureProviderOperationTransitions => Set<Models.AzureProviderOperationTransitionEntity>();
     internal DbSet<Models.DeploymentCommandWebhookNotificationEntity> DeploymentCommandWebhookNotifications => Set<Models.DeploymentCommandWebhookNotificationEntity>();
@@ -155,6 +156,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.ApplyConfiguration(new Models.DeploymentRunHistoryEventConfiguration());
         modelBuilder.ApplyConfiguration(new Models.DeploymentCommandConfiguration());
         modelBuilder.ApplyConfiguration(new Models.DeploymentCommandEventConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.AzureProviderResourceAssignmentConfiguration());
         modelBuilder.ApplyConfiguration(new Models.AzureProviderOperationConfiguration());
         modelBuilder.ApplyConfiguration(new Models.AzureProviderOperationTransitionConfiguration());
         modelBuilder.ApplyConfiguration(new Models.DeploymentCommandWebhookNotificationConfiguration());

@@ -18,6 +18,7 @@ public sealed class AdmittedAzureProofPlanFactory(
     IReadOnlyList<string> admittedFeatures,
     Guid proofOrganizationId,
     Guid proofInstanceId,
+    Guid providerAssignmentId,
     string idempotencyPrefix = "azure-proof") : IAzureProviderProofPlanFactory
 {
     public AzureProviderOperationSubmission Create(
@@ -32,7 +33,7 @@ public sealed class AdmittedAzureProofPlanFactory(
             !string.Equals(environment.Name, target.WorkloadName, StringComparison.OrdinalIgnoreCase))
             throw PlanFailure("azure.proof.environmentMismatch");
         if (!IsSha256(templateFingerprint) || !IsSha256(providerScopeFingerprint) ||
-            proofOrganizationId == Guid.Empty || proofInstanceId == Guid.Empty ||
+            proofOrganizationId == Guid.Empty || proofInstanceId == Guid.Empty || providerAssignmentId == Guid.Empty ||
             admittedFeatures is null ||
             !selection.Features.Order(StringComparer.Ordinal).SequenceEqual(
                 admittedFeatures.Order(StringComparer.Ordinal), StringComparer.Ordinal) ||
@@ -66,7 +67,8 @@ public sealed class AdmittedAzureProofPlanFactory(
             providerScopeFingerprint.ToLowerInvariant(),
             proofOrganizationId,
             proofInstanceId,
-            ElsaInstanceOperationAction.Reconcile);
+            ElsaInstanceOperationAction.Reconcile,
+            providerAssignmentId);
     }
 
     private static bool IsSha256(string? value) =>

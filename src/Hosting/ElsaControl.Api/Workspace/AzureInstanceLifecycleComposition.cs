@@ -34,7 +34,10 @@ internal static class AzureInstanceLifecycleComposition
         {
             Enabled = true,
             TemplateFingerprint = runnerAuthority.TemplateFingerprint,
-            ProviderScopeFingerprint = runnerAuthority.ProviderScopeFingerprint
+            ProviderScopeFingerprint = runnerAuthority.ProviderScopeFingerprint,
+            SubscriptionId = runnerAuthority.Scope.SubscriptionId,
+            ResourceGroupNamePrefix = runnerAuthority.Scope.ResourceGroupName,
+            ResourceGroupNamingVersion = 1
         };
         options.Validate();
 
@@ -43,6 +46,8 @@ internal static class AzureInstanceLifecycleComposition
         services.AddScoped<IElsaInstanceProviderSubmissionPort>(provider =>
             provider.GetRequiredService<AzureElsaInstanceProvider>());
         services.AddScoped<IElsaInstanceProviderReconciliationPort>(provider =>
+            provider.GetRequiredService<AzureElsaInstanceProvider>());
+        services.AddScoped<IElsaInstanceProviderCleanupPort>(provider =>
             provider.GetRequiredService<AzureElsaInstanceProvider>());
         return true;
     }

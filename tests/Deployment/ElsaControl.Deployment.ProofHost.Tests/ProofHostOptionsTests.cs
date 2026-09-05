@@ -1,6 +1,9 @@
 using System.Globalization;
 using System.Text.Json;
+using ElsaControl.Deployment.Azure;
 using ElsaControl.Deployment.ProofHost;
+using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 
 namespace ElsaControl.Deployment.ProofHost.Tests;
 
@@ -218,6 +221,21 @@ public sealed class ProofHostOptionsTests
         using var report = JsonDocument.Parse(output.ToString());
         Assert.Equal("failed", report.RootElement.GetProperty("outcome").GetString());
         Assert.DoesNotContain("super-secret", output.ToString(), StringComparison.Ordinal);
+
+        await using (var db = new CatalogDbContext(new DbContextOptionsBuilder<CatalogDbContext>()
+                         .UseSqlite($"Data Source={parsed.Options.StatePath}").Options))
+        {
+            var store = new AzureProviderOperationStore(db);
+            var scope = parsed.Options.CreateRunnerOptions().ComputeProviderScopeFingerprint(parsed.Options.CreateTargetScope());
+            var operation = await store.GetLatestReconcileAsync(parsed.Options.WorkspaceId, parsed.Options.ProofName, scope);
+            Assert.NotNull(operation);
+            Assert.NotNull(operation.ProviderAssignmentId);
+            var assignment = await ((IAzureProviderResourceAssignmentStore)store).GetAsync(operation.WorkspaceId, operation.ProviderAssignmentId.Value);
+            Assert.NotNull(assignment);
+            Assert.Equal(parsed.Options.ResourceGroupName, assignment.ResourceGroupName);
+            var transitions = await store.ListTransitionsAsync(operation.WorkspaceId, operation.Id);
+            Assert.Contains(transitions, transition => transition.Code == "azure.step.failed");
+        }
 
         await using var repeatOutput = new StringWriter();
         await using var repeatError = new StringWriter();

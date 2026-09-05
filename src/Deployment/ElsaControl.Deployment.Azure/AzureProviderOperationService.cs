@@ -17,7 +17,8 @@ public sealed record AzureProviderOperationSubmission(
     string? ProviderScopeFingerprint = null,
     Guid? OrganizationId = null,
     Guid? InstanceId = null,
-    ElsaInstanceOperationAction? LifecycleAction = null);
+    ElsaInstanceOperationAction? LifecycleAction = null,
+    Guid? ProviderAssignmentId = null);
 
 public sealed record AzureProviderOperationStatusResponse(
     AzureProviderOperation Operation,
@@ -191,7 +192,8 @@ public sealed class AzureProviderOperationService(
             submission.ProviderScopeFingerprint,
             submission.OrganizationId,
             submission.InstanceId,
-            submission.LifecycleAction);
+            submission.LifecycleAction,
+            submission.ProviderAssignmentId);
         var result = await store.CreateOrGetWithResultAsync(operationRequest, _timeProvider.GetUtcNow(), cancellationToken);
         return new(result.Operation, result.Replayed);
     }
@@ -205,7 +207,8 @@ public sealed class AzureProviderOperationService(
         string? providerScopeFingerprint = null,
         Guid? organizationId = null,
         Guid? instanceId = null,
-        ElsaInstanceOperationAction? lifecycleAction = null) =>
+        ElsaInstanceOperationAction? lifecycleAction = null,
+        Guid? providerAssignmentId = null) =>
         new(
             workspaceId,
             plan.WorkloadName,
@@ -233,7 +236,8 @@ public sealed class AzureProviderOperationService(
             plan.SqlQuartzPackageVersion,
             organizationId,
             instanceId,
-            lifecycleAction);
+            lifecycleAction,
+            providerAssignmentId);
 
     internal static AzureProviderOperationRequest CreateOperationRequest(AzureProviderOperation operation) =>
         new(
@@ -260,7 +264,8 @@ public sealed class AzureProviderOperationService(
             operation.SqlQuartzPackageVersion,
             operation.OrganizationId,
             operation.InstanceId,
-            operation.LifecycleAction);
+            operation.LifecycleAction,
+            operation.ProviderAssignmentId);
 
     internal static AzureWorkloadPlan? TryRestorePlan(AzureProviderOperation operation)
     {

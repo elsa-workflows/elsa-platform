@@ -42,7 +42,8 @@ public sealed record AzureProviderRunnerCommand(
     string? StableTrafficRevisionName,
     bool IsResume,
     int AttemptNumber,
-    AzureProviderExecutionContext Context);
+    AzureProviderExecutionContext Context,
+    AzureProviderResourceAssignment? Assignment = null);
 
 /// <summary>
 /// Safe durable correlation supplied to every runner step. Target Azure scope remains explicit
@@ -51,10 +52,13 @@ public sealed record AzureProviderRunnerCommand(
 /// </summary>
 public sealed record AzureProviderExecutionContext(
     Guid WorkspaceId,
+    Guid OrganizationId,
+    Guid InstanceId,
     Guid OperationId,
     string OperationIdentity,
     string IdempotencyKey,
     string TargetKey,
+    string ProviderAssignmentId,
     string PlanFingerprint,
     string TemplateFingerprint,
     string? ProviderScopeFingerprint);

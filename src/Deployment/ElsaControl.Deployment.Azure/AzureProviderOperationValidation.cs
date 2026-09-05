@@ -10,6 +10,32 @@ namespace ElsaControl.Deployment.Azure;
 
 public static class AzureProviderOperationValidation
 {
+    /// <summary>
+    /// Binds a delete's canonical key (including bounded retry lineage) to its lifecycle
+    /// operation. Unattributable long-chain hashed keys require explicit recovery.
+    /// </summary>
+    public static bool IsLifecycleDeleteIdempotencyKey(string? key, Guid lifecycleOperationId)
+    {
+        var root = AzureElsaInstanceProvider.IdempotencyKey(lifecycleOperationId) + ":delete";
+        if (lifecycleOperationId == Guid.Empty || key is null || key.Length > 512 ||
+            !key.StartsWith(root, StringComparison.Ordinal))
+            return false;
+        var remaining = key.AsSpan(root.Length);
+        for (var retries = 0; !remaining.IsEmpty; retries++)
+        {
+            const string separator = ":retry:";
+            if (retries >= 31 || remaining.Length < separator.Length + 32 ||
+                !remaining.StartsWith(separator, StringComparison.Ordinal))
+                return false;
+            var id = remaining.Slice(separator.Length, 32);
+            if (!Guid.TryParseExact(id, "N", out var operationId) || operationId == Guid.Empty ||
+                !id.SequenceEqual(operationId.ToString("N")))
+                return false;
+            remaining = remaining[(separator.Length + 32)..];
+        }
+        return true;
+    }
+
     public static void ValidateCheckpoint(AzureProviderCheckpoint checkpoint)
     {
         if (checkpoint is null) throw new ArgumentNullException(nameof(checkpoint));
@@ -316,6 +342,8 @@ public static class AzureProviderOperationValidation
         if ((request.OrganizationId is null) != (request.InstanceId is null)) errors.Add("instanceBinding.incomplete");
         if (request.LifecycleAction is { } lifecycleAction && !Enum.IsDefined(lifecycleAction)) errors.Add("lifecycleAction.invalid");
         if (request.OrganizationId is not null && request.LifecycleAction is null) errors.Add("lifecycleAction.required");
+        if (request.ProviderAssignmentId is { } assignmentId && assignmentId == Guid.Empty) errors.Add("providerAssignment.invalid");
+        if (request.OrganizationId is not null && request.ProviderAssignmentId is null) errors.Add("providerAssignment.required");
         if (!Enum.IsDefined(request.Action)) errors.Add("action.invalid");
         Required(request.TargetKey, "target");
         Required(request.IdempotencyKey, "idempotency");
@@ -411,7 +439,7 @@ public static class AzureProviderOperationValidation
             : $"{legacyValue}|{normalized.ProviderScopeFingerprint}";
         var withBinding = normalized.OrganizationId is null
             ? value
-            : $"{value}|{normalized.OrganizationId:D}|{normalized.InstanceId:D}|{normalized.LifecycleAction}";
+            : $"{value}|{normalized.OrganizationId:D}|{normalized.InstanceId:D}|{normalized.LifecycleAction}|{normalized.ProviderAssignmentId:D}";
         var withPackageMetadata = normalized.SqlWorkflowPackageVersion is null && normalized.SqlQuartzPackageVersion is null
             ? withBinding
             : $"{withBinding}|{normalized.SqlWorkflowPackageVersion}|{normalized.SqlQuartzPackageVersion}";
@@ -471,6 +499,7 @@ public static class AzureProviderOperationValidation
         normalized.OrganizationId,
         normalized.InstanceId,
         LifecycleAction = normalized.LifecycleAction?.ToString(),
+        normalized.ProviderAssignmentId,
         normalized.TargetKey,
         Action = normalized.Action.ToString(),
         normalized.PlanFingerprint,
@@ -535,7 +564,8 @@ public static class AzureProviderOperationValidation
                     errors.Add("secretReferences.key.invalid");
                 }
             }
-            if (!IsSafeSecretReference(pair.Value))
+            if (!IsSafeSecretReference(pair.Value) ||
+                !IsSecretReferenceBoundToKey(pair.Key, pair.Value))
                 errors.Add("secretReferences.value.invalid");
         }
     }
@@ -551,7 +581,8 @@ public static class AzureProviderOperationValidation
         {
             if (string.IsNullOrWhiteSpace(pair.Key) || pair.Key.Length > 256 || pair.Key.Any(char.IsControl) ||
                 !string.Equals(pair.Key, pair.Key.Trim().ToLowerInvariant(), StringComparison.Ordinal) ||
-                !keys.Add(pair.Key) || !IsSafeSecretReference(pair.Value))
+                !keys.Add(pair.Key) || !IsSafeSecretReference(pair.Value) ||
+                !IsSecretReferenceBoundToKey(pair.Key, pair.Value))
                 return false;
             try
             {
@@ -564,6 +595,35 @@ public static class AzureProviderOperationValidation
             }
         }
         return true;
+    }
+
+    /// <summary>
+    /// Checks that an Azure Key Vault locator names the provider-governed secret for its
+    /// logical slot. Opaque references remain valid for other providers; the managed-identity
+    /// resolver and named-reference preflight require a strict Key Vault locator before this
+    /// check is reached. The provider-owned SQL instruction is valid only for its fixed slot.
+    /// </summary>
+    internal static bool IsSecretReferenceBoundToKey(string key, string reference)
+    {
+        if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(reference))
+            return false;
+
+        if (AzureManagedSecretReferences.IsSqlConnection(key, reference))
+            return true;
+        if (string.Equals(reference, AzureManagedSecretReferences.SqlConnection, StringComparison.Ordinal))
+            return false;
+
+        if (!AzureKeyVaultSecretLocator.TryParsePlanReference(reference, out var locator))
+            return true;
+
+        try
+        {
+            return locator is not null && string.Equals(locator.Name, MapSecretName(key), StringComparison.OrdinalIgnoreCase);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
     }
 
     public static bool IsSafePackageVersion(string? value) =>
@@ -593,11 +653,14 @@ public static class AzureProviderOperationValidation
     /// </summary>
     public static bool IsSafeSecretReference(string? value)
     {
+        if (AzureKeyVaultSecretLocator.TryParsePlanReference(value, out _))
+            return true;
+
         if (string.IsNullOrWhiteSpace(value) || value.Length > 512 || value.Any(char.IsWhiteSpace) || value.Any(char.IsControl) ||
             value.Contains('\\') || value.Contains('%') || value.Contains('?') || value.Contains('#') ||
             value.Contains("/../", StringComparison.Ordinal) || value.Contains("/./", StringComparison.Ordinal) ||
             value.EndsWith("/..", StringComparison.Ordinal) || value.EndsWith("/.", StringComparison.Ordinal) ||
-            !Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != "secret" ||
+            !Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != "secret" || !uri.IsDefaultPort ||
             string.IsNullOrWhiteSpace(uri.Host) || !string.IsNullOrEmpty(uri.UserInfo) ||
             !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment) ||
             uri.AbsolutePath.Contains("//", StringComparison.Ordinal))

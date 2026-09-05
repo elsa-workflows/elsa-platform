@@ -42,6 +42,20 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
     }
 
     [Fact]
+    public void Disposable_mode_requires_expiry_and_is_bound_into_the_authority()
+    {
+        var production = ValidOptions();
+        var expiry = new DateOnly(2026, 9, 30);
+        Assert.Throws<ArgumentException>(() => (production with { DisposableProofMode = true }).Validate());
+        Assert.Throws<ArgumentException>(() => (production with { DisposableExpiryUtc = expiry }).Validate());
+        var proof = production with { DisposableProofMode = true, DisposableExpiryUtc = expiry, AzureCliClientId = null };
+        proof.Validate();
+        Assert.NotEqual(production.ComputeProviderScopeFingerprint(ValidScope()), proof.ComputeProviderScopeFingerprint(ValidScope()));
+        Assert.NotEqual(proof.ComputeProviderScopeFingerprint(ValidScope()),
+            (proof with { DisposableExpiryUtc = expiry.AddDays(1) }).ComputeProviderScopeFingerprint(ValidScope()));
+    }
+
+    [Fact]
     public void Rejects_a_symbolic_link_as_template_authority()
     {
         if (OperatingSystem.IsWindows())
@@ -85,7 +99,7 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
     }
 
     [Fact]
-    public void Provider_scope_fingerprint_binds_bootstrap_authority_and_expiry()
+    public void Provider_scope_fingerprint_binds_bootstrap_and_template_authority()
     {
         var options = ValidOptions();
         var scope = ValidScope();
@@ -93,15 +107,73 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
         Assert.NotEqual(
             options.ComputeProviderScopeFingerprint(scope),
             (options with { SqlBootstrapIp = "203.0.113.11" }).ComputeProviderScopeFingerprint(scope));
-        Assert.NotEqual(
-            options.ComputeProviderScopeFingerprint(scope),
-            (options with { ExpiryUtc = options.ExpiryUtc.AddDays(1) }).ComputeProviderScopeFingerprint(scope));
         var original = options.ComputeProviderScopeFingerprint(scope);
         File.AppendAllText(Path.Combine(_templateRoot, "main.bicep"), "\n// changed");
         Assert.NotEqual(original, options.ComputeProviderScopeFingerprint(scope));
         original = options.ComputeProviderScopeFingerprint(scope);
         File.AppendAllText(Path.Combine(_templateRoot, "az"), "\nchanged");
         Assert.NotEqual(original, options.ComputeProviderScopeFingerprint(scope));
+    }
+
+    [Fact]
+    public void Provider_scope_fingerprint_binds_the_normalized_release_feed_service_index()
+    {
+        var options = ValidOptions();
+        var scope = ValidScope();
+        var original = options.ComputeProviderScopeFingerprint(scope);
+
+        Assert.Equal(
+            original,
+            (options with { ReleaseFeedServiceIndex = " https://api.nuget.org/v3/index.json " })
+                .ComputeProviderScopeFingerprint(scope));
+        Assert.NotEqual(
+            original,
+            (options with { ReleaseFeedServiceIndex = "https://pkgs.example.test/v3/index.json" })
+                .ComputeProviderScopeFingerprint(scope));
+        var context = new AzureProviderExecutionContext(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+            "operation-identity", "idempotency-key", "target-key", "provider-assignment",
+            new string('a', 64), new string('b', 64), original);
+        Assert.Throws<InvalidOperationException>(() =>
+            (options with { ReleaseFeedServiceIndex = "https://pkgs.example.test/v3/index.json" })
+                .ValidateExecutionAuthority(context, scope));
+    }
+
+    [Theory]
+    [InlineData("http://pkgs.example.test/v3/index.json")]
+    [InlineData("https://pkgs.example.test")]
+    [InlineData("https://pkgs.example.test/v3/index.json?token=secret")]
+    [InlineData("https://user:password@pkgs.example.test/v3/index.json")]
+    [InlineData("https://pkgs.example.test:8443/v3/index.json")]
+    [InlineData("https://pkgs.example.test/v3\\index.json")]
+    [InlineData("https://pkgs.example.test/v3/index.json#fragment")]
+    [InlineData("https://pkgs.example.test/v3/index.json?")]
+    [InlineData("https://@pkgs.example.test/v3/index.json")]
+    [InlineData("https://127.0.0.1/v3/index.json")]
+    [InlineData("https://pkgs.example.test/v3/index.json\n")]
+    public void Rejects_unsafe_release_feed_service_index(string feed)
+    {
+        Assert.Throws<ArgumentException>(() => (ValidOptions() with { ReleaseFeedServiceIndex = feed }).Validate());
+    }
+
+    [Fact]
+    public void Provider_scope_fingerprint_binds_the_managed_identity_client_id()
+    {
+        var options = ValidOptions();
+        var scope = ValidScope();
+        var original = options.ComputeProviderScopeFingerprint(scope);
+
+        Assert.NotEqual(
+            original,
+            (options with { AzureCliClientId = "44444444-4444-4444-4444-444444444444" }).ComputeProviderScopeFingerprint(scope));
+    }
+
+    [Theory]
+    [InlineData("33333333-3333-3333-3333-33333333333A")]
+    [InlineData("not-a-guid")]
+    public void Rejects_an_unsafe_managed_identity_client_id(string clientId)
+    {
+        Assert.Throws<ArgumentException>(() => (ValidOptions() with { AzureCliClientId = clientId }).Validate());
     }
 
     [Fact]
@@ -112,9 +184,12 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
         var context = new AzureProviderExecutionContext(
             Guid.NewGuid(),
             Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
             "operation-identity",
             "idempotency-key",
             "target-key",
+            "provider-assignment",
             new string('a', 64),
             new string('b', 64),
             options.ComputeProviderScopeFingerprint(scope));
@@ -175,7 +250,7 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
     [InlineData("file:///tmp/secret", false)]
     public void Secret_resolution_request_accepts_only_approved_opaque_locators(string reference, bool accepted)
     {
-        var request = new AzureSecretResolutionRequest(Guid.NewGuid(), "database", reference);
+        var request = SecretRequest("database", reference);
         if (accepted)
             request.Validate();
         else
@@ -189,7 +264,7 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
     public void Secret_resolution_request_rejects_noncanonical_names(string name)
     {
         Assert.Throws<ArgumentException>(() =>
-            new AzureSecretResolutionRequest(Guid.NewGuid(), name, "secret://vault/database").Validate());
+            SecretRequest(name, "secret://vault/database").Validate());
     }
 
     [Fact]
@@ -197,7 +272,7 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
     {
         var resolver = new UnconfiguredAzureSecretResolver();
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await resolver.ResolveAsync(new(Guid.NewGuid(), "database", "secret://vault/database")));
+            await resolver.ResolveAsync(SecretRequest("database", "secret://vault/database")));
     }
 
     public void Dispose() => Directory.Delete(_templateRoot, recursive: true);
@@ -205,6 +280,7 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
     private AzureProviderRunnerOptions ValidOptions() => new()
     {
         Enabled = true,
+        AzureCliClientId = "33333333-3333-3333-3333-333333333333",
         AzureCliPath = Path.Combine(_templateRoot, "az"),
         SqlCmdPath = Path.Combine(_templateRoot, "sqlcmd"),
         CurlPath = Path.Combine(_templateRoot, "curl"),
@@ -212,7 +288,7 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
         SqlBootstrapObjectId = "11111111-1111-1111-1111-111111111111",
         SqlBootstrapLogin = "proof-bootstrap",
         SqlBootstrapIp = "203.0.113.10",
-        ExpiryUtc = new DateOnly(2026, 9, 2)
+        RuntimeAdminUsername = "runtime-admin"
     };
 
     private static AzureProviderTargetScope ValidScope() => new(
@@ -222,4 +298,12 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
         "registry-rg",
         "valenceruntimeimages",
         "westeurope");
+
+    private static AzureSecretResolutionRequest SecretRequest(string name, string reference) => new(
+        Guid.NewGuid(),
+        Guid.NewGuid(),
+        Guid.NewGuid(),
+        "provider-assignment",
+        name,
+        reference);
 }

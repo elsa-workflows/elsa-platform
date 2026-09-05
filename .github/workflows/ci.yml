@@ -30,6 +30,12 @@ jobs:
       - name: Validate Azure deployment workflow contract
         run: python3 scripts/tests/test_azure_api_deploy_workflow.py
 
+      - name: Validate production Azure image and template contracts
+        run: |
+          python3 scripts/tests/test_azure_production_templates.py
+          python3 scripts/tests/test_api_provider_image.py
+          python3 scripts/tests/test_validate_api_provider_image.py
+
       - name: Run Azure workload proof tests
         run: |
           python3 scripts/tests/test_azure_workload_proof.py
@@ -41,12 +47,14 @@ jobs:
             scripts/azure-workload-proof.sh \
             scripts/azure-workload-restore-proof.sh \
             scripts/lib/azure-workload-proof.sh \
-            scripts/validate-azure-workload-proof.sh
+            scripts/validate-azure-workload-proof.sh \
+            scripts/validate-api-provider-image.sh
           shellcheck \
             scripts/azure-workload-proof.sh \
             scripts/azure-workload-restore-proof.sh \
             scripts/lib/azure-workload-proof.sh \
-            scripts/validate-azure-workload-proof.sh
+            scripts/validate-azure-workload-proof.sh \
+            scripts/validate-api-provider-image.sh
 
       - name: Compile Azure workload proof Bicep templates
         run: |
@@ -54,6 +62,21 @@ jobs:
           az bicep build --file infra/azure-workload-proof/recovery-target.bicep --stdout >/dev/null
           az bicep build --file infra/azure-workload-proof/recovery-database.bicep --stdout >/dev/null
           az bicep build --file infra/azure-workload-proof/acr-pull-role.bicep --stdout >/dev/null
+
+  api-image:
+    name: Build and smoke-test API provider image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Build API provider image
+        run: docker build --file src/Hosting/ElsaControl.Api/Dockerfile --tag elsa-control-api-ci:${{ github.sha }} .
+
+      - name: Smoke-test API provider image
+        run: scripts/validate-api-provider-image.sh elsa-control-api-ci:${{ github.sha }}
 
   dotnet:
     name: Full .NET restore, build, and test
@@ -94,18 +117,21 @@ jobs:
     if: ${{ always() }}
     needs:
       - azure-proof
+      - api-image
       - dotnet
     runs-on: ubuntu-latest
     steps:
       - name: Require all CI dependencies to pass
         env:
           AZURE_PROOF_RESULT: ${{ needs['azure-proof'].result }}
+          API_IMAGE_RESULT: ${{ needs['api-image'].result }}
           DOTNET_RESULT: ${{ needs.dotnet.result }}
         run: |
           set -euo pipefail
           if [ "$AZURE_PROOF_RESULT" != "success" ] \
+              || [ "$API_IMAGE_RESULT" != "success" ] \
               || [ "$DOTNET_RESULT" != "success" ]; then
-            echo "::error::Required CI dependencies did not all succeed (azure-proof=$AZURE_PROOF_RESULT, dotnet=$DOTNET_RESULT)."
+            echo "::error::Required CI dependencies did not all succeed (azure-proof=$AZURE_PROOF_RESULT, api-image=$API_IMAGE_RESULT, dotnet=$DOTNET_RESULT)."
             exit 1
           fi
 

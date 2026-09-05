@@ -18,13 +18,15 @@ public sealed record ElsaInstanceProviderSubmissionCommit(
     Guid OperationId,
     int AttemptNumber,
     string CorrelationId,
-    DateTimeOffset SubmittedAt)
+    DateTimeOffset SubmittedAt,
+    string? PlacementAssignmentId = null)
 {
     public void Validate()
     {
         if (WorkspaceId == Guid.Empty || InstanceId == Guid.Empty || OperationId == Guid.Empty || AttemptNumber < 1 ||
             string.IsNullOrWhiteSpace(CorrelationId) || CorrelationId.Length > 128 ||
-            CorrelationId.Any(char.IsControl) || CorrelationId.Any(char.IsWhiteSpace))
+            CorrelationId.Any(char.IsControl) || CorrelationId.Any(char.IsWhiteSpace) ||
+            PlacementAssignmentId is not null && !Guid.TryParseExact(PlacementAssignmentId, "D", out _))
             throw new InvalidOperationException("Provider submission commit identity is invalid.");
     }
 }

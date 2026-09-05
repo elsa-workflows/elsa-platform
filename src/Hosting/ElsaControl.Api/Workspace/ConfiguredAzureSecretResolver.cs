@@ -5,9 +5,8 @@ using System.Collections.ObjectModel;
 namespace ElsaControl.Api.Workspace;
 
 /// <summary>
-/// Resolves only exact, preconfigured safe secret locators. Values are held in
-/// process memory for the request and are never part of provider contracts,
-/// diagnostics or durable records.
+/// Development-only resolver for exact preconfigured secret locators. Production runner
+/// composition rejects raw values before this resolver can be constructed.
 /// </summary>
 internal sealed class ConfiguredAzureSecretResolver : IAzureSecretResolver
 {
@@ -37,13 +36,24 @@ internal sealed class ConfiguredAzureSecretResolver : IAzureSecretResolver
     {
         ArgumentNullException.ThrowIfNull(configuration);
         var references = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var referencesByLocator = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var child in configuration.GetSection("Deployment:AzureProvider:Secrets").GetChildren())
         {
             var name = child["Name"]?.Trim();
             var reference = child["Reference"]?.Trim();
-            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(reference) ||
-                !references.TryAdd(name, reference))
-                throw new InvalidOperationException("Azure provider named secret references are invalid or duplicated.");
+            var normalizedReference = reference;
+            if (!AzureManagedSecretReferences.IsSqlConnection(name, reference))
+            {
+                if (!AzureKeyVaultSecretLocator.TryParse(reference, out var locator))
+                    normalizedReference = null;
+                else
+                    normalizedReference = locator!.PlanReference;
+            }
+
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(normalizedReference) ||
+                !references.TryAdd(name, normalizedReference) ||
+                !referencesByLocator.Add(normalizedReference))
+                throw new InvalidOperationException("Azure provider named secret references are invalid, duplicated, or unsupported.");
         }
 
         if (!AzureProviderOperationValidation.IsSafeSecretReferences(references) ||

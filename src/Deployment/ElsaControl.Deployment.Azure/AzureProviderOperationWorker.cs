@@ -1,9 +1,11 @@
 namespace ElsaControl.Deployment.Azure;
 
 /// <summary>
-/// Drains accepted and recoverable Azure operations. The operation store is the queue: claiming
+/// Drains accepted Azure operations. The operation store is the queue: claiming
 /// remains the executor's compare-and-set boundary, so multiple hosted workers can safely poll
-/// the same database without introducing a second, non-durable queue.
+/// the same database without introducing a second, non-durable queue. Recovery-required rows stay
+/// durable but are not automatically replayed: explicit provider-state observation must first
+/// establish which postcondition committed before another remote mutation is allowed.
 /// </summary>
 public sealed class AzureProviderOperationWorker(
     IAzureProviderOperationStore store,
@@ -37,6 +39,8 @@ public sealed class AzureProviderOperationWorker(
         foreach (var operation in operations)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (operation.Status == AzureProviderOperationStatus.RecoveryRequired)
+                continue;
             AzureWorkloadPlan? plan;
             try
             {

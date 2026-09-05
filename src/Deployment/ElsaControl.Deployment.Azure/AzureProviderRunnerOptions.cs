@@ -66,9 +66,12 @@ public sealed record AzureProviderTargetScope(
 public sealed record AzureProviderRunnerOptions
 {
     public const string ConfigurationSection = "Deployment:AzureProvider:Runner";
+    public const string DefaultReleaseFeedServiceIndex = "https://api.nuget.org/v3/index.json";
     public bool Enabled { get; init; }
     /// <summary>Absolute Azure CLI executable bound into provider authority.</summary>
     public string AzureCliPath { get; init; } = "";
+    /// <summary>Required user-assigned managed identity client ID used by Azure CLI login.</summary>
+    public string? AzureCliClientId { get; init; }
     /// <summary>Absolute sqlcmd executable bound into provider authority.</summary>
     public string SqlCmdPath { get; init; } = "";
     /// <summary>Absolute curl executable used for the post-promotion health probe.</summary>
@@ -77,8 +80,14 @@ public sealed record AzureProviderRunnerOptions
     public string SqlBootstrapObjectId { get; init; } = "";
     public string SqlBootstrapLogin { get; init; } = "";
     public string SqlBootstrapIp { get; init; } = "";
+    public string RuntimeAdminUsername { get; init; } = "";
+    /// <summary>Server-governed Nuplane release package feed. Customer requests cannot override it.</summary>
+    public string ReleaseFeedServiceIndex { get; init; } = DefaultReleaseFeedServiceIndex;
+    /// <summary>Selects the legacy disposable-proof template and ownership dialect.</summary>
+    public bool DisposableProofMode { get; init; }
+    /// <summary>Expiry bound to disposable-proof ownership. Production deployments omit it.</summary>
+    public DateOnly? DisposableExpiryUtc { get; init; }
     public string Owner { get; init; } = "elsa-control";
-    public DateOnly ExpiryUtc { get; init; }
     public TimeSpan CommandTimeout { get; init; } = TimeSpan.FromMinutes(15);
     public int MaximumOutputCharacters { get; init; } = 1_048_576;
     public int ObservationAttempts { get; init; } = 60;
@@ -98,6 +107,7 @@ public sealed record AzureProviderRunnerOptions
             targetScopeFingerprint = scope.ComputeFingerprint(),
             azureCliPath = Path.GetFullPath(AzureCliPath),
             azureCliDigest = ComputeFileDigest(AzureCliPath),
+            azureCliClientId = AzureCliClientId?.ToLowerInvariant(),
             sqlCmdPath = Path.GetFullPath(SqlCmdPath),
             sqlCmdDigest = ComputeFileDigest(SqlCmdPath),
             curlPath = Path.GetFullPath(CurlPath),
@@ -107,8 +117,11 @@ public sealed record AzureProviderRunnerOptions
             sqlBootstrapObjectId = SqlBootstrapObjectId.ToLowerInvariant(),
             sqlBootstrapLogin = SqlBootstrapLogin,
             sqlBootstrapIp = SqlBootstrapIp,
-            owner = Owner.ToLowerInvariant(),
-            expiryUtc = ExpiryUtc.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
+            runtimeAdminUsername = RuntimeAdminUsername,
+            releaseFeedServiceIndex = NormalizeReleaseFeedServiceIndex(),
+            disposableProofMode = DisposableProofMode,
+            disposableExpiryUtc = DisposableExpiryUtc?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+            owner = Owner.ToLowerInvariant()
         });
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
@@ -136,6 +149,9 @@ public sealed record AzureProviderRunnerOptions
         if (!Enabled)
             throw new InvalidOperationException("The concrete Azure provider runner is not enabled.");
         ValidateExecutable(AzureCliPath, nameof(AzureCliPath));
+        if (!DisposableProofMode && (!Guid.TryParseExact(AzureCliClientId, "D", out _) ||
+            !string.Equals(AzureCliClientId, AzureCliClientId?.ToLowerInvariant(), StringComparison.Ordinal)))
+            throw new ArgumentException("The Azure CLI managed identity client ID must be a canonical GUID.", nameof(AzureCliClientId));
         ValidateExecutable(SqlCmdPath, nameof(SqlCmdPath));
         ValidateExecutable(CurlPath, nameof(CurlPath));
         if (string.IsNullOrWhiteSpace(TemplateRoot) || !Path.IsPathFullyQualified(TemplateRoot))
@@ -152,6 +168,10 @@ public sealed record AzureProviderRunnerOptions
             throw new ArgumentException("The SQL bootstrap object ID must be a canonical GUID.", nameof(SqlBootstrapObjectId));
         if (!Regex.IsMatch(SqlBootstrapLogin ?? "", "^[A-Za-z0-9._@#-]{1,128}\\z", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking))
             throw new ArgumentException("The SQL bootstrap login is unsafe.", nameof(SqlBootstrapLogin));
+        if (!Regex.IsMatch(RuntimeAdminUsername ?? "", "^[A-Za-z0-9._@#-]{1,128}\\z", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking))
+            throw new ArgumentException("The runtime administrator username is unsafe.", nameof(RuntimeAdminUsername));
+        if (DisposableProofMode != DisposableExpiryUtc.HasValue)
+            throw new ArgumentException("Disposable proof mode requires one explicit expiry, and production mode must not carry one.", nameof(DisposableExpiryUtc));
         if (!System.Net.IPAddress.TryParse(SqlBootstrapIp, out var ip) ||
             ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork ||
             SqlBootstrapIp == "0.0.0.0" ||
@@ -159,8 +179,7 @@ public sealed record AzureProviderRunnerOptions
             throw new ArgumentException("The SQL bootstrap address must be one exact non-zero IPv4 address.", nameof(SqlBootstrapIp));
         if (!Regex.IsMatch(Owner ?? "", "^[a-z0-9][a-z0-9-]{0,62}\\z", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking))
             throw new ArgumentException("The Azure owner tag is unsafe.", nameof(Owner));
-        if (ExpiryUtc == default)
-            throw new ArgumentException("A disposable Azure expiry date is required.", nameof(ExpiryUtc));
+        _ = NormalizeReleaseFeedServiceIndex();
         if (CommandTimeout <= TimeSpan.Zero || CommandTimeout > TimeSpan.FromHours(1))
             throw new ArgumentOutOfRangeException(nameof(CommandTimeout), "The command timeout must be positive and no longer than one hour.");
         if (MaximumOutputCharacters is < 1024 or > 16_777_216)
@@ -176,6 +195,25 @@ public sealed record AzureProviderRunnerOptions
         if (string.IsNullOrWhiteSpace(value) || value.Length > 1024 || value.Any(char.IsControl) ||
             !Path.IsPathFullyQualified(value) || !File.Exists(value) || IsSymbolicLink(value))
             throw new ArgumentException("The executable locator is unsafe.", name);
+    }
+
+    internal string NormalizeReleaseFeedServiceIndex()
+    {
+        if (string.IsNullOrWhiteSpace(ReleaseFeedServiceIndex) || ReleaseFeedServiceIndex.Length > 2048 ||
+            ReleaseFeedServiceIndex.Any(char.IsControl) || ReleaseFeedServiceIndex.Contains('\\') ||
+            ReleaseFeedServiceIndex.Contains('?') || ReleaseFeedServiceIndex.Contains('#') ||
+            ReleaseFeedServiceIndex.Contains('@'))
+            throw new ArgumentException("The release feed service index is unsafe.", nameof(ReleaseFeedServiceIndex));
+
+        var value = ReleaseFeedServiceIndex.Trim();
+        if (value.Any(char.IsWhiteSpace) || !Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps || uri.HostNameType != UriHostNameType.Dns ||
+            string.IsNullOrWhiteSpace(uri.Host) || uri.AbsolutePath is "" or "/" || !uri.IsDefaultPort ||
+            !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Query) ||
+            !string.IsNullOrEmpty(uri.Fragment))
+            throw new ArgumentException("The release feed service index is unsafe.", nameof(ReleaseFeedServiceIndex));
+
+        return new UriBuilder(uri) { Scheme = Uri.UriSchemeHttps, Port = -1 }.Uri.AbsoluteUri;
     }
 
     public string ComputeTemplateAuthorityFingerprint()

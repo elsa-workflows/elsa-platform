@@ -36,7 +36,27 @@ internal static class AzureProviderRunnerComposition
             return null;
         }
 
+        if (configuration.GetSection("Deployment:AzureProvider:Secrets").GetChildren()
+            .Any(child => child["Value"] is not null))
+            throw new InvalidOperationException(
+                "Azure provider worker configuration must not contain raw secret values.");
+
+        if (runnerSection.GetValue<bool>("DisposableProofMode"))
+            throw new InvalidOperationException(
+                "The production Azure provider worker must not use disposable proof mode.");
+
+        var secretSection = configuration.GetSection("Deployment:AzureProvider:Secrets");
+        if (secretSection.GetChildren().Any())
+        {
+            // External secrets require immutable, versioned Key Vault locators, which are
+            // projected to canonical provider-neutral secret:// plan references. The exact
+            // provider-owned SQL instruction is the only internal exception.
+            _ = ConfiguredAzureSecretResolver.ReadNamedReferences(configuration);
+        }
+
         var options = runnerSection.Get<AzureProviderRunnerOptions>() ?? new();
+        if (string.IsNullOrWhiteSpace(options.AzureCliClientId))
+            options = options with { AzureCliClientId = configuration["AZURE_CLIENT_ID"] };
         if (!options.Enabled)
             throw new InvalidOperationException("Azure provider worker is enabled but its concrete runner is not enabled.");
         options.Validate();
@@ -50,9 +70,22 @@ internal static class AzureProviderRunnerComposition
             scopeSection[nameof(AzureProviderTargetScope.RegistryName)] ?? "",
             scopeSection[nameof(AzureProviderTargetScope.Location)] ?? "");
         scope.Validate();
-        var secretResolver = ConfiguredAzureSecretResolver.Create(configuration);
-        services.AddScoped<IAzureSecretResolver>(_ => secretResolver);
-        services.AddScoped<IAzureProviderRunner>(_ => new AzureBicepProviderRunner(options, scope, secretResolver));
+        var managedIdentity = new Azure.Identity.ManagedIdentityCredential(
+            Azure.Identity.ManagedIdentityId.FromUserAssignedClientId(options.AzureCliClientId!));
+        services.AddSingleton<IAzureKeyVaultSecretReader>(_ => new AzureKeyVaultSecretReader(managedIdentity));
+        services.AddScoped<IAzureSecretAuthorizationStore>(provider =>
+            new DurableAzureSecretAuthorizationStore(
+                provider.GetRequiredService<IAzureProviderResourceAssignmentStore>(),
+                provider.GetRequiredService<IAzureProviderOperationStore>()));
+        services.AddScoped<IAzureSecretResolver>(provider =>
+            new ManagedIdentityAzureSecretResolver(
+                provider.GetRequiredService<IAzureSecretAuthorizationStore>(),
+                provider.GetRequiredService<IAzureKeyVaultSecretReader>()));
+        services.AddScoped<IAzureProviderRunner>(provider =>
+            new AzureBicepProviderRunner(
+                options,
+                scope,
+                provider.GetRequiredService<IAzureSecretResolver>()));
         return new(options, scope);
     }
 }

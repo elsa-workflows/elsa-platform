@@ -39,6 +39,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly IElsaInstanceCommercialGate _commercialGate = commercialGate ?? new EfCoreElsaInstanceCommercialGate(dbContext);
     private static readonly TimeSpan WorkerLeaseDuration = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan DeletionDeferralDelay = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan[] IdempotencyReplayLookupDelays =
         [TimeSpan.Zero, TimeSpan.FromMilliseconds(25), TimeSpan.FromMilliseconds(75)];
     private static readonly JsonDocumentOptions SafeJsonOptions = new()
@@ -1254,6 +1255,55 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         return renewed == 1;
     }
 
+    public async Task<bool> DeferDeletionAsync(ElsaInstanceDeletionWorkItem item, string workerId, DateTimeOffset now,
+        string diagnosticCode, CancellationToken cancellationToken = default)
+    {
+        dbContext.ChangeTracker.Clear();
+        ArgumentNullException.ThrowIfNull(item);
+        item.Validate();
+        new ElsaInstanceCleanupObservation(
+            ElsaInstanceCleanupObservationKind.InProgress, item.Operation.Id,
+            item.Operation.AttemptNumber, diagnosticCode).Validate();
+        if (string.IsNullOrWhiteSpace(workerId))
+            throw new ArgumentException("Deletion worker identity is required.", nameof(workerId));
+        workerId = workerId.Trim();
+        if (workerId.Length > 256 || workerId.Any(char.IsControl))
+            throw new ArgumentException("Deletion worker identity is invalid.", nameof(workerId));
+        if (item.Outbox.WorkspaceId != item.Instance.WorkspaceId || item.Outbox.InstanceId != item.Instance.Id ||
+            item.Outbox.OperationId != item.Operation.Id || item.Outbox.Action != ElsaInstanceOperationAction.Delete ||
+            !string.Equals(item.Outbox.RequestHash, item.Operation.RequestHash, StringComparison.Ordinal))
+            return false;
+
+        var nowUtc = now.ToUniversalTime();
+        var deferred = await dbContext.ElsaInstanceOperations
+            .Where(operation => operation.Id == item.Operation.Id &&
+                operation.WorkspaceId == item.Instance.WorkspaceId &&
+                operation.InstanceId == item.Instance.Id &&
+                operation.Action == ElsaInstanceOperationAction.Delete &&
+                (operation.State == ElsaInstanceOperationState.Accepted ||
+                 operation.State == ElsaInstanceOperationState.Running) &&
+                operation.AttemptNumber == item.Operation.AttemptNumber &&
+                operation.RequestHash == item.Operation.RequestHash &&
+                operation.WorkerId == workerId &&
+                operation.LeaseTokenHash == HashLeaseToken(item.LeaseToken) &&
+                operation.LeaseVersion == item.LeaseVersion &&
+                operation.LeaseExpiresAt != null && operation.LeaseExpiresAt > nowUtc &&
+                dbContext.ElsaInstances.Any(instance =>
+                    instance.Id == operation.InstanceId && instance.WorkspaceId == operation.WorkspaceId &&
+                    instance.Version == item.Instance.Version) &&
+                dbContext.ElsaInstanceLifecycleOutbox.Any(outbox =>
+                    outbox.Id == item.Outbox.Id && outbox.WorkspaceId == operation.WorkspaceId &&
+                    outbox.InstanceId == operation.InstanceId && outbox.OperationId == operation.Id &&
+                    outbox.Action == ElsaInstanceOperationAction.Delete &&
+                    outbox.RequestHash == operation.RequestHash))
+            .ExecuteUpdateAsync(updates => updates
+                .SetProperty(operation => operation.LeaseExpiresAt, nowUtc.Add(DeletionDeferralDelay))
+                .SetProperty(operation => operation.HeartbeatAt, nowUtc)
+                .SetProperty(operation => operation.DeletionDiagnosticCode, diagnosticCode)
+                .SetProperty(operation => operation.UpdatedAt, nowUtc), cancellationToken);
+        return deferred == 1;
+    }
+
     public async Task<ElsaInstanceDeletionResult> CommitDeletionAsync(
         ElsaInstanceDeletionCommit commit,
         CancellationToken cancellationToken = default)
@@ -1725,6 +1775,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 run.RecoveryReason = "provider.submission.accepted";
                 run.WorkerId = null;
                 run.WorkerHeartbeatAt = null;
+                if (commit.PlacementAssignmentId is not null)
+                    instance.PlacementAssignmentId = commit.PlacementAssignmentId;
                 await dbContext.ElsaInstanceAuditEvents.AddAsync(await CreateAuditEventAsync(
                     instance,
                     operation,
@@ -1761,6 +1813,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             : "provider.submission.accepted";
         run.WorkerId = null;
         run.WorkerHeartbeatAt = null;
+        if (commit.PlacementAssignmentId is not null)
+            instance.PlacementAssignmentId = commit.PlacementAssignmentId;
         await dbContext.ElsaInstanceAuditEvents.AddAsync(await CreateAuditEventAsync(
             instance,
             operation,
@@ -1884,7 +1938,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                     target,
                     instance.RegionCode,
                     instance.OrganizationId,
-                    (ElsaInstanceOperationAction)operation.Action);
+                    (ElsaInstanceOperationAction)operation.Action,
+                    instance.PlacementAssignmentId ?? operation.Id.ToString("D"));
                 candidate.Validate();
                 pending.Add(new(operation.WorkspaceId, operation.Id, candidate));
             }

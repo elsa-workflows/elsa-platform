@@ -5,6 +5,27 @@ namespace ElsaControl.Deployment.Azure.Tests;
 public sealed class AzureProviderOperationValidationTests
 {
     [Theory]
+    [InlineData("", true)]
+    [InlineData(":retry:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", true)]
+    [InlineData(":retry:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:retry:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", true)]
+    [InlineData(":retry:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", false)]
+    [InlineData(":retry:00000000000000000000000000000000", false)]
+    [InlineData(":retry:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", false)]
+    [InlineData(":retry:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:extra", false)]
+    [InlineData(":retry:", false)]
+    [InlineData("-another-delete", false)]
+    public void Lifecycle_delete_lineage_requires_exact_root_and_canonical_retry_segments(string suffix, bool valid)
+    {
+        var lifecycleId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var key = AzureElsaInstanceProvider.IdempotencyKey(lifecycleId) + ":delete" + suffix;
+
+        Assert.Equal(valid, AzureProviderOperationValidation.IsLifecycleDeleteIdempotencyKey(key, lifecycleId));
+        Assert.False(AzureProviderOperationValidation.IsLifecycleDeleteIdempotencyKey(key, Guid.Empty));
+        Assert.False(AzureProviderOperationValidation.IsLifecycleDeleteIdempotencyKey(key, Guid.NewGuid()));
+        Assert.False(AzureProviderOperationValidation.IsLifecycleDeleteIdempotencyKey(key + new string('a', 513), lifecycleId));
+    }
+
+    [Theory]
     [InlineData("foundation", 513)]
     [InlineData("workloadDeployment", 513)]
     [InlineData("workloadResource", 1025)]
@@ -236,6 +257,8 @@ public sealed class AzureProviderOperationValidationTests
     [InlineData("secret://database", true)]
     [InlineData("secret://vault/database", true)]
     [InlineData("secret://vault/database/connection", true)]
+    [InlineData("secret://source.vault.azure.net/secrets/sql-connection/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", true)]
+    [InlineData("https://source.vault.azure.net/secrets/sql-connection/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", false)]
     [InlineData("secret://vault/../database", false)]
     [InlineData("secret://vault/./database", false)]
     [InlineData("secret://vault//database", false)]
@@ -272,6 +295,27 @@ public sealed class AzureProviderOperationValidationTests
         Assert.Contains(
             "secretReferences.nameCollision",
             AzureProviderOperationValidation.Validate(ValidRequest() with { SecretReferences = references }));
+    }
+
+    [Theory]
+    [InlineData("identity:signingkey", "secret://source.vault.azure.net/secrets/identity-signingkey/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", false)]
+    [InlineData("identity:signingkey", "secret://source.vault.azure.net/secrets/IDENTITY-SIGNING-KEY/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", true)]
+    [InlineData("database:connectionstring", AzureManagedSecretReferences.SqlConnection, true)]
+    public void Secret_reference_collection_requires_the_governed_source_name(
+        string name,
+        string reference,
+        bool expected)
+    {
+        Assert.Equal(expected, AzureProviderOperationValidation.IsSafeSecretReferences(
+            new Dictionary<string, string> { [name] = reference }));
+    }
+
+    [Fact]
+    public void Secret_reference_binding_rejects_a_null_name_without_throwing()
+    {
+        Assert.False(AzureProviderOperationValidation.IsSecretReferenceBoundToKey(
+            null!,
+            "secret://source.vault.azure.net/secrets/sql-connection/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
     }
 
     [Fact]

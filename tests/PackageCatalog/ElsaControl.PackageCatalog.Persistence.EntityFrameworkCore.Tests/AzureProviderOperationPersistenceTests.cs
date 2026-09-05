@@ -51,17 +51,455 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         Assert.Equal("Azure provider operation accepted.", accepted.Message);
     }
 
+    [Theory]
+    [InlineData(AzureProviderOperationPhase.FoundationSubmitted)]
+    [InlineData(AzureProviderOperationPhase.FoundationReady)]
+    public async Task Checkpoint_and_finalize_update_the_bound_assignment_atomically(AzureProviderOperationPhase phase)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var organizationId = Guid.NewGuid();
+        var instanceId = Guid.NewGuid();
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var assignment = await Assignment(store, organizationId, instanceId, now);
+        var operation = await store.CreateOrGetAsync(Request() with
+        {
+            OrganizationId = organizationId,
+            InstanceId = instanceId,
+            LifecycleAction = ElsaInstanceOperationAction.Reconcile,
+            ProviderAssignmentId = assignment.Id
+        }, now);
+        var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now, operation.Version));
+        var resources = new AzureProviderResourceReferences(
+            assignment.ResourceGroupName,
+            FoundationDeploymentId: $"/subscriptions/{assignment.SubscriptionId}/resourceGroups/{assignment.ResourceGroupName}/providers/Microsoft.Resources/deployments/foundation");
+
+        var checkpointed = Assert.IsType<AzureProviderOperation>(await store.CheckpointAsync(
+            _workspaceId,
+            operation.Id,
+            "lease",
+            new(phase, "foundation.checkpointed", "ignored", resources, null, AzureProviderHealth.Unknown, []),
+            now,
+            claimed.Version));
+        var during = Assert.IsType<AzureProviderResourceAssignment>(await ((IAzureProviderResourceAssignmentStore)store).GetAsync(_workspaceId, assignment.Id));
+        Assert.Equal(AzureProviderAssignmentState.Provisioning, during.State);
+        Assert.Equal(resources.FoundationDeploymentId, during.Resources.FoundationDeploymentId);
+        Assert.Equal(operation.Id, during.LastOperationId);
+
+        // SeedSecrets runs only after FoundationSubmitted has been committed. A fresh
+        // context must see the exact operation link used by durable secret authorization.
+        using (var reloadedDb = CreateContext())
+        {
+            var reloadedStore = new AzureProviderOperationStore(reloadedDb);
+            var authorization = Assert.IsType<AzureSecretAuthorization>(await
+                new DurableAzureSecretAuthorizationStore(reloadedStore, reloadedStore)
+                    .GetAsync(_workspaceId, assignment.Id));
+            Assert.Equal(operation.Id, authorization.Assignment.LastOperationId);
+            Assert.Equal(operation.Id, authorization.Operation.Id);
+            Assert.Equal(phase, authorization.Operation.Phase);
+            Assert.Equal(AzureProviderOperationStatus.Running, authorization.Operation.Status);
+        }
+
+        _ = Assert.IsType<AzureProviderOperation>(await store.FinalizeAsync(
+            _workspaceId, operation.Id, "lease", AzureProviderOperationStatus.Succeeded, "operation.succeeded", now, checkpointed.Version));
+        var active = Assert.IsType<AzureProviderResourceAssignment>(await ((IAzureProviderResourceAssignmentStore)store).GetAsync(_workspaceId, assignment.Id));
+        Assert.Equal(AzureProviderAssignmentState.Active, active.State);
+        Assert.Null(active.DeletedAt);
+    }
+
+    [Fact]
+    public async Task Failed_step_diagnostics_round_trip_through_checkpoint_and_finalization()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var organizationId = Guid.NewGuid();
+        var instanceId = Guid.NewGuid();
+        AzureProviderOperation operation;
+        AzureProviderOperation checkpointed;
+        var expectedCodes = new[]
+        {
+            "azure.step.acr-pull.failed",
+            "azure.step.acr-pull.process.non-zero-exit"
+        };
+
+        using (var db = CreateContext())
+        {
+            var store = new AzureProviderOperationStore(db);
+            var assignment = await Assignment(store, organizationId, instanceId, now);
+            operation = await store.CreateOrGetAsync(Request() with
+            {
+                TargetKey = "diagnostic-round-trip",
+                IdempotencyKey = "diagnostic-round-trip",
+                OrganizationId = organizationId,
+                InstanceId = instanceId,
+                LifecycleAction = ElsaInstanceOperationAction.Reconcile,
+                ProviderAssignmentId = assignment.Id
+            }, now);
+            var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+                _workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now, operation.Version));
+
+            checkpointed = Assert.IsType<AzureProviderOperation>(await store.CheckpointAsync(
+                _workspaceId,
+                operation.Id,
+                "lease",
+                new(
+                    AzureProviderOperationPhase.FoundationSubmitted,
+                    expectedCodes[0],
+                    "The provider step failed.",
+                    new(ResourceGroupName: assignment.ResourceGroupName),
+                    null,
+                    AzureProviderHealth.Unknown,
+                    [
+                        new(expectedCodes[0], "untrusted step details"),
+                        new(expectedCodes[1], "untrusted process output")
+                    ]),
+                now,
+                claimed.Version));
+
+            var finalized = Assert.IsType<AzureProviderOperation>(await store.FinalizeAsync(
+                _workspaceId,
+                operation.Id,
+                "lease",
+                AzureProviderOperationStatus.Failed,
+                "azure.step.failed",
+                now.AddSeconds(1),
+                checkpointed.Version));
+            Assert.Equal(AzureProviderOperationStatus.Failed, finalized.Status);
+        }
+
+        using (var reloadedDb = CreateContext())
+        {
+            var reloadedStore = new AzureProviderOperationStore(reloadedDb);
+            var persisted = Assert.IsType<AzureProviderOperation>(await reloadedStore.GetAsync(_workspaceId, operation.Id));
+
+            Assert.Equal(AzureProviderOperationStatus.Failed, persisted.Status);
+            Assert.Equal(expectedCodes, persisted.Diagnostics.Select(diagnostic => diagnostic.Code));
+            Assert.All(persisted.Diagnostics, diagnostic => Assert.Equal(diagnostic.Code, diagnostic.Message));
+            Assert.DoesNotContain(persisted.Diagnostics, diagnostic => diagnostic.Message.Contains("untrusted", StringComparison.OrdinalIgnoreCase));
+            Assert.DoesNotContain(persisted.Diagnostics, diagnostic => diagnostic.Message.Contains("password", StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    [Theory]
+    [InlineData("organization")]
+    [InlineData("instance")]
+    public async Task Finalize_rejects_an_assignment_with_a_mismatched_owner(string mismatch)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var assignmentOrganizationId = Guid.NewGuid();
+        var assignmentInstanceId = Guid.NewGuid();
+        var operationOrganizationId = mismatch == "organization" ? Guid.NewGuid() : assignmentOrganizationId;
+        var operationInstanceId = mismatch == "instance" ? Guid.NewGuid() : assignmentInstanceId;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var assignment = await Assignment(store, assignmentOrganizationId, assignmentInstanceId, now);
+        var operation = await store.CreateOrGetAsync(Request() with
+        {
+            TargetKey = $"mismatched-{mismatch}",
+            IdempotencyKey = $"mismatched-{mismatch}",
+            OrganizationId = operationOrganizationId,
+            InstanceId = operationInstanceId,
+            LifecycleAction = ElsaInstanceOperationAction.Reconcile,
+            ProviderAssignmentId = assignment.Id
+        }, now);
+        var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => store.FinalizeAsync(
+            _workspaceId,
+            operation.Id,
+            "lease",
+            AzureProviderOperationStatus.Succeeded,
+            "operation.succeeded",
+            now,
+            claimed.Version));
+
+        Assert.Equal("The Azure provider assignment binding is invalid.", exception.Message);
+        var persistedOperation = Assert.IsType<AzureProviderOperation>(await store.GetAsync(_workspaceId, operation.Id));
+        Assert.Equal(AzureProviderOperationStatus.Running, persistedOperation.Status);
+        Assert.Equal(claimed.Version, persistedOperation.Version);
+        Assert.Equal("worker", persistedOperation.WorkerId);
+        var persistedAssignment = Assert.IsType<AzureProviderResourceAssignment>(await ((IAzureProviderResourceAssignmentStore)store).GetAsync(_workspaceId, assignment.Id));
+        Assert.Equal(AzureProviderAssignmentState.Reserved, persistedAssignment.State);
+        Assert.Null(persistedAssignment.LastOperationId);
+        Assert.Equal(assignment.Version, persistedAssignment.Version);
+    }
+
+    [Fact]
+    public async Task Checkpoint_rejects_a_foreign_resource_group_before_a_later_context_save()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var organizationId = Guid.NewGuid();
+        var instanceId = Guid.NewGuid();
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var assignment = await Assignment(store, organizationId, instanceId, now);
+        var operation = await store.CreateOrGetAsync(Request() with
+        {
+            TargetKey = "foreign-resource-group",
+            IdempotencyKey = "foreign-resource-group",
+            OrganizationId = organizationId,
+            InstanceId = instanceId,
+            LifecycleAction = ElsaInstanceOperationAction.Reconcile,
+            ProviderAssignmentId = assignment.Id
+        }, now);
+        var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => store.CheckpointAsync(
+            _workspaceId,
+            operation.Id,
+            "lease",
+            new(
+                AzureProviderOperationPhase.FoundationReady,
+                "foundation.ready",
+                "Ready.",
+                new(ResourceGroupName: "rg-foreign"),
+                null,
+                AzureProviderHealth.Unknown,
+                []),
+            now,
+            claimed.Version));
+
+        Assert.Equal("The Azure provider assignment binding is invalid.", exception.Message);
+
+        // The failed checkpoint must leave no staged tracked mutation behind for a later save.
+        await db.SaveChangesAsync();
+        using var reloadedDb = CreateContext();
+        var reloadedStore = new AzureProviderOperationStore(reloadedDb);
+        var persistedOperation = Assert.IsType<AzureProviderOperation>(await reloadedStore.GetAsync(_workspaceId, operation.Id));
+        Assert.Equal(AzureProviderOperationStatus.Running, persistedOperation.Status);
+        Assert.Equal(claimed.Version, persistedOperation.Version);
+        Assert.Equal(new AzureProviderResourceReferences(), persistedOperation.Resources);
+
+        var persistedAssignment = Assert.IsType<AzureProviderResourceAssignment>(await
+            ((IAzureProviderResourceAssignmentStore)reloadedStore).GetAsync(_workspaceId, assignment.Id));
+        Assert.Equal(AzureProviderAssignmentState.Reserved, persistedAssignment.State);
+        Assert.Equal(assignment.ResourceGroupName, persistedAssignment.ResourceGroupName);
+        Assert.Equal(assignment.Resources, persistedAssignment.Resources);
+        Assert.Null(persistedAssignment.LastOperationId);
+        Assert.Equal(assignment.Version, persistedAssignment.Version);
+    }
+
+    [Fact]
+    public async Task Cleanup_verified_checkpoint_clears_inventory_but_preserves_assignment_resource_group()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var organizationId = Guid.NewGuid();
+        var instanceId = Guid.NewGuid();
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var assignment = await Assignment(store, organizationId, instanceId, now);
+        var operation = await store.CreateOrGetAsync(Request() with
+        {
+            TargetKey = "cleanup-assignment-group",
+            IdempotencyKey = "cleanup-assignment-group",
+            OrganizationId = organizationId,
+            InstanceId = instanceId,
+            LifecycleAction = ElsaInstanceOperationAction.Delete,
+            ProviderAssignmentId = assignment.Id
+        }, now);
+        var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now));
+        var resources = new AzureProviderResourceReferences(
+            ResourceGroupName: assignment.ResourceGroupName.ToUpperInvariant(),
+            FoundationDeploymentId: $"/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/{assignment.ResourceGroupName}/providers/Microsoft.Resources/deployments/foundation");
+
+        var submitted = Assert.IsType<AzureProviderOperation>(await store.CheckpointAsync(
+            _workspaceId,
+            operation.Id,
+            "lease",
+            new(AzureProviderOperationPhase.CleanupSubmitted, "cleanup.submitted", "Submitted.", resources, null, AzureProviderHealth.Unknown, []),
+            now,
+            claimed.Version));
+        var verified = Assert.IsType<AzureProviderOperation>(await store.CheckpointAsync(
+            _workspaceId,
+            operation.Id,
+            "lease",
+            new(AzureProviderOperationPhase.CleanupVerified, "cleanup.verified", "Verified.", new(), null, AzureProviderHealth.Unknown, [], ReplaceResources: true),
+            now.AddSeconds(1),
+            submitted.Version));
+
+        Assert.Equal(assignment.ResourceGroupName, verified.Resources.ResourceGroupName);
+        Assert.Null(verified.Resources.FoundationDeploymentId);
+        var persistedAssignment = Assert.IsType<AzureProviderResourceAssignment>(await
+            ((IAzureProviderResourceAssignmentStore)store).GetAsync(_workspaceId, assignment.Id));
+        Assert.Equal(AzureProviderAssignmentState.Deleted, persistedAssignment.State);
+        Assert.Equal(assignment.ResourceGroupName, persistedAssignment.ResourceGroupName);
+        Assert.Equal(new AzureProviderResourceReferences(ResourceGroupName: assignment.ResourceGroupName), persistedAssignment.Resources);
+    }
+
+    [Fact]
+    public async Task Cleanup_rehydrates_group_only_checkpoint_before_and_after_delete_finalization()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var organizationId = Guid.NewGuid();
+        var instanceId = Guid.NewGuid();
+        var lifecycleOperationId = Guid.NewGuid();
+        var workloadName = $"e{instanceId:N}"[..16];
+        var operationId = Guid.Empty;
+        var leaseVersion = 0L;
+        var leaseToken = "cleanup-lease";
+        AzureProviderResourceAssignment assignment;
+
+        // Use the real EF store to create the assignment and to persist the exact
+        // checkpoint shape that cleanup observes after inventory has been cleared.
+        using (var db = CreateContext())
+        {
+            var store = new AzureProviderOperationStore(db);
+            assignment = await ((IAzureProviderResourceAssignmentStore)store).CreateOrGetAsync(
+                new(
+                    _workspaceId,
+                    organizationId,
+                    instanceId,
+                    new string('a', 64),
+                    "11111111-1111-1111-1111-111111111111",
+                    "rg-elsa",
+                    workloadName,
+                    "westeurope"),
+                now);
+            var operation = await store.CreateOrGetAsync(Request() with
+            {
+                TargetKey = workloadName,
+                Action = AzureProviderOperationAction.Delete,
+                IdempotencyKey = $"elsa-instance-operation:{lifecycleOperationId:D}:delete",
+                OrganizationId = organizationId,
+                InstanceId = instanceId,
+                LifecycleAction = ElsaInstanceOperationAction.Delete,
+                ProviderAssignmentId = assignment.Id,
+                ProviderScopeFingerprint = new string('a', 64)
+            }, now);
+            operationId = operation.Id;
+            var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+                _workspaceId, operation.Id, "cleanup-worker", leaseToken, TimeSpan.FromMinutes(1), now));
+            var submitted = Assert.IsType<AzureProviderOperation>(await store.CheckpointAsync(
+                _workspaceId,
+                operation.Id,
+                leaseToken,
+                new(
+                    AzureProviderOperationPhase.CleanupSubmitted,
+                    "cleanup.submitted",
+                    "Submitted.",
+                    new(
+                        ResourceGroupName: assignment.ResourceGroupName,
+                        FoundationDeploymentId: $"/subscriptions/{assignment.SubscriptionId}/resourceGroups/{assignment.ResourceGroupName}/providers/Microsoft.Resources/deployments/foundation"),
+                    null,
+                    AzureProviderHealth.Unknown,
+                    []),
+                now,
+                claimed.Version));
+            var checkpointed = Assert.IsType<AzureProviderOperation>(await store.CheckpointAsync(
+                _workspaceId,
+                operation.Id,
+                leaseToken,
+                new(
+                    AzureProviderOperationPhase.CleanupVerified,
+                    "cleanup.verified",
+                    "Verified.",
+                    new(),
+                    null,
+                    AzureProviderHealth.Unknown,
+                    [],
+                    ReplaceResources: true),
+                now.AddSeconds(1),
+                submitted.Version));
+            leaseVersion = checkpointed.Version;
+        }
+
+        var options = new AzureElsaInstanceProviderOptions
+        {
+            Enabled = true,
+            TemplateFingerprint = new string('b', 64),
+            ProviderScopeFingerprint = new string('a', 64),
+            SubscriptionId = "11111111-1111-1111-1111-111111111111",
+            ResourceGroupNamePrefix = "rg-elsa"
+        };
+        var cleanupRequest = new ElsaInstanceCleanupRequest(
+            _workspaceId,
+            instanceId,
+            lifecycleOperationId,
+            1,
+            null,
+            new ElsaPlacementAssignmentReference(assignment.Id.ToString("D")),
+            null);
+
+        static Task<ElsaInstanceCleanupObservation> ObserveCleanupAsync(
+            AzureProviderOperationStore store,
+            AzureElsaInstanceProviderOptions options,
+            ElsaInstanceCleanupRequest request) =>
+            new AzureElsaInstanceProvider(
+                new AzureProviderOperationService(store), store, store, options: options)
+                .CleanupAsync(request);
+
+        // Rehydrate both assignment and operation through a new context while the
+        // provider operation is still Running after CleanupVerified. This is the
+        // narrow checkpoint/finalization window and must remain deferred, not recovery.
+        using (var beforeFinalizeDb = CreateContext())
+        {
+            var store = new AzureProviderOperationStore(beforeFinalizeDb);
+            var persisted = Assert.IsType<AzureProviderOperation>(await store.GetAsync(_workspaceId, operationId));
+            Assert.Equal(organizationId, persisted.OrganizationId);
+            Assert.Equal(instanceId, persisted.InstanceId);
+            Assert.Equal(assignment.Id, persisted.ProviderAssignmentId);
+            Assert.Equal(AzureProviderOperationAction.Delete, persisted.Action);
+            Assert.Equal(ElsaInstanceOperationAction.Delete, persisted.LifecycleAction);
+            Assert.Equal($"elsa-instance-operation:{lifecycleOperationId:D}:delete", persisted.IdempotencyKey);
+            Assert.Equal(workloadName, persisted.TargetKey);
+            Assert.Equal(new string('a', 64), persisted.ProviderScopeFingerprint);
+            var observation = await ObserveCleanupAsync(store, options, cleanupRequest);
+
+            Assert.Equal(ElsaInstanceCleanupObservationKind.InProgress, observation.Kind);
+            Assert.Equal("deletion.provider-cleanup-pending", observation.DiagnosticCode);
+        }
+
+        using (var finalizeDb = CreateContext())
+        {
+            var store = new AzureProviderOperationStore(finalizeDb);
+            Assert.Equal(
+                AzureProviderOperationStatus.Succeeded,
+                (await store.FinalizeAsync(
+                    _workspaceId,
+                    operationId,
+                    leaseToken,
+                    AzureProviderOperationStatus.Succeeded,
+                    "cleanup.succeeded",
+                    now.AddSeconds(2),
+                    leaseVersion))?.Status);
+        }
+
+        // A second fresh context must see the immutable assignment group retained
+        // by FinalizeAsync and confirm deletion without submitting another provider call.
+        using (var afterFinalizeDb = CreateContext())
+        {
+            var store = new AzureProviderOperationStore(afterFinalizeDb);
+            var afterFinalizeRequest = cleanupRequest with { AttemptNumber = 2 };
+            var observation = await ObserveCleanupAsync(store, options, afterFinalizeRequest);
+
+            Assert.Equal(ElsaInstanceCleanupObservationKind.ConfirmedAbsent, observation.Kind);
+            Assert.Equal("deletion.provider-confirmed-absent", observation.DiagnosticCode);
+            var persistedAssignment = Assert.IsType<AzureProviderResourceAssignment>(await
+                ((IAzureProviderResourceAssignmentStore)store).GetAsync(_workspaceId, assignment.Id));
+            Assert.Equal(AzureProviderAssignmentState.Deleted, persistedAssignment.State);
+            Assert.Equal(assignment.ResourceGroupName, persistedAssignment.ResourceGroupName);
+            Assert.Equal(new AzureProviderResourceReferences(assignment.ResourceGroupName), persistedAssignment.Resources);
+        }
+    }
+
     [Fact]
     public async Task Commercial_denial_is_authorized_and_held_in_the_same_operation_CAS()
     {
         var now = DateTimeOffset.UtcNow;
         using var db = CreateContext();
         var store = new AzureProviderOperationStore(db);
+        var organizationId = Guid.NewGuid();
+        var instanceId = Guid.NewGuid();
+        var assignment = await Assignment(store, organizationId, instanceId, now);
         var operation = await store.CreateOrGetAsync(Request() with
         {
-            OrganizationId = Guid.NewGuid(),
-            InstanceId = Guid.NewGuid(),
-            LifecycleAction = ElsaInstanceOperationAction.Reconcile
+            OrganizationId = organizationId,
+            InstanceId = instanceId,
+            LifecycleAction = ElsaInstanceOperationAction.Reconcile,
+            ProviderAssignmentId = assignment.Id
         }, now);
         var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
             _workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now));
@@ -94,11 +532,13 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         var instanceId = Guid.NewGuid();
         using var db = CreateContext();
         var store = new AzureProviderOperationStore(db);
+        var assignment = await Assignment(store, organizationId, instanceId, now);
         var held = await store.CreateOrGetAsync(Request() with
         {
             OrganizationId = organizationId,
             InstanceId = instanceId,
-            LifecycleAction = ElsaInstanceOperationAction.Reconcile
+            LifecycleAction = ElsaInstanceOperationAction.Reconcile,
+            ProviderAssignmentId = assignment.Id
         }, now);
         var claimedHeld = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
             _workspaceId, held.Id, "worker-held", "lease-held", TimeSpan.FromMinutes(1), now));
@@ -111,7 +551,8 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
             IdempotencyKey = "safe-stop",
             OrganizationId = organizationId,
             InstanceId = instanceId,
-            LifecycleAction = ElsaInstanceOperationAction.Stop
+            LifecycleAction = ElsaInstanceOperationAction.Stop,
+            ProviderAssignmentId = assignment.Id
         }, now.AddMinutes(1));
 
         Assert.Equal(AzureProviderOperationStatus.Accepted, safeExit.Status);
@@ -234,6 +675,54 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         var transitions = await store.ListTransitionsAsync(_workspaceId, operation.Id);
         Assert.Contains(transitions, x => x.Code == "operation.recovery.required");
         Assert.Contains(transitions, x => x.Code == "operation.recovery.claimed");
+    }
+
+    [Fact]
+    public async Task Provider_worker_preserves_stale_operation_until_explicit_provider_observation()
+    {
+        var now = DateTimeOffset.UtcNow;
+        using var db = CreateContext();
+        var store = new AzureProviderOperationStore(db);
+        var organizationId = Guid.NewGuid();
+        var instanceId = Guid.NewGuid();
+        var assignment = await Assignment(store, organizationId, instanceId, now);
+        var request = Request() with
+        {
+            ReleaseManifestDigest = "sha256:" + new string('d', 64),
+            ReleaseManifestSignatureDigest = "sha256:" + new string('e', 64),
+            ReleaseManifestReference = "oci://evidence.example/manifest",
+            ReleaseManifestSignatureReference = "oci://evidence.example/signature",
+            SqlWorkflowPackageVersion = "3.8.0",
+            SqlQuartzPackageVersion = "3.8.0",
+            SecretReferences = new Dictionary<string, string>
+            {
+                ["database:connectionstring"] = "secret://vault/database",
+                ["identity:signingkey"] = "secret://vault/signingkey",
+                ["admin:password"] = "secret://vault/admin"
+            },
+            OrganizationId = organizationId,
+            InstanceId = instanceId,
+            LifecycleAction = ElsaInstanceOperationAction.Reconcile,
+            ProviderAssignmentId = assignment.Id
+        };
+        var operation = await store.CreateOrGetAsync(request, now);
+        _ = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+            _workspaceId, operation.Id, "worker-stale", "lease-stale", TimeSpan.FromMinutes(1), now));
+        Assert.Equal(1, await store.RecoverStaleAsync(now.AddMinutes(2)));
+
+        var runner = new RecoveringCompletingRunner();
+        var worker = new AzureProviderOperationWorker(
+            store,
+            new AzureProviderExecutor(store, runner, new FixedTimeProvider(now.AddMinutes(2))),
+            new PersistedAzureProviderPlanSource(),
+            new FixedTimeProvider(now.AddMinutes(2)));
+
+        Assert.Equal(0, await worker.ProcessOnceAsync());
+        var firstRecovery = Assert.IsType<AzureProviderOperation>(await store.GetAsync(_workspaceId, operation.Id));
+        Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, firstRecovery.Status);
+        Assert.Equal(operation.RequestHash, firstRecovery.RequestHash);
+        Assert.Equal(1, firstRecovery.AttemptNumber);
+        Assert.Empty(runner.Commands);
     }
 
     [Fact]
@@ -371,7 +860,7 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     }
 
     [Fact]
-    public async Task Recovery_required_finalization_stays_reserved_and_unpollable()
+    public async Task Recovery_required_finalization_remains_reserved_and_requires_explicit_recovery()
     {
         var now = DateTimeOffset.UtcNow;
         using var db = CreateContext();
@@ -408,29 +897,39 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     }
 
     [Fact]
-    public async Task Recovery_required_operation_is_not_returned_for_automatic_polling()
+    public async Task Recovery_required_rows_cannot_fill_the_batch_before_runnable_work()
     {
         var now = DateTimeOffset.UtcNow;
         using var db = CreateContext();
         var store = new AzureProviderOperationStore(db);
-        var operation = await store.CreateOrGetAsync(Request(), now);
-        var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
-            _workspaceId,
-            operation.Id,
-            "worker",
-            "lease",
-            TimeSpan.FromMinutes(1),
-            now));
-        Assert.NotNull(await store.FinalizeAsync(
-            _workspaceId,
-            operation.Id,
-            "lease",
-            AzureProviderOperationStatus.RecoveryRequired,
-            "azure.operation.recovery-required",
-            now,
-            claimed.Version));
+        foreach (var targetKey in new[] { "recovery-a", "recovery-b" })
+        {
+            var recovery = await store.CreateOrGetAsync(Request() with
+            {
+                TargetKey = targetKey,
+                IdempotencyKey = targetKey
+            }, now);
+            var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+                _workspaceId, recovery.Id, "worker", "lease", TimeSpan.FromMinutes(1), now));
+            Assert.NotNull(await store.FinalizeAsync(
+                _workspaceId, recovery.Id, "lease",
+                AzureProviderOperationStatus.RecoveryRequired,
+                "azure.operation.recovery-required",
+                now,
+                claimed.Version));
+        }
 
-        Assert.Empty(await store.ListRunnableAsync(now.AddMinutes(2), 10));
+        var runnableOperation = await store.CreateOrGetAsync(Request() with
+        {
+            TargetKey = "runnable",
+            IdempotencyKey = "runnable"
+        }, now.AddSeconds(1));
+
+        var runnable = await store.ListRunnableAsync(now.AddMinutes(2), 2);
+
+        var onlyRunnable = Assert.Single(runnable);
+        Assert.Equal(runnableOperation.Id, onlyRunnable.Id);
+        Assert.DoesNotContain(runnable, operation => operation.Status == AzureProviderOperationStatus.RecoveryRequired);
     }
 
     [Fact]
@@ -710,6 +1209,23 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
 
     private CatalogDbContext CreateContext() => new(new DbContextOptionsBuilder<CatalogDbContext>().UseSqlite(_connection).Options);
 
+    private async Task<AzureProviderResourceAssignment> Assignment(
+        AzureProviderOperationStore store,
+        Guid organizationId,
+        Guid instanceId,
+        DateTimeOffset now) =>
+        await ((IAzureProviderResourceAssignmentStore)store).CreateOrGetAsync(
+            new(
+                _workspaceId,
+                organizationId,
+                instanceId,
+                new string('a', 64),
+                "11111111-1111-1111-1111-111111111111",
+                "rg-elsa",
+                $"e{instanceId:N}"[..16],
+                "westeurope"),
+            now);
+
     private AzureProviderOperationRequest Request() => new(
         _workspaceId, "workload-a", AzureProviderOperationAction.Reconcile, "request-1",
         new('a', 64), new('b', 64), "3.8.0", "3.8", "combined", "Dedicated", "westeurope",
@@ -737,6 +1253,67 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     {
         public Task<AzureProviderRunnerResult> RunAsync(AzureProviderRunnerCommand command, CancellationToken cancellationToken = default) =>
             throw new Xunit.Sdk.XunitException("The provider runner must not be called for malformed persisted metadata.");
+    }
+
+    private sealed class RecoveringCompletingRunner : IAzureProviderRunner
+    {
+        public List<AzureProviderRunnerCommand> Commands { get; } = [];
+
+        public Task<AzureProviderRunnerResult> RunAsync(AzureProviderRunnerCommand command, CancellationToken cancellationToken = default)
+        {
+            Commands.Add(command);
+            var resources = CompleteResources();
+            if (Commands.Count == 1)
+                return Task.FromResult(new AzureProviderRunnerResult(
+                    AzureProviderRunnerOutcome.Uncertain,
+                    AzureProviderOperationPhase.Planned,
+                    resources,
+                    AzureProviderHealth.Unknown,
+                    null,
+                    [],
+                    "azure.step.uncertain",
+                    "The provider result is uncertain."));
+
+            var observed = command.Step is AzureProviderRunnerStep.Health or AzureProviderRunnerStep.Promotion;
+            var phase = command.Step switch
+            {
+                AzureProviderRunnerStep.Foundation => AzureProviderOperationPhase.FoundationSubmitted,
+                AzureProviderRunnerStep.AcrPull or AzureProviderRunnerStep.SeedSecrets => AzureProviderOperationPhase.FoundationSubmitted,
+                AzureProviderRunnerStep.SqlBootstrap => AzureProviderOperationPhase.FoundationReady,
+                AzureProviderRunnerStep.Workload => AzureProviderOperationPhase.WorkloadReady,
+                AzureProviderRunnerStep.Health => AzureProviderOperationPhase.HealthVerified,
+                AzureProviderRunnerStep.Promotion => AzureProviderOperationPhase.TrafficPromoted,
+                _ => AzureProviderOperationPhase.CleanupVerified
+            };
+            return Task.FromResult(new AzureProviderRunnerResult(
+                AzureProviderRunnerOutcome.Completed,
+                phase,
+                resources,
+                observed ? AzureProviderHealth.Healthy : AzureProviderHealth.Unknown,
+                observed ? "https://workload.example.test" : null,
+                [],
+                "azure.step.completed",
+                "The provider step completed."));
+        }
+
+        private static AzureProviderResourceReferences CompleteResources() => new(
+            ResourceGroupName: "rg-safe",
+            FoundationDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-safe/providers/Microsoft.Resources/deployments/foundation",
+            WorkloadDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-safe/providers/Microsoft.Resources/deployments/workload",
+            WorkloadResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-safe/providers/Microsoft.App/containerApps/workload-a",
+            WorkloadRevisionName: "workload-a--candidate",
+            StableTrafficRevisionName: "workload-a--stable",
+            WorkloadIdentityResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-safe/providers/Microsoft.ManagedIdentity/userAssignedIdentities/workload-a",
+            WorkloadIdentityClientId: "22222222-2222-2222-2222-222222222222",
+            WorkloadIdentityPrincipalId: "33333333-3333-3333-3333-333333333333",
+            KeyVaultResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-safe/providers/Microsoft.KeyVault/vaults/workload-a",
+            KeyVaultUri: "https://workload-a.vault.azure.net/",
+            SqlServerResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-safe/providers/Microsoft.Sql/servers/workload-a",
+            SqlServerFqdn: "workload-a.database.windows.net",
+            ContainerAppsEnvironmentResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-safe/providers/Microsoft.App/managedEnvironments/workload-a",
+            RegistryResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry/providers/Microsoft.ContainerRegistry/registries/workload",
+            AcrPullDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry/providers/Microsoft.Resources/deployments/acr-pull",
+            AcrPullRoleAssignmentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry/providers/Microsoft.ContainerRegistry/registries/workload/providers/Microsoft.Authorization/roleAssignments/44444444-4444-4444-4444-444444444444");
     }
 
     public void Dispose() => _connection.Dispose();

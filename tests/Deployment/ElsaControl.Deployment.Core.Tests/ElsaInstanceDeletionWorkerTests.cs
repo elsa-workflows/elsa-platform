@@ -45,6 +45,37 @@ public sealed class ElsaInstanceDeletionWorkerTests
         Assert.DoesNotContain("proof", store.Commit.EvidenceFingerprint, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task In_progress_cleanup_is_deferred_then_same_delete_completes_on_next_poll()
+    {
+        var item = WorkItem(local: false);
+        var store = new DeferredStore(item, Now);
+        var port = new RecordingPort(
+            new(ElsaInstanceCleanupObservationKind.InProgress, item.Operation.Id,
+                item.Operation.AttemptNumber, "deletion.provider-cleanup-pending"),
+            new ElsaInstanceCleanupObservation(ElsaInstanceCleanupObservationKind.ConfirmedAbsent, item.Operation.Id,
+                item.Operation.AttemptNumber, "deletion.provider-confirmed-absent"));
+
+        var first = await new ElsaInstanceDeletionWorker(store, port, new FixedTimeProvider(Now))
+            .ProcessAvailableAsync("delete-worker");
+
+        Assert.Empty(first.Results);
+        Assert.Equal(1, first.ProviderInvocations);
+        Assert.Equal(1, store.Deferrals);
+        Assert.Null(store.Failure);
+        Assert.Equal("deletion.provider-cleanup-pending", store.DeferredDiagnosticCode);
+        Assert.Equal(2, store.Claims);
+
+        var second = await new ElsaInstanceDeletionWorker(store, port, new FixedTimeProvider(Now.AddMinutes(1)))
+            .ProcessAvailableAsync("delete-worker");
+
+        Assert.Single(second.Results);
+        Assert.Equal(ElsaInstanceLifecycleWorkerOutcome.Deleted, second.Results[0].Outcome);
+        Assert.Equal(1, store.CommitAttempts);
+        Assert.Equal(1, second.ProviderInvocations);
+        Assert.Equal(4, store.Claims);
+    }
+
     [Theory]
     [InlineData(ElsaInstanceCleanupObservationKind.Unknown)]
     [InlineData(ElsaInstanceCleanupObservationKind.Ambiguous)]
@@ -77,6 +108,42 @@ public sealed class ElsaInstanceDeletionWorkerTests
 
         Assert.Null(store.Commit);
         Assert.Equal("deletion.correlation.invalid", store.Failure!.DiagnosticCode);
+    }
+
+    [Fact]
+    public async Task Mismatched_in_progress_correlation_requires_recovery_without_deferral()
+    {
+        var item = WorkItem(local: false);
+        var store = new RecordingStore(item);
+        var port = new RecordingPort(new ElsaInstanceCleanupObservation(
+            ElsaInstanceCleanupObservationKind.InProgress, Guid.NewGuid(),
+            item.Operation.AttemptNumber, "deletion.provider-cleanup-pending"));
+
+        await new ElsaInstanceDeletionWorker(store, port, new FixedTimeProvider(Now))
+            .ProcessAvailableAsync("delete-worker");
+
+        Assert.Equal(0, store.Deferrals);
+        Assert.Null(store.Commit);
+        Assert.Equal("deletion.correlation.invalid", store.Failure!.DiagnosticCode);
+    }
+
+    [Fact]
+    public async Task Lost_deletion_lease_during_in_progress_deferral_reports_conflict_without_recovery()
+    {
+        var item = WorkItem(local: false);
+        var store = new RecordingStore(item);
+        var port = new RecordingPort(new ElsaInstanceCleanupObservation(
+            ElsaInstanceCleanupObservationKind.InProgress, item.Operation.Id,
+            item.Operation.AttemptNumber, "deletion.provider-cleanup-pending"));
+
+        var result = await new ElsaInstanceDeletionWorker(store, port, new FixedTimeProvider(Now))
+            .ProcessAvailableAsync("delete-worker");
+
+        Assert.Single(result.Results);
+        Assert.Equal(ElsaInstanceLifecycleWorkerOutcome.Conflict, result.Results[0].Outcome);
+        Assert.Equal(1, store.Deferrals);
+        Assert.Null(store.Commit);
+        Assert.Null(store.Failure);
     }
 
     [Fact]
@@ -212,15 +279,20 @@ public sealed class ElsaInstanceDeletionWorkerTests
 
     private static string Digest(char value) => "sha256:" + new string(value, 64);
 
-    private sealed class RecordingPort(ElsaInstanceCleanupObservation observation) : IElsaInstanceProviderCleanupPort
+    private sealed class RecordingPort(
+        ElsaInstanceCleanupObservation first,
+        params ElsaInstanceCleanupObservation[] additional) : IElsaInstanceProviderCleanupPort
     {
+        private readonly Queue<ElsaInstanceCleanupObservation> _observations =
+            new Queue<ElsaInstanceCleanupObservation>(new[] { first }.Concat(additional));
+
         public ElsaInstanceCleanupRequest? Request { get; private set; }
 
         public Task<ElsaInstanceCleanupObservation> CleanupAsync(ElsaInstanceCleanupRequest request,
             CancellationToken cancellationToken = default)
         {
             Request = request;
-            return Task.FromResult(observation);
+            return Task.FromResult(_observations.Dequeue());
         }
     }
 
@@ -230,6 +302,7 @@ public sealed class ElsaInstanceDeletionWorkerTests
         public ElsaInstanceDeletionWorkItem Item => item;
         public ElsaInstanceDeletionCommit? Commit { get; private set; }
         public ElsaInstanceDeletionFailure? Failure { get; private set; }
+        public int Deferrals { get; private set; }
 
         public Task<ElsaInstanceDeletionWorkItem?> TryClaimNextDeletionAsync(string workerId, DateTimeOffset now,
             CancellationToken cancellationToken = default)
@@ -250,6 +323,13 @@ public sealed class ElsaInstanceDeletionWorkerTests
 
         public Task<bool> RenewDeletionLeaseAsync(ElsaInstanceDeletionWorkItem item, string workerId, DateTimeOffset now,
             CancellationToken cancellationToken = default) => Task.FromResult(true);
+
+        public Task<bool> DeferDeletionAsync(ElsaInstanceDeletionWorkItem item, string workerId, DateTimeOffset now,
+            string diagnosticCode, CancellationToken cancellationToken = default)
+        {
+            Deferrals++;
+            return Task.FromResult(false);
+        }
 
         public Task<ElsaInstanceDeletionResult> RequireDeletionRecoveryAsync(ElsaInstanceDeletionFailure failure,
             CancellationToken cancellationToken = default)
@@ -295,6 +375,9 @@ public sealed class ElsaInstanceDeletionWorkerTests
         public Task<bool> RenewDeletionLeaseAsync(ElsaInstanceDeletionWorkItem item, string workerId, DateTimeOffset now,
             CancellationToken cancellationToken = default) => Task.FromResult(true);
 
+        public Task<bool> DeferDeletionAsync(ElsaInstanceDeletionWorkItem item, string workerId, DateTimeOffset now,
+            string diagnosticCode, CancellationToken cancellationToken = default) => Task.FromResult(false);
+
         public Task<ElsaInstanceDeletionResult> RequireDeletionRecoveryAsync(ElsaInstanceDeletionFailure failure,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
@@ -322,8 +405,64 @@ public sealed class ElsaInstanceDeletionWorkerTests
         public Task<bool> RenewDeletionLeaseAsync(ElsaInstanceDeletionWorkItem item, string workerId, DateTimeOffset now,
             CancellationToken cancellationToken = default) => Task.FromResult(true);
 
+        public Task<bool> DeferDeletionAsync(ElsaInstanceDeletionWorkItem item, string workerId, DateTimeOffset now,
+            string diagnosticCode, CancellationToken cancellationToken = default) => Task.FromResult(false);
+
         public Task<ElsaInstanceDeletionResult> RequireDeletionRecoveryAsync(ElsaInstanceDeletionFailure failure,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class DeferredStore(ElsaInstanceDeletionWorkItem item, DateTimeOffset initialDueAt)
+        : IElsaInstanceDeletionStore
+    {
+        private DateTimeOffset _dueAt = initialDueAt;
+        private bool _completed;
+
+        public int Claims { get; private set; }
+        public int Deferrals { get; private set; }
+        public int CommitAttempts { get; private set; }
+        public string? DeferredDiagnosticCode { get; private set; }
+        public ElsaInstanceDeletionFailure? Failure { get; private set; }
+
+        public Task<ElsaInstanceDeletionWorkItem?> TryClaimNextDeletionAsync(string workerId, DateTimeOffset now,
+            CancellationToken cancellationToken = default)
+        {
+            Claims++;
+            if (_completed || now < _dueAt)
+                return Task.FromResult<ElsaInstanceDeletionWorkItem?>(null);
+            return Task.FromResult<ElsaInstanceDeletionWorkItem?>(item);
+        }
+
+        public Task<bool> DeferDeletionAsync(ElsaInstanceDeletionWorkItem item, string workerId, DateTimeOffset now,
+            string diagnosticCode, CancellationToken cancellationToken = default)
+        {
+            Deferrals++;
+            DeferredDiagnosticCode = diagnosticCode;
+            _dueAt = now.AddMinutes(1);
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> RenewDeletionLeaseAsync(ElsaInstanceDeletionWorkItem item, string workerId, DateTimeOffset now,
+            CancellationToken cancellationToken = default) => Task.FromResult(true);
+
+        public Task<ElsaInstanceDeletionResult> CommitDeletionAsync(ElsaInstanceDeletionCommit commit,
+            CancellationToken cancellationToken = default)
+        {
+            CommitAttempts++;
+            _completed = true;
+            return Task.FromResult(new ElsaInstanceDeletionResult(ElsaInstanceDeletionOutcome.Deleted,
+                commit.Operation, commit.Instance, commit.DiagnosticCode, commit.EvidenceFingerprint, false));
+        }
+
+        public Task<ElsaInstanceDeletionResult> RequireDeletionRecoveryAsync(ElsaInstanceDeletionFailure failure,
+            CancellationToken cancellationToken = default)
+        {
+            Failure = failure;
+            return Task.FromResult(new ElsaInstanceDeletionResult(ElsaInstanceDeletionOutcome.RecoveryRequired,
+                item.Operation.TransitionTo(ElsaInstanceOperationState.Queued)
+                    .TransitionTo(ElsaInstanceOperationState.RecoveryRequired), item.Instance,
+                failure.DiagnosticCode, failure.EvidenceFingerprint, false));
+        }
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

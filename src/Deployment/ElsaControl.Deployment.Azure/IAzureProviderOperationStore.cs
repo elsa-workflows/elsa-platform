@@ -52,6 +52,11 @@ public interface IAzureProviderOperationStore
         CancellationToken cancellationToken = default);
 
     Task<AzureProviderOperation?> GetAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Lists accepted, queued, and entitlement-held provider operations that are not currently
+    /// leased. Recovery-required rows are durable but excluded from the automatic queue before
+    /// the batch limit; explicit provider observation must use <see cref="ClaimRecoveryAsync"/>.
+    /// </summary>
     Task<IReadOnlyList<AzureProviderOperation>> ListRunnableAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken = default);
     Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, string? providerScopeFingerprint, CancellationToken cancellationToken = default);
     /// <summary>

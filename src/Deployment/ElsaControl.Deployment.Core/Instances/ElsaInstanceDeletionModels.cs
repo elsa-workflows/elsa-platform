@@ -10,7 +10,8 @@ public enum ElsaInstanceCleanupObservationKind
     Unknown,
     Ambiguous,
     Unavailable,
-    UnsupportedCancellation
+    UnsupportedCancellation,
+    InProgress
 }
 
 public sealed record ElsaInstanceCleanupEvidence
@@ -196,6 +197,14 @@ public interface IElsaInstanceDeletionStore
 {
     Task<ElsaInstanceDeletionWorkItem?> TryClaimNextDeletionAsync(string workerId, DateTimeOffset now, CancellationToken cancellationToken = default);
     Task<bool> RenewDeletionLeaseAsync(ElsaInstanceDeletionWorkItem item, string workerId, DateTimeOffset now, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Defers a correlated provider cleanup that is still running. Implementations
+    /// retain the operation reservation and current worker ownership, but bound the
+    /// next claim attempt so a completed provider operation can be observed later.
+    /// A false result means the lease or correlation was lost before the deferral.
+    /// </summary>
+    Task<bool> DeferDeletionAsync(ElsaInstanceDeletionWorkItem item, string workerId, DateTimeOffset now,
+        string diagnosticCode, CancellationToken cancellationToken = default);
     Task<ElsaInstanceDeletionResult> CommitDeletionAsync(ElsaInstanceDeletionCommit commit, CancellationToken cancellationToken = default);
     Task<ElsaInstanceDeletionResult> RequireDeletionRecoveryAsync(ElsaInstanceDeletionFailure failure, CancellationToken cancellationToken = default);
 }
