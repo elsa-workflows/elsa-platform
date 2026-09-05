@@ -381,3 +381,10 @@ public static class ElsaInstanceIdempotencyKey
     public static string Normalize(string? value) =>
         ElsaInstanceReferenceValue.RequireOperationKey(value, nameof(value));
 }
+
+/// <summary>Canonical validation for lifecycle idempotency operation scopes.</summary>
+public static class ElsaInstanceIdempotencyScope
+{
+    public static string Normalize(string? value) =>
+        ElsaInstanceReferenceValue.RequireOperationScope(value, nameof(value));
+}

@@ -1,4 +1,6 @@
+using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Core.Instances;
+using ElsaControl.RuntimeBuilder.Abstractions.Plans;
 using Xunit;
 
 namespace ElsaControl.Deployment.Core.Tests;
@@ -33,5 +35,109 @@ public sealed class ElsaInstanceProviderRecoveryObservationReferenceTests
         Assert.Throws<ArgumentException>(() => new ElsaInstanceProviderRetryEvidence(
             reference,
             "sha256:" + new string('a', 64)));
+    }
+
+    [Fact]
+    public void Recovery_request_requires_an_accepted_recovery_envelope()
+    {
+        var request = new ElsaInstanceProviderRecoveryRequest(CreateSubmission(), null!);
+
+        var exception = Assert.Throws<ArgumentNullException>(request.Validate);
+        Assert.Equal("Envelope", exception.ParamName);
+    }
+
+    [Fact]
+    public void Recovery_request_accepts_distinct_observation_and_recovery_ids()
+    {
+        var request = new ElsaInstanceProviderRecoveryRequest(CreateSubmission(), CreateEnvelope());
+
+        request.Validate();
+    }
+
+    [Theory]
+    [InlineData("instances\noperations", "recovery-key")]
+    [InlineData("instances/operations", "recovery key")]
+    [InlineData("instances/operations", "recovery:key")]
+    public void Recovery_envelope_requires_canonical_idempotency_values(string scope, string key)
+    {
+        var envelope = CreateEnvelope() with { IdempotencyScope = scope, IdempotencyKey = key };
+
+        Assert.Throws<InvalidOperationException>(envelope.Validate);
+    }
+
+    [Fact]
+    public void Idempotency_scope_normalizes_using_the_shared_scope_policy()
+    {
+        Assert.Equal("instances/operations", ElsaInstanceIdempotencyScope.Normalize(" instances/operations "));
+    }
+
+    [Fact]
+    public void Recovery_result_uses_a_fixed_summary_and_safe_code()
+    {
+        var result = new ElsaInstanceProviderRecoveryResult(
+            ElsaInstanceProviderRecoveryOutcome.Succeeded,
+            "provider.recovery.succeeded");
+
+        result.Validate();
+
+        Assert.Equal("Provider recovery succeeded.", result.Summary);
+        Assert.Throws<InvalidOperationException>(() => new ElsaInstanceProviderRecoveryResult(
+            ElsaInstanceProviderRecoveryOutcome.Failed,
+            "Provider recovery failed").Validate());
+    }
+
+    private static ElsaInstanceProviderSubmission CreateSubmission()
+    {
+        return new(
+            Guid.Parse("10000000-0000-0000-0000-000000000001"),
+            Guid.Parse("20000000-0000-0000-0000-000000000001"),
+            Guid.Parse("30000000-0000-0000-0000-000000000001"),
+            2,
+            ElsaDesiredLifecycle.Running,
+            CreatePlan(),
+            new(
+                Guid.Parse("40000000-0000-0000-0000-000000000001"),
+                Guid.Parse("50000000-0000-0000-0000-000000000001"),
+                Guid.Parse("60000000-0000-0000-0000-000000000001"),
+                Guid.Parse("70000000-0000-0000-0000-000000000001"),
+                Guid.Parse("80000000-0000-0000-0000-000000000001"),
+                Guid.Parse("90000000-0000-0000-0000-000000000001")),
+            "westeurope",
+            Guid.Parse("90000000-0000-0000-0000-000000000002"),
+            ElsaInstanceOperationAction.Recover);
+    }
+
+    private static ResolvedElsaApplicationPlan CreatePlan() => new(
+        ResolvedElsaApplicationPlanSchema.CurrentVersion,
+        new("distribution", "3.8", "3.8.0", "https://example.test/source", "commit", "https://example.test/release", "sha256:" + new string('a', 64)),
+        new("combined", []),
+        [],
+        new([]),
+        new([], []),
+        new("private", "restricted", false, [], []),
+        "isolated",
+        new("stable", "production", "standard", "automatic", "explicit", "explicit"),
+        [],
+        []);
+
+    private static ElsaInstanceProviderRecoveryEnvelope CreateEnvelope()
+    {
+        var digest = "sha256:" + new string('a', 64);
+        return new(
+            Guid.Parse("a0000000-0000-0000-0000-000000000001"),
+            Guid.Parse("90000000-0000-0000-0000-000000000002"),
+            Guid.Parse("10000000-0000-0000-0000-000000000001"),
+            Guid.Parse("20000000-0000-0000-0000-000000000001"),
+            Guid.Parse("30000000-0000-0000-0000-000000000001"),
+            1,
+            4,
+            2,
+            5,
+            "instances/operations",
+            "recovery-key",
+            new string('b', 64),
+            ElsaInstanceProviderRecoveryObservationReference.Create(
+                Guid.Parse("b0000000-0000-0000-0000-000000000001"), digest),
+            digest);
     }
 }

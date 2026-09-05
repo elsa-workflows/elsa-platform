@@ -32,24 +32,22 @@ public interface IElsaInstanceProviderRecoveryPort
 
 public sealed record ElsaInstanceProviderRecoveryRequest(
     ElsaInstanceProviderSubmission Submission,
-    ElsaInstanceProviderRecoveryEnvelope? Envelope = null)
+    ElsaInstanceProviderRecoveryEnvelope Envelope)
 {
     public void Validate()
     {
         ArgumentNullException.ThrowIfNull(Submission);
+        ArgumentNullException.ThrowIfNull(Envelope);
         Submission.Validate();
         if (Submission.AttemptNumber < 2)
             throw new InvalidOperationException("Provider recovery requires an incremented lifecycle attempt.");
-        if (Envelope is not null)
-        {
-            Envelope.Validate();
-            if (Envelope.OrganizationId != Submission.OrganizationId ||
-                Envelope.WorkspaceId != Submission.WorkspaceId ||
-                Envelope.InstanceId != Submission.InstanceId ||
-                Envelope.LifecycleOperationId != Submission.OperationId ||
-                Envelope.AcceptedLifecycleAttemptNumber != Submission.AttemptNumber)
-                throw new InvalidOperationException("Provider recovery envelope does not match the lifecycle submission.");
-        }
+        Envelope.Validate();
+        if (Envelope.OrganizationId != Submission.OrganizationId ||
+            Envelope.WorkspaceId != Submission.WorkspaceId ||
+            Envelope.InstanceId != Submission.InstanceId ||
+            Envelope.LifecycleOperationId != Submission.OperationId ||
+            Envelope.AcceptedLifecycleAttemptNumber != Submission.AttemptNumber)
+            throw new InvalidOperationException("Provider recovery envelope does not match the lifecycle submission.");
     }
 }
 
@@ -76,13 +74,23 @@ public sealed record ElsaInstanceProviderRecoveryEnvelope(
 {
     public void Validate()
     {
+        var canonicalIdempotency = false;
+        try
+        {
+            canonicalIdempotency =
+                string.Equals(ElsaInstanceIdempotencyScope.Normalize(IdempotencyScope), IdempotencyScope, StringComparison.Ordinal) &&
+                string.Equals(ElsaInstanceIdempotencyKey.Normalize(IdempotencyKey), IdempotencyKey, StringComparison.Ordinal);
+        }
+        catch (ArgumentException)
+        {
+            // Preserve the provider-neutral, value-free validation exception below.
+        }
+
         if (RecoveryRequestId == Guid.Empty || OrganizationId == Guid.Empty || WorkspaceId == Guid.Empty ||
             InstanceId == Guid.Empty || LifecycleOperationId == Guid.Empty ||
             ObservedLifecycleAttemptNumber < 1 || ObservedInstanceVersion < 1 ||
             AcceptedLifecycleAttemptNumber < 2 || AcceptedInstanceVersion < 1 ||
-            string.IsNullOrWhiteSpace(IdempotencyScope) || IdempotencyScope.Length > 256 ||
-            string.IsNullOrWhiteSpace(IdempotencyKey) || IdempotencyKey.Length > 128 ||
-            IdempotencyKey.Any(char.IsControl) || RequestHash is null || RequestHash.Length != 64 ||
+            !canonicalIdempotency || RequestHash is null || RequestHash.Length != 64 ||
             RequestHash.AsSpan().ContainsAnyExcept("0123456789abcdef") ||
             !ElsaInstanceProviderRecoveryObservationReference.TryParse(
                 ObservationReference, out _, out var referenceDigest) ||
@@ -102,14 +110,21 @@ public enum ElsaInstanceProviderRecoveryOutcome
 
 public sealed record ElsaInstanceProviderRecoveryResult(
     ElsaInstanceProviderRecoveryOutcome Outcome,
-    string Code,
-    string Summary)
+    string Code)
 {
+    public string Summary => Outcome switch
+    {
+        ElsaInstanceProviderRecoveryOutcome.InProgress => "Provider recovery is in progress.",
+        ElsaInstanceProviderRecoveryOutcome.RecoveryRequired => "Provider recovery requires reconciliation.",
+        ElsaInstanceProviderRecoveryOutcome.Succeeded => "Provider recovery succeeded.",
+        ElsaInstanceProviderRecoveryOutcome.Failed => "Provider recovery failed.",
+        ElsaInstanceProviderRecoveryOutcome.Rejected => "Provider recovery request was rejected.",
+        _ => "Provider recovery result is invalid."
+    };
+
     public void Validate()
     {
-        if (!Enum.IsDefined(Outcome) || string.IsNullOrWhiteSpace(Code) || Code.Length > 128 ||
-            Code.Any(char.IsControl) || string.IsNullOrWhiteSpace(Summary) || Summary.Length > 2000 ||
-            Summary.Any(char.IsControl))
+        if (!Enum.IsDefined(Outcome) || !ManagedLifecycleOperationalHealthDiagnosticCodes.IsSafe(Code))
             throw new InvalidOperationException("Provider recovery result is invalid.");
     }
 }
