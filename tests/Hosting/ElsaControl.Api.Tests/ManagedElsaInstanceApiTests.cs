@@ -137,6 +137,84 @@ public sealed class ManagedElsaInstanceApiTests : IClassFixture<ManagedElsaInsta
     }
 
     [Fact]
+    public async Task Create_rejects_preview_without_explicit_manifest_consent()
+    {
+        var app = await PrepareApplicationAsync([], [PreviewCatalogEntry()]);
+        var client = app.CreateTrustedWorkspaceClient("managed-preview-no-consent");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, workspaceId);
+
+        var response = await SendCreateRequestAsync(
+            client, workspaceId, "Preview runtime", "preview-runtime", PreviewIntent(), "create-preview-no-consent");
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Contains("instance.catalog-selection-unavailable", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        await using var scope = app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+        Assert.Equal(0, await CountRowsAsync(db, "ElsaInstances"));
+    }
+
+    [Fact]
+    public async Task Create_rejects_preview_with_a_nonmatching_manifest_digest()
+    {
+        var app = await PrepareApplicationAsync([], [PreviewCatalogEntry()]);
+        var client = app.CreateTrustedWorkspaceClient("managed-preview-wrong-digest");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, workspaceId);
+
+        var response = await SendCreateRequestAsync(
+            client, workspaceId, "Preview runtime", "preview-wrong-digest", PreviewIntent(Digest('b')), "create-preview-wrong-digest");
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Contains("instance.catalog-selection-unavailable", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        await using var scope = app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+        Assert.Equal(0, await CountRowsAsync(db, "ElsaInstances"));
+    }
+
+    [Fact]
+    public async Task Update_rejects_preview_digest_mismatch_before_persisting_a_revision()
+    {
+        var app = await PrepareApplicationAsync([]);
+        var client = app.CreateTrustedWorkspaceClient("managed-preview-update");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, workspaceId);
+        var created = await CreateCanonicalInstanceAsync(client, workspaceId, "preview-update-runtime");
+        await MarkOperationSucceededAsync(app, created.Operation.Id);
+        var revisionsBefore = await client.GetControlJsonAsync<ManagedElsaInstanceRevisionsResponse>(
+            $"/api/workspaces/{workspaceId}/instances/{created.Instance.InstanceId}/revisions");
+        var detailBefore = await client.GetControlJsonAsync<ManagedElsaInstanceResponse>(
+            $"/api/workspaces/{workspaceId}/instances/{created.Instance.InstanceId}");
+
+        _fixture.ReleaseCatalog.SetEntries([PreviewCatalogEntry()]);
+        using var patch = new HttpRequestMessage(HttpMethod.Patch,
+            $"/api/workspaces/{workspaceId}/instances/{created.Instance.InstanceId}")
+        {
+            Content = JsonContent.Create(
+                new ManagedElsaInstancePatchRequest(PreviewIntent(Digest('b'))),
+                options: ControlApiTestApplication.JsonOptions)
+        };
+        patch.Headers.Add("Idempotency-Key", "update-preview-wrong-digest");
+        patch.Headers.TryAddWithoutValidation("If-Match", created.Instance.ETag);
+
+        var response = await client.SendAsync(patch);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Contains("instance.catalog-selection-unavailable", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        var revisionsAfter = await client.GetControlJsonAsync<ManagedElsaInstanceRevisionsResponse>(
+            $"/api/workspaces/{workspaceId}/instances/{created.Instance.InstanceId}/revisions");
+        var detailAfter = await client.GetControlJsonAsync<ManagedElsaInstanceResponse>(
+            $"/api/workspaces/{workspaceId}/instances/{created.Instance.InstanceId}");
+        Assert.NotNull(revisionsBefore);
+        Assert.NotNull(revisionsAfter);
+        Assert.Equal(revisionsBefore!.Items.Count, revisionsAfter!.Items.Count);
+        Assert.Equal(revisionsBefore.Items.Single().ContentHash, revisionsAfter.Items.Single().ContentHash);
+        Assert.Equal(detailBefore!.Version, detailAfter!.Version);
+        Assert.Equal(detailBefore.ETag, detailAfter.ETag);
+        Assert.Equal(detailBefore.Intent!.ComputeCanonicalHash(), detailAfter.Intent!.ComputeCanonicalHash());
+    }
+
+    [Fact]
     public async Task Create_rejects_a_client_overridden_launch_profile()
     {
         var app = await PrepareApplicationAsync([]);
@@ -1057,6 +1135,18 @@ public sealed class ManagedElsaInstanceApiTests : IClassFixture<ManagedElsaInsta
             "approved"),
         new ElsaPlacementIntent("managed", "westeurope", "dedicated", "standard-small", "public", "managed"));
 
+    private static ElsaInstanceIntent PreviewIntent(string? manifestDigest = null) => Intent() with
+    {
+        Release = new ElsaReleaseIntent(
+            "preview-runtime", "4.1", "4.1.0-preview.1", "preview",
+            previewManifestDigest: manifestDigest)
+    };
+
+    private static GovernedReleaseCatalogEntry PreviewCatalogEntry(char digestMarker = 'a') =>
+        CatalogEntry("preview-runtime", "4.1", "4.1.0-preview.1", "preview", "combined", "preview", "paid", digestMarker);
+
+    private static string Digest(char marker) => "sha256:" + new string(marker, 64);
+
     private static async Task EnableManagedHostingAsync(ControlApiTestApplication app, Guid workspaceId)
     {
         await using var scope = app.Services.CreateAsyncScope();
@@ -1136,6 +1226,23 @@ public sealed class ManagedElsaInstanceApiTests : IClassFixture<ManagedElsaInsta
         var response = await client.SendAsync(request);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
         return (await response.Content.ReadControlJsonAsync<ManagedElsaInstanceAcceptedResponse>())!;
+    }
+
+    private static Task<HttpResponseMessage> SendCreateRequestAsync(
+        HttpClient client,
+        Guid workspaceId,
+        string name,
+        string slug,
+        ElsaInstanceIntent intent,
+        string idempotencyKey)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/workspaces/{workspaceId}/instances")
+        {
+            Content = JsonContent.Create(new ManagedElsaInstanceCreateRequest(name, slug, intent),
+                options: ControlApiTestApplication.JsonOptions)
+        };
+        request.Headers.Add("Idempotency-Key", idempotencyKey);
+        return client.SendAsync(request);
     }
 
     private static Task<HttpResponseMessage> SendOperationAsync(
