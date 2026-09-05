@@ -102,7 +102,8 @@ internal sealed class SigstoreReleaseManifestBundleVerifier : IReleaseManifestBu
         var standardOutputTask = DrainOutputAsync(process.StandardOutput, outputBudget, outputLimitReached, captureCancellation.Token);
         var standardErrorTask = DrainOutputAsync(process.StandardError, outputBudget, outputLimitReached, captureCancellation.Token);
         var exitTask = process.WaitForExitAsync();
-        var timeoutTask = Task.Delay(_authority.Timeout);
+        using var timeoutCancellation = new CancellationTokenSource();
+        var timeoutTask = Task.Delay(_authority.Timeout, timeoutCancellation.Token);
         var cancellationSignal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var cancellationRegistration = cancellationToken.Register(
             static state => ((TaskCompletionSource<bool>)state!).TrySetResult(true),
@@ -113,6 +114,7 @@ internal sealed class SigstoreReleaseManifestBundleVerifier : IReleaseManifestBu
             timeoutTask,
             cancellationSignal.Task,
             outputLimitReached.Task).ConfigureAwait(false);
+        await timeoutCancellation.CancelAsync().ConfigureAwait(false);
 
         if (completedTask == cancellationSignal.Task ||
             completedTask == timeoutTask ||

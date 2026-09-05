@@ -180,32 +180,36 @@ internal sealed class AcrReleaseRegistryReader : IReleaseRegistryReader
             if (maximumBytes is <= 0 or > ReleaseRegistryProtocol.MaximumManifestBytes)
                 throw Failure();
 
-            using var response = await SendAuthorizedAsync(
+            Uri redirect;
+            using (var response = await SendAuthorizedAsync(
                 HttpMethod.Get,
                 BuildRegistryUri($"/v2/{_authority.Repository}/blobs/{digest}"),
                 accept: null,
                 allowRedirect: true,
-                cancellationToken).ConfigureAwait(false);
-
-            if (response.StatusCode is HttpStatusCode.Found or HttpStatusCode.TemporaryRedirect)
+                cancellationToken).ConfigureAwait(false))
             {
-                var redirect = ValidateBlobRedirect(response.Headers.Location);
-                response.Dispose();
-                using var redirectedResponse = await SendUnauthenticatedAsync(redirect, cancellationToken).ConfigureAwait(false);
-                if (redirectedResponse.StatusCode != HttpStatusCode.OK)
-                    throw Failure();
-                var redirectedBytes = await ReadBodyAsync(redirectedResponse, maximumBytes, cancellationToken).ConfigureAwait(false);
-                if (!DigestMatches(digest, redirectedBytes))
-                    throw Failure();
-                return redirectedBytes;
+                if (response.StatusCode is HttpStatusCode.Found or HttpStatusCode.TemporaryRedirect)
+                    redirect = ValidateBlobRedirect(response.Headers.Location);
+                else
+                {
+                    if (response.StatusCode != HttpStatusCode.OK)
+                        throw Failure();
+                    var bytes = await ReadBodyAsync(response, maximumBytes, cancellationToken).ConfigureAwait(false);
+                    if (!DigestMatches(digest, bytes))
+                        throw Failure();
+                    return bytes;
+                }
             }
 
-            if (response.StatusCode != HttpStatusCode.OK)
+            // Release the registry response and its timeout before contacting the approved
+            // blob host. The credential-bearing response has one explicit ownership scope.
+            using var redirectedResponse = await SendUnauthenticatedAsync(redirect, cancellationToken).ConfigureAwait(false);
+            if (redirectedResponse.StatusCode != HttpStatusCode.OK)
                 throw Failure();
-            var bytes = await ReadBodyAsync(response, maximumBytes, cancellationToken).ConfigureAwait(false);
-            if (!DigestMatches(digest, bytes))
+            var redirectedBytes = await ReadBodyAsync(redirectedResponse, maximumBytes, cancellationToken).ConfigureAwait(false);
+            if (!DigestMatches(digest, redirectedBytes))
                 throw Failure();
-            return bytes;
+            return redirectedBytes;
         }
 
         public async ValueTask<IReadOnlyList<ReleaseRegistryDescriptor>> ReadReferrersAsync(
