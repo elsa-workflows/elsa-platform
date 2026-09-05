@@ -570,6 +570,21 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Acr_pull_read_only_process_failure_preserves_fixed_step_and_failure_kind()
+    {
+        var process = new FakeCommandProcess();
+        process.Failure(args => args.Contains("acr") && args.Contains("show"));
+
+        var result = await _fixture.Runner(process).RunAsync(
+            _fixture.Command(AzureProviderRunnerStep.AcrPull, _fixture.FoundationResources));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Failed, result.Outcome);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "azure.step.acr-pull.failed");
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "azure.step.acr-pull.process.non-zero-exit");
+        Assert.All(result.Diagnostics, diagnostic => Assert.Equal(diagnostic.Code, diagnostic.Message));
+    }
+
+    [Fact]
     public async Task Cleanup_refuses_an_acr_assignment_that_does_not_match_its_durable_provenance()
     {
         var process = new FakeCommandProcess();

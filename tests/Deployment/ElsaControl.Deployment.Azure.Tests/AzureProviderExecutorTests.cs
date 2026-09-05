@@ -460,6 +460,46 @@ public sealed class AzureProviderExecutorTests
     }
 
     [Fact]
+    public async Task Untrusted_runner_diagnostics_are_dropped_before_checkpoint_persistence()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner { UntrustedDiagnostics = true };
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+
+        var result = await executor.ApplyAsync(CreateRequest(), CreatePlan());
+
+        Assert.Equal(AzureProviderExecutionOutcome.Succeeded, result.Outcome);
+        Assert.DoesNotContain(result.Operation.Diagnostics, diagnostic => diagnostic.Code == "azure.provider.detail");
+        Assert.All(result.Operation.Diagnostics, diagnostic => Assert.Equal(diagnostic.Code, diagnostic.Message));
+    }
+
+    [Fact]
+    public async Task Read_only_step_failure_retains_only_fixed_diagnostics_in_the_durable_checkpoint()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner
+        {
+            FailureStep = AzureProviderRunnerStep.AcrPull,
+            FailureCode = "azure.provider.detail",
+            FailureMessage = "untrusted runner detail",
+            FailureDiagnostics =
+            [
+                new AzureProviderDiagnostic("azure.step.acr-pull.process.non-zero-exit", "untrusted process output"),
+                new AzureProviderDiagnostic("azure.provider.detail", "untrusted provider detail")
+            ]
+        };
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+
+        var result = await executor.ApplyAsync(CreateRequest(), CreatePlan());
+
+        Assert.Equal(AzureProviderExecutionOutcome.Failed, result.Outcome);
+        Assert.Equal(AzureProviderOperationStatus.Failed, result.Operation.Status);
+        Assert.Contains(result.Operation.Diagnostics, diagnostic => diagnostic.Code == "azure.step.acr-pull.process.non-zero-exit");
+        Assert.DoesNotContain(result.Operation.Diagnostics, diagnostic => diagnostic.Code == "azure.provider.detail");
+        Assert.All(result.Operation.Diagnostics, diagnostic => Assert.Equal(diagnostic.Code, diagnostic.Message));
+    }
+
+    [Fact]
     public async Task Execution_requires_both_verified_manifest_digests()
     {
         var store = new FakeOperationStore();
@@ -967,6 +1007,11 @@ public sealed class AzureProviderExecutorTests
         public AzureProviderResourceReferences? ResourcesOverride { get; init; }
         public TimeSpan Delay { get; init; }
         public bool HostileDiagnostics { get; init; }
+        public bool UntrustedDiagnostics { get; init; }
+        public AzureProviderRunnerStep? FailureStep { get; init; }
+        public IReadOnlyList<AzureProviderDiagnostic> FailureDiagnostics { get; init; } = [];
+        public string FailureCode { get; init; } = "azure.step.failed";
+        public string FailureMessage { get; init; } = "Azure lifecycle step failed.";
         public string RunnerMessage { get; init; } = "Azure lifecycle step completed.";
         public bool ThrowAfterDelay { get; init; }
         public AzureProviderRunnerStep? WaitForCancellationStep { get; init; }
@@ -1024,6 +1069,20 @@ public sealed class AzureProviderExecutorTests
 
         private AzureProviderRunnerResult CreateResult(AzureProviderRunnerCommand command)
         {
+            if (command.Step == FailureStep)
+                return new(
+                    AzureProviderRunnerOutcome.Failed,
+                    command.Step is AzureProviderRunnerStep.Foundation or AzureProviderRunnerStep.AcrPull or AzureProviderRunnerStep.SeedSecrets
+                        ? AzureProviderOperationPhase.FoundationSubmitted
+                        : command.Step == AzureProviderRunnerStep.SqlBootstrap
+                            ? AzureProviderOperationPhase.FoundationReady
+                            : AzureProviderOperationPhase.WorkloadReady,
+                    CompleteResources(),
+                    AzureProviderHealth.Unknown,
+                    null,
+                    FailureDiagnostics,
+                    FailureCode,
+                    FailureMessage);
             if (command.Step == IncompleteNoOpStep)
                 return Result(
                     AzureProviderRunnerOutcome.NoOp,
@@ -1077,6 +1136,8 @@ public sealed class AzureProviderExecutorTests
                 : EndpointOverride ?? (phase is AzureProviderOperationPhase.HealthVerified or AzureProviderOperationPhase.TrafficPromoted ? "https://workload.example.test" : null),
             HostileDiagnostics
                 ? [new AzureProviderDiagnostic("azure.provider.detail", "password=do-not-persist\r\nraw response")]
+                : UntrustedDiagnostics
+                    ? [new AzureProviderDiagnostic("azure.provider.detail", "untrusted runner detail")]
                 : [],
             "azure.step.completed",
             RunnerMessage,

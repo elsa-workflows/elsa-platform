@@ -929,7 +929,7 @@ public sealed class AzureProviderExecutor
         };
 
     private static IReadOnlyList<AzureProviderDiagnostic> SafeDiagnostics(IReadOnlyList<AzureProviderDiagnostic> diagnostics) =>
-        diagnostics.Select(diagnostic => new AzureProviderDiagnostic(diagnostic.Code, diagnostic.Code)).ToArray();
+        AzureProviderSafeDiagnostics.Normalize(diagnostics);
 
     private static AzureProviderExecutionContext CreateExecutionContext(AzureProviderOperation operation) => new(
         operation.WorkspaceId,

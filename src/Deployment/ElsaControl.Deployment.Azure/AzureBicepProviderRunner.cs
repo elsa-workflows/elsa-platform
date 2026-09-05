@@ -1478,21 +1478,23 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     private static AzureProviderRunnerResult ProcessFailure<T>(AzureProviderRunnerCommand command, AzureProviderOperationPhase phase, AzureCommandProcessResult<T> result, AzureProviderResourceReferences resources, bool mutation)
         where T : AzureCommandSafeOutput =>
         result.Status is AzureCommandProcessStatus.TerminationUncertain || result.FailureKind is AzureCommandProcessFailureKind.TerminationUncertain
-            ? Uncertain(command, phase, "azure.step.termination-uncertain", "The Azure lifecycle process could not be proven terminated, so the external result requires recovery.", resources)
+            ? Uncertain(command, phase, "azure.step.termination-uncertain", "The Azure lifecycle process could not be proven terminated, so the external result requires recovery.", resources, result.FailureKind)
             : result.Status == AzureCommandProcessStatus.Cancelled || result.FailureKind == AzureCommandProcessFailureKind.Cancelled
-                ? Uncertain(command, phase, "azure.step.cancelled", "The Azure lifecycle step was interrupted before its result was confirmed.", resources)
+                ? Uncertain(command, phase, "azure.step.cancelled", "The Azure lifecycle step was interrupted before its result was confirmed.", resources, result.FailureKind)
             : mutation
-                ? Uncertain(command, phase, "azure.step.uncertain", "The Azure lifecycle step failed before its external result was confirmed.", resources)
-                : Failed(command, phase, "azure.step.failed", "The Azure lifecycle observation failed.", resources);
+                ? Uncertain(command, phase, "azure.step.uncertain", "The Azure lifecycle step failed before its external result was confirmed.", resources, result.FailureKind)
+                : Failed(command, phase, "azure.step.failed", "The Azure lifecycle observation failed.", resources, result.FailureKind);
 
     private static AzureProviderRunnerResult Completed(AzureProviderRunnerCommand command, AzureProviderOperationPhase phase, AzureProviderResourceReferences resources, bool noOp = false, AzureProviderHealth health = AzureProviderHealth.Unknown, string? endpoint = null, bool stableTrafficRestored = false) =>
         new(noOp ? AzureProviderRunnerOutcome.NoOp : AzureProviderRunnerOutcome.Completed, phase, resources, health, endpoint, [], noOp ? "azure.step.no-op" : "azure.step.completed", noOp ? "The Azure lifecycle step was already converged." : "The Azure lifecycle step completed.", StableTrafficRestored: stableTrafficRestored);
 
-    private static AzureProviderRunnerResult Failed(AzureProviderRunnerCommand command, AzureProviderOperationPhase phase, string code, string message, AzureProviderResourceReferences? resources = null) =>
-        new(AzureProviderRunnerOutcome.Failed, phase, resources ?? command.Resources, AzureProviderHealth.Unknown, null, [], code, message);
+    private static AzureProviderRunnerResult Failed(AzureProviderRunnerCommand command, AzureProviderOperationPhase phase, string code, string message, AzureProviderResourceReferences? resources = null, AzureCommandProcessFailureKind? processFailureKind = null) =>
+        new(AzureProviderRunnerOutcome.Failed, phase, resources ?? command.Resources, AzureProviderHealth.Unknown, null,
+            AzureProviderSafeDiagnostics.Failure(command.Step, AzureProviderRunnerOutcome.Failed, code, processFailureKind), code, message);
 
-    private static AzureProviderRunnerResult Uncertain(AzureProviderRunnerCommand command, AzureProviderOperationPhase phase, string code, string message, AzureProviderResourceReferences? resources = null) =>
-        new(AzureProviderRunnerOutcome.Uncertain, phase, resources ?? command.Resources, AzureProviderHealth.Unknown, null, [], code, message);
+    private static AzureProviderRunnerResult Uncertain(AzureProviderRunnerCommand command, AzureProviderOperationPhase phase, string code, string message, AzureProviderResourceReferences? resources = null, AzureCommandProcessFailureKind? processFailureKind = null) =>
+        new(AzureProviderRunnerOutcome.Uncertain, phase, resources ?? command.Resources, AzureProviderHealth.Unknown, null,
+            AzureProviderSafeDiagnostics.Failure(command.Step, AzureProviderRunnerOutcome.Uncertain, code, processFailureKind), code, message);
 
     private static AzureProviderOperationPhase CurrentPhase(AzureProviderRunnerStep step) => step switch
     {
