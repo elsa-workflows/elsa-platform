@@ -13,13 +13,23 @@ on:
           - test
           - production
       deploy_mode:
-        description: "Use app for code-only deployment; use infra to provision/update Bicep resources."
+        description: "Use app for code-only deployment, infra for Bicep, build to stage, or promote an immutable candidate."
         required: true
         default: app
         type: choice
         options:
           - app
           - infra
+          - build
+          - promote
+      candidate_run_id:
+        description: "Successful same-repository build workflow run containing the candidate descriptor (promote only)."
+        required: false
+        type: string
+      candidate_digest:
+        description: "Expected candidate image digest, including the sha256: prefix (promote only)."
+        required: false
+        type: string
 
 concurrency:
   group: azure-api-deploy-${{ github.event_name == 'workflow_dispatch' && inputs.target_environment || 'production' }}
@@ -31,6 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ github.event_name == 'workflow_dispatch' && inputs.target_environment || 'production' }}
     permissions:
+      actions: read
       contents: read
       id-token: write
     env:
@@ -43,6 +54,8 @@ jobs:
       AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
       AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
       AZURE_CONTAINER_REGISTRY_ENDPOINT: ${{ vars.AZURE_CONTAINER_REGISTRY_ENDPOINT }}
+      CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+      EXPECTED_CANDIDATE_DIGEST: ${{ inputs.candidate_digest }}
       SQL_ADMINISTRATOR_LOGIN: ${{ vars.SQL_ADMINISTRATOR_LOGIN }}
       ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
       BUILDER_CLIENT_API_KEY: ${{ secrets.BUILDER_CLIENT_API_KEY }}
@@ -71,16 +84,29 @@ jobs:
         run: |
           set -euo pipefail
 
+          case "$DEPLOY_MODE" in
+            app|infra|build|promote) ;;
+            *)
+              echo "::error::Unsupported deployment mode; refusing to continue."
+              exit 1
+              ;;
+          esac
+
           required=(
             AZURE_CLIENT_ID
             AZURE_TENANT_ID
             AZURE_SUBSCRIPTION_ID
-            AZURE_ENV_NAME
-            AZURE_LOCATION
-            AZURE_RESOURCE_GROUP
-            AZURE_WEBAPP_NAME
             AZURE_CONTAINER_REGISTRY_ENDPOINT
           )
+
+          if [ "$DEPLOY_MODE" != "build" ]; then
+            required+=(
+              AZURE_ENV_NAME
+              AZURE_LOCATION
+              AZURE_RESOURCE_GROUP
+              AZURE_WEBAPP_NAME
+            )
+          fi
 
           if [ "$DEPLOY_MODE" = "infra" ]; then
             required+=(
@@ -136,9 +162,140 @@ jobs:
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Check immutable promotion inputs
+        if: ${{ success() && steps.deployment-config.outputs.deploy_configured == 'true' && env.DEPLOY_MODE == 'promote' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          [[ "$CANDIDATE_RUN_ID" =~ ^[0-9]+$ ]] || {
+            echo "::error::A successful candidate run identity is required for immutable promotion."
+            exit 1
+          }
+          [[ "$EXPECTED_CANDIDATE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            echo "::error::An expected immutable candidate digest is required for promotion."
+            exit 1
+          }
+          [[ "$AZURE_CONTAINER_REGISTRY_ENDPOINT" =~ ^[a-z0-9][a-z0-9.-]*\.azurecr\.io$ ]] || {
+            echo "::error::The configured container registry endpoint has an unexpected format; refusing promotion."
+            exit 1
+          }
+
+      - name: Download trusted API candidate descriptor
+        if: ${{ success() && steps.deployment-config.outputs.deploy_configured == 'true' && env.DEPLOY_MODE == 'promote' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: elsa-control-api-candidate
+          path: ${{ runner.temp }}/elsa-control-api-candidate
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Validate trusted API candidate
+        id: candidate-authority
+        if: ${{ success() && steps.deployment-config.outputs.deploy_configured == 'true' && env.DEPLOY_MODE == 'promote' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          scripts/validate-azure-api-candidate.sh \
+            "$RUNNER_TEMP/elsa-control-api-candidate/candidate.json" \
+            "$CANDIDATE_RUN_ID" \
+            "$EXPECTED_CANDIDATE_DIGEST" \
+            "$AZURE_CONTAINER_REGISTRY_ENDPOINT/elsa-control/api" \
+            "$GITHUB_REPOSITORY" \
+            "$GITHUB_OUTPUT"
+
+      - name: Verify candidate image in ACR
+        if: ${{ success() && steps.candidate-authority.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          acr_name="${AZURE_CONTAINER_REGISTRY_ENDPOINT%%.azurecr.io}"
+          if ! candidate_digest="$(az acr manifest show-metadata \
+            --registry "$acr_name" \
+            --name "elsa-control/api@$EXPECTED_CANDIDATE_DIGEST" \
+            --query digest \
+            --output tsv \
+            --only-show-errors 2>/dev/null)"; then
+            echo "::error::The validated candidate image is not present in the configured registry; refusing promotion."
+            exit 1
+          fi
+          if [ "$candidate_digest" != "$EXPECTED_CANDIDATE_DIGEST" ]; then
+            echo "::error::The configured registry returned a different candidate digest; refusing promotion."
+            exit 1
+          fi
+
+      - name: Build and publish API candidate
+        id: candidate-image
+        if: ${{ success() && steps.deployment-config.outputs.deploy_configured == 'true' && env.DEPLOY_MODE == 'build' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The build source identity has an unexpected format; refusing to publish a candidate."
+            exit 1
+          fi
+          if [[ ! "$AZURE_CONTAINER_REGISTRY_ENDPOINT" =~ ^[a-z0-9][a-z0-9.-]*\.azurecr\.io$ ]]; then
+            echo "::error::The configured container registry endpoint has an unexpected format; refusing to publish a candidate."
+            exit 1
+          fi
+
+          acr_name="${AZURE_CONTAINER_REGISTRY_ENDPOINT%%.azurecr.io}"
+          image="$AZURE_CONTAINER_REGISTRY_ENDPOINT/elsa-control/api:$GITHUB_SHA"
+          image_repository="$AZURE_CONTAINER_REGISTRY_ENDPOINT/elsa-control/api"
+          candidate_descriptor_directory="$RUNNER_TEMP/elsa-control-api-candidate"
+          candidate_descriptor="$candidate_descriptor_directory/candidate.json"
+          mkdir -p "$candidate_descriptor_directory"
+
+          az acr login --name "$acr_name" --only-show-errors
+          docker build \
+            --build-arg ELSA_CONTROL_IMAGE_ID="$GITHUB_SHA" \
+            --file src/Hosting/ElsaControl.Api/Dockerfile \
+            --tag "$image" \
+            .
+          docker push "$image"
+
+          digest="$(az acr manifest show-metadata \
+            --registry "$acr_name" \
+            --name "elsa-control/api:$GITHUB_SHA" \
+            --query digest \
+            --output tsv \
+            --only-show-errors)"
+          if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::The published candidate did not resolve to an immutable digest; refusing to emit a candidate descriptor."
+            exit 1
+          fi
+
+          jq -n \
+            --arg repository "$image_repository" \
+            --arg digest "$digest" \
+            --arg source_repository "$GITHUB_REPOSITORY" \
+            --arg source_sha "$GITHUB_SHA" \
+            --arg build_run_id "$GITHUB_RUN_ID" \
+            --arg build_run_number "$GITHUB_RUN_NUMBER" \
+            '{artifactSchemaVersion: 1, repository: $repository, digest: $digest,
+              sourceRepository: $source_repository, sourceSha: $source_sha,
+              buildRunId: $build_run_id, buildRunNumber: $build_run_number}' \
+            > "$candidate_descriptor"
+          printf 'descriptor_path=%s\n' "$candidate_descriptor" >> "$GITHUB_OUTPUT"
+
+      - name: Upload API candidate descriptor
+        if: ${{ success() && steps.candidate-image.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: elsa-control-api-candidate
+          path: ${{ steps.candidate-image.outputs.descriptor_path }}
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Capture current API deployment
         id: current-deployment
-        if: ${{ success() && steps.deployment-config.outputs.deploy_configured == 'true' }}
+        if: ${{ success() && steps.deployment-config.outputs.deploy_configured == 'true' && env.DEPLOY_MODE != 'build' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -201,6 +358,85 @@ jobs:
           else
             echo "::error::The captured Linux runtime has an unsupported format; expected DOCKER|... or SITECONTAINERS."
             exit 1
+          fi
+
+          rollback_linux_fx_version="$linux_fx_version"
+          rollback_sitecontainer_image="$sitecontainer_image"
+          if [ "$DEPLOY_MODE" = "promote" ]; then
+            if [[ ! "$AZURE_CONTAINER_REGISTRY_ENDPOINT" =~ ^[a-z0-9][a-z0-9.-]*\.azurecr\.io$ ]]; then
+              echo "::error::The configured container registry endpoint has an unexpected format; refusing promotion."
+              exit 1
+            fi
+
+            expected_image_repository="$AZURE_CONTAINER_REGISTRY_ENDPOINT/elsa-control/api"
+            acr_name="${AZURE_CONTAINER_REGISTRY_ENDPOINT%%.azurecr.io}"
+            if [ "$deployment_mode" = "classic" ]; then
+              current_image="${linux_fx_version#DOCKER|}"
+            else
+              current_image="$sitecontainer_image"
+            fi
+
+            case "$current_image" in
+              "$expected_image_repository"@*)
+                previous_digest="${current_image#"$expected_image_repository"@}"
+                ;;
+              "$expected_image_repository":*)
+                previous_tag="${current_image#"$expected_image_repository":}"
+                if [[ ! "$previous_tag" =~ ^[[:alnum:]][[:alnum:]._+-]{0,127}$ ]]; then
+                  echo "::error::The captured previous image tag has an unexpected format; refusing promotion."
+                  exit 1
+                fi
+                if ! previous_digest="$(az acr manifest show-metadata \
+                  --registry "$acr_name" \
+                  --name "elsa-control/api:$previous_tag" \
+                  --query digest \
+                  --output tsv \
+                  --only-show-errors 2>/dev/null)"; then
+                  echo "::error::The captured previous image could not be resolved to an immutable digest; refusing promotion."
+                  exit 1
+                fi
+                ;;
+              *)
+                echo "::error::The captured previous image is not owned by the configured API repository; refusing promotion."
+                exit 1
+                ;;
+            esac
+
+            if [[ ! "$previous_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::The captured previous image did not resolve to an immutable digest; refusing promotion."
+              exit 1
+            fi
+            if ! verified_previous_digest="$(az acr manifest show-metadata \
+              --registry "$acr_name" \
+              --name "elsa-control/api@$previous_digest" \
+              --query digest \
+              --output tsv \
+              --only-show-errors 2>/dev/null)"; then
+              echo "::error::The captured previous image digest could not be verified in the configured repository; refusing promotion."
+              exit 1
+            fi
+            if [ "$verified_previous_digest" != "$previous_digest" ]; then
+              echo "::error::The captured previous image digest did not match the configured repository; refusing promotion."
+              exit 1
+            fi
+
+            rollback_image="$expected_image_repository@$previous_digest"
+            if [ "$deployment_mode" = "classic" ]; then
+              rollback_linux_fx_version="DOCKER|$rollback_image"
+            else
+              rollback_sitecontainer_image="$rollback_image"
+            fi
+
+            image_id_override_count="$(az webapp config appsettings list \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_WEBAPP_NAME" \
+              --query "[?name=='ELSA_CONTROL_IMAGE_ID'] | length(@)" \
+              --output tsv \
+              --only-show-errors)"
+            if [ "$image_id_override_count" != "0" ]; then
+              echo "::error::The Web App has a runtime image identity override; refusing promotion."
+              exit 1
+            fi
           fi
 
           application_build_number="$(az webapp config appsettings list \
@@ -271,9 +507,9 @@ jobs:
             echo "::notice::Current API health was unavailable or not healthy at $health_url (HTTP ${http_status:-000}); retaining Azure image/build metadata and using rollback compatibility verification."
           fi
           echo "deployment_mode=$deployment_mode" >> "$GITHUB_OUTPUT"
-          echo "linux_fx_version=$linux_fx_version" >> "$GITHUB_OUTPUT"
-          if [ -n "$sitecontainer_image" ]; then
-            echo "sitecontainer_image=$sitecontainer_image" >> "$GITHUB_OUTPUT"
+          echo "linux_fx_version=$rollback_linux_fx_version" >> "$GITHUB_OUTPUT"
+          if [ -n "$rollback_sitecontainer_image" ]; then
+            echo "sitecontainer_image=$rollback_sitecontainer_image" >> "$GITHUB_OUTPUT"
           fi
           if [ -n "$application_build_number" ]; then
             echo "application_build_number=$application_build_number" >> "$GITHUB_OUTPUT"
@@ -288,7 +524,9 @@ jobs:
 
       - name: Deploy API app
         id: deploy-api
-        if: ${{ success() && steps.deployment-config.outputs.deploy_configured == 'true' }}
+        if: ${{ success() && steps.deployment-config.outputs.deploy_configured == 'true' && env.DEPLOY_MODE != 'build' }}
+        env:
+          VALIDATED_CANDIDATE_IMAGE: ${{ steps.candidate-authority.outputs.candidate_image }}
         shell: bash
         run: |
           set -euo pipefail
@@ -300,7 +538,7 @@ jobs:
               --location "$AZURE_LOCATION" \
               --subscription "$AZURE_SUBSCRIPTION_ID" \
               --image-tag "$GITHUB_SHA"
-          else
+          elif [ "$DEPLOY_MODE" = "app" ]; then
             image="$AZURE_CONTAINER_REGISTRY_ENDPOINT/elsa-control/api:${GITHUB_SHA}"
             acr_name="${AZURE_CONTAINER_REGISTRY_ENDPOINT%%.azurecr.io}"
             current_deployment_mode="${{ steps.current-deployment.outputs.deployment_mode }}"
@@ -332,7 +570,42 @@ jobs:
               echo "::error::The captured deployment mode is unsupported; refusing an unprotected deployment."
               exit 1
             fi
+          elif [ "$DEPLOY_MODE" = "promote" ]; then
+            image="$VALIDATED_CANDIDATE_IMAGE"
+            current_deployment_mode="${{ steps.current-deployment.outputs.deployment_mode }}"
+            expected_image_repository="$AZURE_CONTAINER_REGISTRY_ENDPOINT/elsa-control/api"
+            if [[ "$image" != "$expected_image_repository"@sha256:* ]]; then
+              echo "::error::The candidate image is not the validated immutable repository reference; refusing promotion."
+              exit 1
+            fi
+            candidate_digest="${image#"$expected_image_repository"@}"
+            if [[ ! "$candidate_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::The candidate image digest has an unexpected format; refusing promotion."
+              exit 1
+            fi
 
+            if [ "$current_deployment_mode" = "sitecontainers" ]; then
+              az webapp sitecontainers update \
+                --resource-group "$AZURE_RESOURCE_GROUP" \
+                --name "$AZURE_WEBAPP_NAME" \
+                --container-name main \
+                --image "$image" \
+                --is-main true \
+                --output none
+            elif [ "$current_deployment_mode" = "classic" ]; then
+              az webapp config container set \
+                --resource-group "$AZURE_RESOURCE_GROUP" \
+                --name "$AZURE_WEBAPP_NAME" \
+                --container-image-name "$image" \
+                --container-registry-url "https://$AZURE_CONTAINER_REGISTRY_ENDPOINT" \
+                --output none
+            else
+              echo "::error::The captured deployment mode is unsupported; refusing promotion."
+              exit 1
+            fi
+          else
+            echo "::error::The selected deployment mode cannot mutate the Web App."
+            exit 1
           fi
 
           if [ "$DEPLOY_MODE" = "infra" ]; then
@@ -356,7 +629,9 @@ jobs:
 
       - name: Verify deployed API health
         id: health-gate
-        if: ${{ success() && steps.deployment-config.outputs.deploy_configured == 'true' }}
+        if: ${{ success() && steps.deployment-config.outputs.deploy_configured == 'true' && env.DEPLOY_MODE != 'build' }}
+        env:
+          VALIDATED_CANDIDATE_SOURCE_SHA: ${{ steps.candidate-authority.outputs.candidate_source_sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -377,12 +652,30 @@ jobs:
           health_response_file="$(mktemp)"
           trap 'rm -f "$health_response_file"' EXIT
           stable_health_probes=0
+          expected_image_id="$GITHUB_SHA"
+          if [ "$DEPLOY_MODE" = "promote" ]; then
+            expected_image_id="$VALIDATED_CANDIDATE_SOURCE_SHA"
+            if [[ ! "$expected_image_id" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::The validated candidate source identity is unavailable; refusing promotion health acceptance."
+              exit 1
+            fi
+            image_id_override_count="$(az webapp config appsettings list \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_WEBAPP_NAME" \
+              --query "[?name=='ELSA_CONTROL_IMAGE_ID'] | length(@)" \
+              --output tsv \
+              --only-show-errors)"
+            if [ "$image_id_override_count" != "0" ]; then
+              echo "::error::The Web App has a runtime image identity override; refusing promotion health acceptance."
+              exit 1
+            fi
+          fi
 
           for attempt in $(seq 1 30); do
             if http_status="$(curl --silent --show-error --output "$health_response_file" --write-out '%{http_code}' --max-time 10 "$health_url")"; then
               if [ "$http_status" = "200" ] && jq -e \
                 --arg expected_build_number "$GITHUB_RUN_NUMBER" \
-                --arg expected_image_id "$GITHUB_SHA" \
+                --arg expected_image_id "$expected_image_id" \
                 '.status == "ok" and .buildNumber == $expected_build_number and .imageId == $expected_image_id' \
                 "$health_response_file" >/dev/null 2>&1; then
                 stable_health_probes=$((stable_health_probes + 1))

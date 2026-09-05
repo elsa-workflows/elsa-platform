@@ -43,12 +43,14 @@ class AzureApiDeployWorkflowTests(unittest.TestCase):
         self.assertNotIn("--registry-username", self.source)
 
     def test_deploy_and_rollback_use_the_captured_runtime_mode(self) -> None:
-        self.assertEqual(
-            self.source.count(
-                "if: ${{ success() && steps.deployment-config.outputs.deploy_configured == 'true' }}"
-            ),
-            4,
-        )
+        self.assertIn("env.DEPLOY_MODE != 'build'", self.source)
+        self.assertIn("env.DEPLOY_MODE == 'promote'", self.source)
+        self.assertIn("actions/download-artifact@v4", self.source)
+        self.assertIn("actions/upload-artifact@v4", self.source)
+        self.assertIn("Verify candidate image in ACR", self.source)
+        self.assertIn('"::error::The validated candidate image is not present in the configured registry; refusing promotion."', self.source)
+        self.assertIn("candidate_descriptor_directory=\"$RUNNER_TEMP/elsa-control-api-candidate\"", self.source)
+        self.assertIn('"$RUNNER_TEMP/elsa-control-api-candidate/candidate.json"', self.source)
         self.assertIn("capture_succeeded=false", self.source)
         self.assertIn("capture_succeeded=true", self.source)
         self.assertIn("steps.current-deployment.outputs.capture_succeeded == 'true'", self.source)
@@ -66,6 +68,37 @@ class AzureApiDeployWorkflowTests(unittest.TestCase):
             "Restore previous API deployment after deployment or health failure",
             self.source,
         )
+
+    def test_staged_candidate_contract_is_immutable_and_separate_from_app_mutation(self) -> None:
+        self.assertIn("candidate_run_id:", self.source)
+        self.assertIn("candidate_digest:", self.source)
+        self.assertIn("scripts/validate-azure-api-candidate.sh", self.source)
+        self.assertIn("docker push \"$image\"", self.source)
+        self.assertIn("az acr manifest show-metadata", self.source)
+        self.assertIn("VALIDATED_CANDIDATE_IMAGE: ${{ steps.candidate-authority.outputs.candidate_image }}", self.source)
+        self.assertIn("@sha256:", self.source)
+        self.assertIn("The candidate image is not the validated immutable repository reference", self.source)
+        self.assertIn("ELSA_CONTROL_IMAGE_ID", self.source)
+
+        build_start = self.source.index("      - name: Build and publish API candidate")
+        build_end = self.source.index("      - name: Upload API candidate descriptor", build_start)
+        build_script = self.source[build_start:build_end]
+        self.assertNotIn("az webapp", build_script)
+        self.assertNotIn("restart", build_script)
+
+        promote_start = self.source.index('elif [ "$DEPLOY_MODE" = "promote" ]; then')
+        promote_end = self.source.index('else\n            echo "::error::The selected deployment mode cannot mutate', promote_start)
+        promote_script = self.source[promote_start:promote_end]
+        self.assertNotIn("docker build", promote_script)
+        self.assertNotIn("docker push", promote_script)
+        self.assertIn('az webapp', promote_script)
+
+    def test_health_identity_separates_candidate_source_from_promotion_run(self) -> None:
+        self.assertIn('VALIDATED_CANDIDATE_SOURCE_SHA: ${{ steps.candidate-authority.outputs.candidate_source_sha }}', self.source)
+        self.assertIn('expected_image_id="$VALIDATED_CANDIDATE_SOURCE_SHA"', self.source)
+        self.assertIn('--arg expected_build_number "$GITHUB_RUN_NUMBER"', self.source)
+        self.assertIn('--arg expected_image_id "$expected_image_id"', self.source)
+        self.assertIn('The Web App has a runtime image identity override; refusing promotion', self.source)
 
     def test_health_gates_require_exact_http_200(self) -> None:
         self.assertGreaterEqual(
@@ -123,7 +156,13 @@ case "$*" in
     if [ "${FAIL_SITECONTAINER_LOOKUP:-false}" = true ]; then exit 1; fi
     printf '%s\\n' "${SITECONTAINER_IMAGE}"
     ;;
-  *"webapp config appsettings list"*) printf '%s\\n' "${APPLICATION_BUILD_NUMBER}" ;;
+  *"webapp config appsettings list"*)
+    case "$*" in
+      *"ELSA_CONTROL_IMAGE_ID"*) printf '%s\\n' "${IMAGE_ID_OVERRIDE_COUNT:-0}" ;;
+      *) printf '%s\\n' "${APPLICATION_BUILD_NUMBER}" ;;
+    esac
+    ;;
+  *"acr manifest show-metadata"*) printf '%s\\n' "${PREVIOUS_DIGEST:-sha256:$(printf 'd%.0s' {1..64})}" ;;
   *) exit 1 ;;
 esac
 """
@@ -160,6 +199,7 @@ printf '%s' "${HEALTH_STATUS:-200}"
                 deploy_mode: str = "app",
                 health_response: str = '{"status":"ok","buildNumber":"1786839398","imageId":"abcdef0123456789"}',
                 health_status: str = "200",
+                image_id_override_count: str = "0",
             ) -> subprocess.CompletedProcess[str]:
                 output_file = temp_path / "github-output"
                 output_file.unlink(missing_ok=True)
@@ -176,8 +216,11 @@ printf '%s' "${HEALTH_STATUS:-200}"
                         "DEPLOY_MODE": deploy_mode,
                         "AZURE_RESOURCE_GROUP": "test-rg",
                         "AZURE_WEBAPP_NAME": "test-api",
+                        "AZURE_CONTAINER_REGISTRY_ENDPOINT": "acr.azurecr.io",
                         "HEALTH_RESPONSE": health_response,
                         "HEALTH_STATUS": health_status,
+                        "IMAGE_ID_OVERRIDE_COUNT": image_id_override_count,
+                        "PREVIOUS_DIGEST": "sha256:" + "d" * 64,
                     }
                 )
                 return subprocess.run(
@@ -274,6 +317,27 @@ printf '%s' "${HEALTH_STATUS:-200}"
                 deploy_mode="app",
             )
             self.assertNotEqual(fresh_app.returncode, 0)
+
+            promoted_capture = run_capture(
+                "DOCKER|acr.azurecr.io/elsa-control/api:previous",
+                "",
+                deploy_mode="promote",
+            )
+            self.assertEqual(0, promoted_capture.returncode, promoted_capture.stderr)
+            promoted_output = (temp_path / "github-output").read_text()
+            self.assertIn(
+                "linux_fx_version=DOCKER|acr.azurecr.io/elsa-control/api@sha256:" + "d" * 64,
+                promoted_output,
+            )
+
+            override_capture = run_capture(
+                "DOCKER|acr.azurecr.io/elsa-control/api:previous",
+                "",
+                deploy_mode="promote",
+                image_id_override_count="1",
+            )
+            self.assertNotEqual(0, override_capture.returncode)
+            self.assertIn("runtime image identity override", override_capture.stdout + override_capture.stderr)
 
     def test_rollback_identity_query_rejects_a_different_image(self) -> None:
         exact_query = (

@@ -28,7 +28,9 @@ jobs:
         run: python3 scripts/tests/test_ci_workflow.py
 
       - name: Validate Azure deployment workflow contract
-        run: python3 scripts/tests/test_azure_api_deploy_workflow.py
+        run: |
+          python3 scripts/tests/test_azure_api_deploy_workflow.py
+          python3 scripts/tests/test_azure_api_candidate.py
 
       - name: Validate production Azure image and template contracts
         run: |
@@ -48,13 +50,15 @@ jobs:
             scripts/azure-workload-restore-proof.sh \
             scripts/lib/azure-workload-proof.sh \
             scripts/validate-azure-workload-proof.sh \
-            scripts/validate-api-provider-image.sh
+            scripts/validate-api-provider-image.sh \
+            scripts/validate-azure-api-candidate.sh
           shellcheck \
             scripts/azure-workload-proof.sh \
             scripts/azure-workload-restore-proof.sh \
             scripts/lib/azure-workload-proof.sh \
             scripts/validate-azure-workload-proof.sh \
-            scripts/validate-api-provider-image.sh
+            scripts/validate-api-provider-image.sh \
+            scripts/validate-azure-api-candidate.sh
 
       - name: Compile Azure workload proof Bicep templates
         run: |
