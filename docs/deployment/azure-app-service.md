@@ -104,6 +104,31 @@ The workflow repeats this as a defense-in-depth check before Azure login for eve
 mutating mode; the protected GitHub environment policy remains the authoritative
 remote boundary and must not be replaced by the workflow check.
 
+### Optional Azure provider provisioner identity
+
+The API App Service can optionally attach a dedicated provisioner user-assigned
+managed identity by setting the exact full resource ID in
+`AZURE_PROVISIONER_IDENTITY_ID` before the API site parameters are rendered. The
+identity must belong to the same Microsoft Entra tenant as the App Service; a
+cross-subscription resource ID is only valid when that tenant and the required
+provider permissions have been independently verified. See Microsoft's
+[App Service managed identity documentation](https://learn.microsoft.com/en-us/azure/app-service/overview-managed-identity).
+
+Attaching or changing a user-assigned identity changes App Service configuration
+and restarts the app. Schedule the change with a health/readback check. The
+attachment does not change the API runtime identity: `AZURE_CLIENT_ID` remains
+the API identity client ID and `keyVaultReferenceIdentity` remains the API
+identity resource ID. Configure the provider runner's explicit client ID
+separately when enabling provider operations; do not assume that attaching an
+identity selects it for every Azure SDK call.
+
+The current production host uses its existing classic `DOCKER` deployment mode.
+Do not convert it to `SITECONTAINERS` by redeploying the full generated template
+just to attach this identity. Use the intended staged identity update, preserve
+the exact `AZURE_PROVISIONER_IDENTITY_ID` value in the azd environment for later
+infrastructure regeneration, and verify that the deployed identity set contains
+the existing API/ACR identities plus only the explicitly supplied provisioner.
+
 Required GitHub Actions variables:
 
 - `AZURE_CLIENT_ID`: application/client ID for the federated identity.
@@ -121,6 +146,8 @@ Required GitHub Actions variables:
   for example `elsacontrolacrk35qdj734hds2.azurecr.io`.
 - `API_IDENTITY_CLIENTID` and `API_IDENTITY_ID`: managed identity values emitted
   by `azd up` for the API Web App.
+- Optional `AZURE_PROVISIONER_IDENTITY_ID`: the exact full resource ID of the
+  dedicated provider provisioner identity when the staged attachment is enabled.
 - `CONTROL_SQL_SQLSERVERFQDN`: Azure SQL server FQDN emitted by `azd up`.
 - `ELSA_CONTROL_AZURE_APP_SERVICE_DASHBOARD_URI`: Aspire dashboard URL
   emitted by `azd up`.

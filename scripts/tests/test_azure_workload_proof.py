@@ -210,10 +210,13 @@ class AzureWorkloadProofTests(unittest.TestCase):
 
     def test_aspire_regeneration_preserves_manual_proof(self) -> None:
         source = REGENERATE_INFRA.read_text()
-        self.assertIn("preserved_proof", source)
-        self.assertIn("mv infra/azure-workload-proof", source)
-        self.assertIn("trap restore_preserved_proof EXIT", source)
-        self.assertLess(source.index("mv infra/azure-workload-proof"), source.index("rm -rf infra"))
+        self.assertIn("preserved_infra_paths", source)
+        self.assertIn("azure-production", source)
+        self.assertIn("azure-workload-proof", source)
+        self.assertIn("azure-customer-subscription", source)
+        self.assertIn('mv "infra/$relative_path"', source)
+        self.assertIn("trap restore_preserved_infra EXIT", source)
+        self.assertLess(source.index("preserved_infra_paths"), source.index("rm -rf infra"))
 
     def test_runbook_is_fail_closed(self) -> None:
         source = RUNBOOK.read_text()

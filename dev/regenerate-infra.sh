@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Regenerates the Aspire infrastructure into infra/, preserves the manually authored
-# Azure workload proof, and re-applies the one local patch we carry.
+# Azure authorities, and re-applies the local patches we carry.
 #
 # Why the patch: Aspire emits an `api-roles-control-sql` deployment script to grant the API's managed
 # identity access to Azure SQL. That script installs SqlServer PowerShell 22.3.0 onto Az PowerShell
@@ -14,28 +14,50 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "Regenerating infrastructure from the Aspire AppHost..."
+preserved_infra_paths=(
+    azure-production
+    azure-workload-proof
+    azure-customer-subscription
+)
 preservation_dir="$(mktemp -d)"
-preserved_proof="$preservation_dir/azure-workload-proof"
-if [ -d infra/azure-workload-proof ]; then
-    mv infra/azure-workload-proof "$preserved_proof"
-fi
-restore_preserved_proof() {
+restore_preserved_infra() {
     local command_status=$?
+    local restore_status=$command_status
     trap - EXIT
-    if [ -d "$preserved_proof" ]; then
+    if [ -d "$preservation_dir" ]; then
         mkdir -p infra
-        if [ -e infra/azure-workload-proof ]; then
-            echo "Refusing to overwrite a generated infra/azure-workload-proof path; preserved copy remains at $preserved_proof" >&2
-            exit 1
-        fi
-        mv "$preserved_proof" infra/azure-workload-proof
+        for relative_path in "${preserved_infra_paths[@]}"; do
+            if [ ! -e "$preservation_dir/$relative_path" ]; then
+                continue
+            fi
+            if [ -e "infra/$relative_path" ]; then
+                echo "Refusing to overwrite a generated infra/$relative_path path; preserved copy remains at $preservation_dir" >&2
+                restore_status=1
+                continue
+            fi
+            mkdir -p "infra/$(dirname "$relative_path")"
+            mv "$preservation_dir/$relative_path" "infra/$relative_path"
+        done
     fi
-    rm -rf "$preservation_dir"
-    exit "$command_status"
+    if [ "$restore_status" -eq 0 ]; then
+        rm -rf "$preservation_dir"
+    else
+        echo "Preserved infrastructure remains at $preservation_dir" >&2
+    fi
+    exit "$restore_status"
 }
-trap restore_preserved_proof EXIT
+trap restore_preserved_infra EXIT
+for relative_path in "${preserved_infra_paths[@]}"; do
+    if [ -e "infra/$relative_path" ]; then
+        mkdir -p "$preservation_dir/$(dirname "$relative_path")"
+        mv "infra/$relative_path" "$preservation_dir/$relative_path"
+    fi
+done
 rm -rf infra
 azd infra generate --force --no-prompt
+
+echo "Re-applying the optional API provisioner identity parameter..."
+python3 dev/patch-api-provisioner-identity.py
 
 if [ -d infra/api-roles-control-sql ]; then
     echo "Stripping the broken api-roles-control-sql module..."

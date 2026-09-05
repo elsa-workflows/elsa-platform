@@ -5,6 +5,11 @@ param api_containerimage = '{{ .Image }}'
 param api_containerport = '{{ targetPortOrDefault 8080 }}'
 param api_identity_outputs_clientid = '{{ .Env.API_IDENTITY_CLIENTID }}'
 param api_identity_outputs_id = '{{ .Env.API_IDENTITY_ID }}'
+{{ if index .Env "AZURE_PROVISIONER_IDENTITY_ID" }}
+param provisioner_identity_outputs_id = '{{ .Env.AZURE_PROVISIONER_IDENTITY_ID }}'
+{{ else }}
+param provisioner_identity_outputs_id = ''
+{{ end }}
 param builderclientapikey_value = '{{ securedParameter "builderClientApiKey" }}'
 param control_sql_outputs_sqlserverfqdn = '{{ .Env.CONTROL_SQL_SQLSERVERFQDN }}'
 param entraclientid_value = '{{ parameter "entraClientId" }}'
