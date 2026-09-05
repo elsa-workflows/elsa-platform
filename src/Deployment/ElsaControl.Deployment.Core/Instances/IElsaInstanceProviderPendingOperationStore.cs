@@ -17,4 +17,5 @@ public interface IElsaInstanceProviderPendingOperationStore
 public sealed record ElsaInstanceProviderPendingOperation(
     Guid WorkspaceId,
     Guid OperationId,
-    ElsaInstanceProviderSubmission? Submission = null);
+    ElsaInstanceProviderSubmission? Submission = null,
+    ElsaInstanceProviderRecoveryEnvelope? Recovery = null);
