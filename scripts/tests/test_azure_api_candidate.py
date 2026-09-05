@@ -164,6 +164,28 @@ esac
         self.assertIn("trusted successful build", result.stderr)
         self.assertFalse(self.output.exists())
 
+    def test_foreign_workflow_run_is_rejected(self) -> None:
+        result = self.run_helper(
+            FAKE_RUN_JSON=json.dumps(
+                {
+                    "id": 123,
+                    "name": "Azure Control API Deploy",
+                    "path": ".github/workflows/azure-api-deploy.yml",
+                    "repository": {"full_name": SOURCE_REPOSITORY},
+                    "head_repository": {"full_name": "untrusted/elsa-control"},
+                    "status": "completed",
+                    "conclusion": "success",
+                    "event": "workflow_dispatch",
+                    "head_sha": SOURCE_SHA,
+                    "run_number": 77,
+                }
+            )
+        )
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("trusted successful build", result.stderr)
+        self.assertFalse(self.output.exists())
+
     def test_source_that_is_not_an_ancestor_of_main_is_rejected(self) -> None:
         result = self.run_helper(FAKE_ANCESTOR="false")
 
