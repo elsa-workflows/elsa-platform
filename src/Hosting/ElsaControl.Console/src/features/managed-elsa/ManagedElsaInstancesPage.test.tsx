@@ -199,6 +199,43 @@ describe("ManagedElsaInstancesPage", () => {
         placement: { regionCode: "westeurope", isolationProfile: "dedicated" }
       }
     });
+    expect(body.intent.release).not.toHaveProperty("previewManifestDigest");
+  });
+
+  it("requires explicit Preview consent and sends only the selected immutable digest", async () => {
+    const preview = { ...releaseFixture("future-runtime", "5.0", "5.0.0-preview.1"), manifestDigest: `sha256:${"a".repeat(64)}` };
+    const fetchMock = installFetch({ instances: [], releaseOptions: [], previewReleases: [preview] });
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(await screen.findByLabelText("Instance name"), "Preview Elsa");
+    expect(screen.getByRole("option", { name: /Preview/ })).toBeInTheDocument();
+    const consent = screen.getByRole("checkbox", { name: /I agree to use this Preview release/ });
+    expect(consent).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "Create instance" })).toBeDisabled();
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+
+    await user.click(consent);
+    await user.click(screen.getByRole("button", { name: "Create instance" }));
+    expect(await screen.findByText("Provisioning status: Succeeded")).toBeInTheDocument();
+    const call = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(JSON.parse(String(call?.[1]?.body)).intent.release.previewManifestDigest).toBe(preview.manifestDigest);
+  });
+
+  it("clears Preview consent when release selection changes", async () => {
+    installFetch({ previewReleases: [{ ...releaseFixture("future-runtime", "5.0", "5.0.0-preview.1"), manifestDigest: `sha256:${"b".repeat(64)}` }] });
+    const user = userEvent.setup();
+    renderPage();
+    await user.type(await screen.findByLabelText("Instance name"), "Preview Elsa");
+    const selection = screen.getByLabelText("Elsa release and topology");
+    await user.selectOptions(selection, "2");
+    await user.click(screen.getByRole("checkbox"));
+    expect(screen.getByRole("button", { name: "Create instance" })).toBeEnabled();
+    await user.selectOptions(selection, "0");
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    await user.selectOptions(selection, "2");
+    expect(screen.getByRole("checkbox")).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "Create instance" })).toBeDisabled();
   });
 
   it("maps create validation codes to accurate safe messages", async () => {
@@ -366,6 +403,7 @@ function installFetch({
   onInstancesRequest,
   onboardingResponse,
   releaseOptions,
+  previewReleases,
   operationResponses = [],
   createResponse
 }: {
@@ -377,6 +415,7 @@ function installFetch({
   onInstancesRequest?: () => void;
   onboardingResponse?: Response;
   releaseOptions?: ReturnType<typeof releaseFixture>[];
+  previewReleases?: Array<ReturnType<typeof releaseFixture> & { manifestDigest: string }>;
   operationResponses?: Response[];
   createResponse?: Response;
 }) {
@@ -413,6 +452,7 @@ function installFetch({
         return onboardingResponse;
       return Response.json({
         releases: releaseOptions ?? [releaseFixture("valence-runtime", "3.8", "3.8.4"), releaseFixture("future-runtime", "5.0", "5.0.1")],
+        previewReleases,
         launchProfile: { name: "West Europe Dedicated", description: "Managed hosting.", targetMode: "managed", regionCode: "westeurope", isolationProfile: "dedicated", capacityProfile: "standard-small", networkOutcome: "public", domainOutcome: "managed" }
       });
     }

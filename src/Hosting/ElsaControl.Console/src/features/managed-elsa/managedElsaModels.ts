@@ -53,14 +53,17 @@ export type ManagedElsaLaunchProfile = {
   domainOutcome: string;
 };
 
+export type ManagedElsaReleaseOption = {
+  distributionId: string;
+  releaseLine: string;
+  version: string;
+  channel: string;
+  topologyId: string;
+};
+
 export type ManagedElsaOnboardingOptions = {
-  releases: Array<{
-    distributionId: string;
-    releaseLine: string;
-    version: string;
-    channel: string;
-    topologyId: string;
-  }>;
+  releases: ManagedElsaReleaseOption[];
+  previewReleases?: Array<ManagedElsaReleaseOption & { manifestDigest: string }> | null;
   launchProfile: ManagedElsaLaunchProfile;
 };
 
@@ -73,6 +76,7 @@ export type ManagedElsaInstanceIntent = {
     patchUpdates: string;
     minorUpdates: string;
     majorMigrations: string;
+    previewManifestDigest?: string;
   };
   application: {
     topologyId: string;

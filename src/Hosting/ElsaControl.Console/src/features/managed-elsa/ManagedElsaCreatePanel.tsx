@@ -7,7 +7,7 @@ import {
   getManagedElsaOnboardingOptions,
   getManagedElsaOperation,
 } from "@/features/managed-elsa/managedElsaApi";
-import type { ManagedElsaInstanceIntent, ManagedElsaOperation } from "@/features/managed-elsa/managedElsaModels";
+import type { ManagedElsaInstanceIntent, ManagedElsaOnboardingOptions, ManagedElsaOperation } from "@/features/managed-elsa/managedElsaModels";
 import { ApiError } from "@/lib/api/httpClient";
 import { queryKeys } from "@/lib/query/queryClient";
 
@@ -20,18 +20,17 @@ export function ManagedElsaCreatePanel({ workspaceId }: { workspaceId: string })
     queryFn: () => getManagedElsaOnboardingOptions(workspaceId),
     retry: false
   });
-  const choices = useMemo(() => {
-    const seen = new Set<string>();
-    return (options.data?.releases ?? []).filter((entry) => {
-      const key = choiceKey(entry.distributionId, entry.releaseLine, entry.version, entry.channel, entry.topologyId);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }, [options.data]);
+  const choices = useMemo(() => onboardingChoices(options.data), [options.data]);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [choiceIndex, setChoiceIndex] = useState("0");
+  const selected = choices[Number(choiceIndex)];
+  const selectionKey = selected ? JSON.stringify([workspaceId, selected]) : null;
+  const [consentedSelection, setConsentedSelection] = useState<string | null>(null);
+  const previewConsentRequired = selected?.previewManifestDigest !== null && selected?.previewManifestDigest !== undefined;
+  const previewConsented = selectionKey !== null && consentedSelection === selectionKey;
+
+  useEffect(() => { setConsentedSelection(null); }, [selectionKey]);
   const [idempotencyKey, setIdempotencyKey] = useState(() => loadOrCreateIdempotencyKey(workspaceId));
   const [pending, setPending] = useState<PendingOperation | null>(() => loadPendingOperation(workspaceId));
 
@@ -56,8 +55,8 @@ export function ManagedElsaCreatePanel({ workspaceId }: { workspaceId: string })
 
   const create = useMutation({
     mutationFn: async () => {
-      const selected = choices[Number(choiceIndex)];
       if (!selected || !options.data) throw new Error("selection-unavailable");
+      if (previewConsentRequired && !previewConsented) throw new Error("preview-consent-required");
       const intent: ManagedElsaInstanceIntent = {
         release: {
           distributionId: selected.distributionId,
@@ -66,7 +65,8 @@ export function ManagedElsaCreatePanel({ workspaceId }: { workspaceId: string })
           channel: selected.channel,
           patchUpdates: "automatic-within-minor",
           minorUpdates: "explicit-approval",
-          majorMigrations: "explicit-migration"
+          majorMigrations: "explicit-migration",
+          ...(selected.previewManifestDigest ? { previewManifestDigest: selected.previewManifestDigest } : {})
         },
         application: {
           topologyId: selected.topologyId,
@@ -99,7 +99,7 @@ export function ManagedElsaCreatePanel({ workspaceId }: { workspaceId: string })
   const activeOperation = operation.data && !operationIdentityInvalid ? operation.data : undefined;
   const terminal = activeOperation && isTerminal(activeOperation.state);
   const pollingFailed = operation.isError || operationIdentityInvalid;
-  const unavailable = options.isLoading || choices.length === 0;
+  const unavailable = options.isLoading || !selected;
 
   return (
     <div className="rounded-ui border border-border bg-surface p-4">
@@ -141,16 +141,29 @@ export function ManagedElsaCreatePanel({ workspaceId }: { workspaceId: string })
           </label>
           <label className="space-y-1 text-sm md:col-span-2">
             <span className="font-medium">Elsa release and topology</span>
-            <Select className="w-full" value={choiceIndex} onChange={(event) => setChoiceIndex(event.target.value)} disabled={unavailable}>
+            <Select className="w-full" value={choiceIndex} onChange={(event) => {
+              setConsentedSelection(null);
+              setChoiceIndex(event.target.value);
+            }} disabled={unavailable}>
               {choices.map((entry, index) => (
                 <option key={choiceKey(entry.distributionId, entry.releaseLine, entry.version, entry.channel, entry.topologyId)} value={index}>
-                  Elsa {entry.version} · {entry.releaseLine} · {entry.channel} · {entry.topologyId}
+                  Elsa {entry.version} · {entry.releaseLine} · {entry.channel} · {entry.topologyId}{entry.previewManifestDigest ? " · Preview" : ""}
                 </option>
               ))}
             </Select>
           </label>
+          {previewConsentRequired ? (
+            <div className="space-y-3 rounded-ui border border-warning/40 bg-warning/5 p-3 md:col-span-2">
+              <p className="text-sm" id="managed-elsa-preview-warning">Preview releases are for evaluation and have no availability SLO. Choose a supported release for production workloads.</p>
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" required className="mt-1 h-4 w-4 accent-primary" aria-describedby="managed-elsa-preview-warning"
+                  checked={previewConsented} onChange={(event) => setConsentedSelection(event.target.checked ? selectionKey : null)} />
+                <span>I agree to use this Preview release for this instance.</span>
+              </label>
+            </div>
+          ) : null}
           <div className="md:col-span-2">
-            <Button type="submit" disabled={unavailable || create.isPending || !name.trim() || !slug.trim()}>
+            <Button type="submit" disabled={unavailable || create.isPending || !name.trim() || !slug.trim() || (previewConsentRequired && !previewConsented)}>
               {create.isPending ? <LoaderCircle aria-hidden className="h-4 w-4 animate-spin" /> : <Plus aria-hidden className="h-4 w-4" />}
               {create.isPending ? "Creating…" : "Create instance"}
             </Button>
@@ -162,6 +175,29 @@ export function ManagedElsaCreatePanel({ workspaceId }: { workspaceId: string })
       )}
     </div>
   );
+}
+
+function onboardingChoices(options: ManagedElsaOnboardingOptions | undefined) {
+  const entries = [
+    ...(options?.releases ?? []).map((entry) => ({ ...entry, previewManifestDigest: null as string | null })),
+    ...(options?.previewReleases ?? [])
+      .filter((entry) => /^sha256:[0-9a-f]{64}$/.test(entry.manifestDigest))
+      .map(({ manifestDigest, ...entry }) => ({ ...entry, previewManifestDigest: manifestDigest }))
+  ];
+  const groups = new Map<string, typeof entries>();
+  for (const entry of entries) {
+    const key = choiceKey(entry.distributionId, entry.releaseLine, entry.version, entry.channel, entry.topologyId);
+    const group = groups.get(key) ?? [];
+    group.push(entry);
+    groups.set(key, group);
+  }
+  // Supported discovery retains its existing semantics. A stale Preview row must
+  // not hide a Supported choice or grant Preview consent for an ambiguous identity.
+  return [...groups.values()].flatMap((group) => {
+    const supported = group.find((entry) => entry.previewManifestDigest === null);
+    if (supported) return [supported];
+    return group.every((entry) => entry.previewManifestDigest === group[0].previewManifestDigest) ? [group[0]] : [];
+  });
 }
 
 function choiceKey(distributionId: string, releaseLine: string, version: string, channel: string, topologyId: string) {
