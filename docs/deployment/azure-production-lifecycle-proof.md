@@ -43,7 +43,11 @@ It also requires
 provider workers enabled, the v1 instance-provider scope, pinned CLI/sqlcmd/curl/template paths,
 and two versioned source Key Vault references plus the provider-owned SQL sentinel. The database
 slot uses the provider-owned `secret://azure-managed/sql-connection` sentinel; signing-key and
-admin-password slots remain versioned Key Vault locators. Raw secret values are not accepted.
+admin-password slots remain versioned Key Vault locators. Their source secret names must be
+`identity-signing-key` and `admin-password`, respectively, matching the governed target names.
+For example, `identity-signingkey` is not an accepted alias for `identity-signing-key`.
+The production configuration preflight rejects a name mismatch before provisioning.
+Raw secret values are not accepted.
 HTTPS configuration locators are normalized to canonical `secret://` plan references.
 Set `RuntimeBuilder:InstancePlans:DefaultEgress=unrestricted` explicitly for this Azure
 profile; the default remains `restricted`, which this profile cannot realize. The admitted

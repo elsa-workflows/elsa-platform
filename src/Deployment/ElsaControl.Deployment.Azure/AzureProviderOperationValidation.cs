@@ -539,7 +539,7 @@ public static class AzureProviderOperationValidation
                 }
             }
             if (!IsSafeSecretReference(pair.Value) ||
-                IsAzureManagedSqlReferenceForWrongName(pair.Key, pair.Value))
+                !IsSecretReferenceBoundToKey(pair.Key, pair.Value))
                 errors.Add("secretReferences.value.invalid");
         }
     }
@@ -556,7 +556,7 @@ public static class AzureProviderOperationValidation
             if (string.IsNullOrWhiteSpace(pair.Key) || pair.Key.Length > 256 || pair.Key.Any(char.IsControl) ||
                 !string.Equals(pair.Key, pair.Key.Trim().ToLowerInvariant(), StringComparison.Ordinal) ||
                 !keys.Add(pair.Key) || !IsSafeSecretReference(pair.Value) ||
-                IsAzureManagedSqlReferenceForWrongName(pair.Key, pair.Value))
+                !IsSecretReferenceBoundToKey(pair.Key, pair.Value))
                 return false;
             try
             {
@@ -571,9 +571,34 @@ public static class AzureProviderOperationValidation
         return true;
     }
 
-    private static bool IsAzureManagedSqlReferenceForWrongName(string name, string reference) =>
-        string.Equals(reference, AzureManagedSecretReferences.SqlConnection, StringComparison.Ordinal) &&
-        !string.Equals(name, AzureManagedSecretReferences.DatabaseConnectionStringName, StringComparison.Ordinal);
+    /// <summary>
+    /// Checks that an Azure Key Vault locator names the provider-governed secret for its
+    /// logical slot. Opaque references remain valid for other providers; the managed-identity
+    /// resolver and named-reference preflight require a strict Key Vault locator before this
+    /// check is reached. The provider-owned SQL instruction is valid only for its fixed slot.
+    /// </summary>
+    internal static bool IsSecretReferenceBoundToKey(string key, string reference)
+    {
+        if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(reference))
+            return false;
+
+        if (AzureManagedSecretReferences.IsSqlConnection(key, reference))
+            return true;
+        if (string.Equals(reference, AzureManagedSecretReferences.SqlConnection, StringComparison.Ordinal))
+            return false;
+
+        if (!AzureKeyVaultSecretLocator.TryParsePlanReference(reference, out var locator))
+            return true;
+
+        try
+        {
+            return locator is not null && string.Equals(locator.Name, MapSecretName(key), StringComparison.OrdinalIgnoreCase);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
 
     public static bool IsSafePackageVersion(string? value) =>
         value is { Length: > 0 and <= 128 } &&

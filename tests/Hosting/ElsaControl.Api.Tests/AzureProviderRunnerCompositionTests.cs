@@ -145,6 +145,27 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
     }
 
     [Fact]
+    public void Enabled_worker_rejects_a_key_vault_source_name_that_does_not_match_the_governed_slot_before_composition()
+    {
+        var services = new ServiceCollection();
+
+        var exception = Assert.Throws<InvalidOperationException>(() => AzureProviderRunnerComposition.AddRunner(services,
+            Configuration(new Dictionary<string, string?>
+            {
+                ["Deployment:AzureProvider:WorkerEnabled"] = "true",
+                ["Deployment:AzureProvider:Secrets:0:Name"] = "database:connectionstring",
+                ["Deployment:AzureProvider:Secrets:0:Reference"] = KeyVaultReference("sql-connection"),
+                ["Deployment:AzureProvider:Secrets:1:Name"] = "identity:signingkey",
+                ["Deployment:AzureProvider:Secrets:1:Reference"] = KeyVaultReference("identity-signingkey"),
+                ["Deployment:AzureProvider:Secrets:2:Name"] = "admin:password",
+                ["Deployment:AzureProvider:Secrets:2:Reference"] = KeyVaultReference("admin-password")
+            })));
+
+        Assert.Equal("Azure provider named secret references are incomplete or unsafe.", exception.Message);
+        Assert.Empty(services);
+    }
+
+    [Fact]
     public void Named_secret_references_reject_the_provider_owned_sql_reference_for_another_slot()
     {
         var exception = Assert.Throws<InvalidOperationException>(() => ConfiguredAzureSecretResolver.ReadNamedReferences(

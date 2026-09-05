@@ -51,6 +51,11 @@ before entering plans and durable operations; that exact canonical form is also
 accepted in configuration. HTTPS/canonical aliases of the same locator cannot be
 assigned to two names. The managed resolver requires the exact persisted canonical
 reference, and converts it to the fixed HTTPS vault origin only when reading the secret.
+The external source secret name must match the slot's governed Azure name, using the
+same case-insensitive binding at startup and during durable authorization. In particular,
+`identity:signingkey` binds `identity-signing-key`, `admin:password` binds `admin-password`,
+and an external `database:connectionstring` binds `sql-connection`. A mismatched source
+name fails startup before provisioning; it is not silently remapped or authorized later.
 An enabled production worker rejects configured `Value` entries and disposable
 proof mode. Its managed identity resolves values only after checking the durable
 workspace, organization, instance, assignment and running-operation authorization.

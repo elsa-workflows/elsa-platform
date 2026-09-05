@@ -276,6 +276,27 @@ public sealed class AzureProviderOperationValidationTests
             AzureProviderOperationValidation.Validate(ValidRequest() with { SecretReferences = references }));
     }
 
+    [Theory]
+    [InlineData("identity:signingkey", "secret://source.vault.azure.net/secrets/identity-signingkey/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", false)]
+    [InlineData("identity:signingkey", "secret://source.vault.azure.net/secrets/IDENTITY-SIGNING-KEY/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", true)]
+    [InlineData("database:connectionstring", AzureManagedSecretReferences.SqlConnection, true)]
+    public void Secret_reference_collection_requires_the_governed_source_name(
+        string name,
+        string reference,
+        bool expected)
+    {
+        Assert.Equal(expected, AzureProviderOperationValidation.IsSafeSecretReferences(
+            new Dictionary<string, string> { [name] = reference }));
+    }
+
+    [Fact]
+    public void Secret_reference_binding_rejects_a_null_name_without_throwing()
+    {
+        Assert.False(AzureProviderOperationValidation.IsSecretReferenceBoundToKey(
+            null!,
+            "secret://source.vault.azure.net/secrets/sql-connection/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+    }
+
     [Fact]
     public void Rejects_newline_terminated_codes_and_worker_ids()
     {

@@ -394,17 +394,8 @@ public sealed class ManagedIdentityAzureSecretResolver : IAzureSecretResolver
         if (providerOwnedSqlConnection)
             return HasAuthorizedSqlResources(assignment);
 
-        string expectedName;
-        try
-        {
-            expectedName = AzureProviderOperationValidation.MapSecretName(request.Name);
-        }
-        catch (ArgumentException)
-        {
-            return false;
-        }
-
-        return locator is not null && string.Equals(locator.Name, expectedName, StringComparison.OrdinalIgnoreCase);
+        return locator is not null &&
+            AzureProviderOperationValidation.IsSecretReferenceBoundToKey(request.Name, request.Reference);
     }
 
     private static bool HasAuthorizedSqlResources(AzureProviderResourceAssignment assignment)
