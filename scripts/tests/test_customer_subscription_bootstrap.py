@@ -2,9 +2,11 @@
 """Compile and inspect the exact subscription bootstrap resource boundary."""
 
 import json
+import re
 import shutil
 import subprocess
 import unittest
+import unicodedata
 from pathlib import Path
 
 
@@ -87,6 +89,11 @@ class CustomerSubscriptionBootstrapTests(unittest.TestCase):
         role = next(resource for resource in resources if resource["type"] == "Microsoft.Authorization/roleDefinitions")
         properties = role["properties"]
         self.assertEqual("CustomRole", properties["type"])
+        self.assertEqual("[variables('metadataRoleName')]", properties["roleName"])
+        self.assertEqual(
+            "Elsa Control Registry Deployment Metadata Operator",
+            self.registry_authority_template["variables"]["metadataRoleName"],
+        )
         self.assertCountEqual(
             properties["permissions"][0]["actions"],
             [
@@ -133,10 +140,37 @@ class CustomerSubscriptionBootstrapTests(unittest.TestCase):
         self.assertIn("@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals", source)
         self.assertIn("ActionMatches{'Microsoft.Authorization/roleAssignments/delete'}", source)
         self.assertIn("@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals", source)
-        self.assertNotIn("acrPull", source.lower())
         assignment_source = (REGISTRY_AUTHORITY.parent / "registry-authority-assignments.bicep").read_text()
         self.assertIn("conditionVersion: '2.0'", assignment_source)
-        self.assertNotIn("condition", (ROOT / "infra/azure-production/acr-pull-role.bicep").read_text().lower())
+        workload_source = (ROOT / "infra/azure-production/acr-pull-role.bicep").read_text().lower()
+        self.assertNotIn("condition", workload_source)
+        self.assertNotIn("registryroleadministrationcondition", workload_source)
+
+        runtime_source = (ROOT / "src/Deployment/ElsaControl.Deployment.Azure/AzureProviderRegistryAuthority.cs").read_text()
+        match = re.search(r"RegistryRoleAdministrationCondition\s*=\s*\"(?P<condition>[^\"]*)\";", runtime_source)
+        self.assertIsNotNone(match)
+        runtime_condition = match.group("condition")
+        compiled_condition = self.registry_authority_template["variables"]["registryRoleAdministrationCondition"]
+        self.assertEqual(normalize_condition(runtime_condition), normalize_condition(compiled_condition))
+
+
+def normalize_condition(value):
+    """Match the runtime's safe comparison: formatting outside literals may differ."""
+    if not value or not value.strip():
+        return ""
+    normalized = []
+    in_literal = False
+    for character in value:
+        if unicodedata.category(character) == "Cc" and character not in "\r\n":
+            return ""
+        if character == "'":
+            in_literal = not in_literal
+            normalized.append(character)
+        elif in_literal and character in "\r\n":
+            return ""
+        elif in_literal or not character.isspace():
+            normalized.append(character if in_literal else character.lower())
+    return "" if in_literal else "".join(normalized)
 
 
 if __name__ == "__main__":

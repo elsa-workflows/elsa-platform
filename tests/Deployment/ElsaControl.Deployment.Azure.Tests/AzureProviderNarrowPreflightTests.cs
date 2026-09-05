@@ -54,6 +54,71 @@ public sealed class AzureProviderNarrowPreflightTests : IDisposable
         Assert.Equal("azure.preflight.rbac-insufficient", result.Code);
     }
 
+    [Theory]
+    [InlineData("definition-id", "azure.preflight.rbac-insufficient")]
+    [InlineData("definition-scope", "azure.preflight.rbac-insufficient")]
+    [InlineData("metadata-role-id", "azure.preflight.rbac-insufficient")]
+    [InlineData("metadata-principal", "azure.preflight.rbac-insufficient")]
+    [InlineData("metadata-scope", "azure.preflight.rbac-insufficient")]
+    [InlineData("metadata-missing", "azure.preflight.rbac-insufficient")]
+    [InlineData("metadata-duplicate", "azure.preflight.observation-invalid")]
+    [InlineData("not-actions", "azure.preflight.rbac-insufficient")]
+    [InlineData("data-actions", "azure.preflight.rbac-insufficient")]
+    public async Task Narrow_profile_rejects_mismatched_pinned_authority(string mismatch, string expectedCode)
+    {
+        var process = new FakeCommandProcess();
+        switch (mismatch)
+        {
+            case "definition-id":
+                process.RoleDefinitionOutput = RoleDefinitionJson(roleDefinitionId: WrongSubscriptionRoleDefinitionId);
+                break;
+            case "definition-scope":
+                process.RoleDefinitionOutput = RoleDefinitionJson(assignableScope: OtherRegistryGroupScope);
+                break;
+            case "metadata-role-id":
+                process.MetadataAssignmentOutput = AssignmentJson(
+                    RegistryGroupAssignmentId,
+                    RegistryGroupScope,
+                    WrongSubscriptionRoleDefinitionId);
+                break;
+            case "metadata-principal":
+                process.MetadataAssignmentOutput = AssignmentJson(
+                    RegistryGroupAssignmentId,
+                    RegistryGroupScope,
+                    RoleDefinitionId,
+                    principalId: OtherPrincipalId);
+                break;
+            case "metadata-scope":
+                process.MetadataAssignmentOutput = AssignmentJson(
+                    RegistryGroupAssignmentId,
+                    OtherRegistryGroupScope,
+                    RoleDefinitionId);
+                break;
+            case "metadata-missing":
+                process.MetadataAssignmentOutput = "[]";
+                break;
+            case "metadata-duplicate":
+                process.MetadataAssignmentOutput = DuplicateAssignmentJson(
+                    RegistryGroupAssignmentId,
+                    RegistryGroupScope,
+                    RoleDefinitionId);
+                break;
+            case "not-actions":
+                process.RoleDefinitionOutput = RoleDefinitionJson(notAction: true);
+                break;
+            case "data-actions":
+                process.RoleDefinitionOutput = RoleDefinitionJson(dataAction: true);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(mismatch));
+        }
+
+        var result = await Preflight(process).ValidateAsync();
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(expectedCode, result.Code);
+    }
+
     [Fact]
     public async Task Narrow_profile_rejects_a_mismatched_delegation_condition()
     {
@@ -115,6 +180,34 @@ public sealed class AzureProviderNarrowPreflightTests : IDisposable
         Assert.DoesNotContain(process.Calls, arguments => arguments is ["role", "assignment", "list", ..] && arguments.Contains("Contributor"));
     }
 
+    [Theory]
+    [InlineData("unmatched-quote", "azure.preflight.rbac-insufficient")]
+    [InlineData("control-character", "azure.preflight.observation-invalid")]
+    public async Task Narrow_profile_rejects_malformed_delegation_conditions(string variant, string expectedCode)
+    {
+        var condition = AzureProviderRegistryAuthority.RegistryRoleAdministrationCondition;
+        condition = variant switch
+        {
+            "unmatched-quote" => condition + "'",
+            "control-character" => condition + "\0",
+            _ => throw new ArgumentOutOfRangeException(nameof(variant))
+        };
+        var process = new FakeCommandProcess
+        {
+            RegistryAssignmentOutput = AssignmentJson(
+                RegistryAssignmentId,
+                RegistryScope,
+                AzureProviderRegistryAuthority.RbacAdministratorRoleDefinitionId,
+                AzureProviderRegistryAuthority.RegistryRoleAdministrationConditionVersion,
+                condition)
+        };
+
+        var result = await Preflight(process).ValidateAsync();
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(expectedCode, result.Code);
+    }
+
     private AzureProviderAuthorityPreflight Preflight(FakeCommandProcess process) =>
         new(Options(), Scope(), process);
 
@@ -150,38 +243,52 @@ public sealed class AzureProviderNarrowPreflightTests : IDisposable
     private const string RegistryAssignmentId = RegistryScope + "/providers/Microsoft.Authorization/roleAssignments/cccccccc-cccc-cccc-cccc-cccccccccccc";
     private const string RegistryGroupScope = "/subscriptions/22222222-2222-2222-2222-222222222222/resourceGroups/registry-rg";
     private const string RegistryScope = RegistryGroupScope + "/providers/Microsoft.ContainerRegistry/registries/runtimeimages";
+    private const string OtherRegistryGroupScope = "/subscriptions/22222222-2222-2222-2222-222222222222/resourceGroups/other-registry-rg";
+    private const string WrongSubscriptionRoleDefinitionId = "/subscriptions/44444444-4444-4444-4444-444444444444/providers/Microsoft.Authorization/roleDefinitions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    private const string OtherPrincipalId = "44444444-4444-4444-4444-444444444444";
 
-    private static string RoleDefinitionJson(bool extraAction = false)
+    private static string RoleDefinitionJson(
+        bool extraAction = false,
+        string? roleDefinitionId = null,
+        string? assignableScope = null,
+        bool notAction = false,
+        bool dataAction = false)
     {
         var actions = AzureProviderRegistryAuthority.NarrowMetadataActions.ToList();
         if (extraAction)
             actions.Add("Microsoft.Resources/resourceGroups/delete");
         return JsonSerializer.Serialize(new
         {
-            id = RoleDefinitionId,
+            id = roleDefinitionId ?? RoleDefinitionId,
             type = "CustomRole",
-            assignableScopes = new[] { RegistryGroupScope },
+            assignableScopes = new[] { assignableScope ?? RegistryGroupScope },
             permissions = new[]
             {
                 new
                 {
                     actions,
-                    notActions = Array.Empty<string>(),
-                    dataActions = Array.Empty<string>(),
+                    notActions = notAction ? ["Microsoft.Resources/resourceGroups/delete"] : Array.Empty<string>(),
+                    dataActions = dataAction ? ["Microsoft.ContainerRegistry/registries/read"] : Array.Empty<string>(),
                     notDataActions = Array.Empty<string>()
                 }
             }
         });
     }
 
-    private static string AssignmentJson(string id, string scope, string roleDefinitionId, string? conditionVersion = null, string? condition = null) =>
+    private static string AssignmentJson(
+        string id,
+        string scope,
+        string roleDefinitionId,
+        string? conditionVersion = null,
+        string? condition = null,
+        string? principalId = null) =>
         JsonSerializer.Serialize(new[]
         {
             new
             {
                 id,
                 scope,
-                principalId = PrincipalId,
+                principalId = principalId ?? PrincipalId,
                 principalType = "ServicePrincipal",
                 roleDefinitionId = roleDefinitionId.Contains("/providers/Microsoft.Authorization/roleDefinitions/", StringComparison.OrdinalIgnoreCase)
                     ? roleDefinitionId
@@ -190,6 +297,13 @@ public sealed class AzureProviderNarrowPreflightTests : IDisposable
                 conditionVersion
             }
         });
+
+    private static string DuplicateAssignmentJson(string id, string scope, string roleDefinitionId)
+    {
+        using var document = JsonDocument.Parse(AssignmentJson(id, scope, roleDefinitionId));
+        var item = document.RootElement[0].GetRawText();
+        return $"[{item},{item}]";
+    }
 
     public void Dispose()
     {
@@ -201,8 +315,12 @@ public sealed class AzureProviderNarrowPreflightTests : IDisposable
     {
         public List<string[]> Calls { get; } = [];
         public bool FailRoleDefinitionObservation { get; init; }
-        public string RoleDefinitionOutput { get; init; } = RoleDefinitionJson();
-        public string RegistryAssignmentOutput { get; init; } = AssignmentJson(
+        public string RoleDefinitionOutput { get; set; } = RoleDefinitionJson();
+        public string MetadataAssignmentOutput { get; set; } = AssignmentJson(
+            RegistryGroupAssignmentId,
+            RegistryGroupScope,
+            RoleDefinitionId);
+        public string RegistryAssignmentOutput { get; set; } = AssignmentJson(
             RegistryAssignmentId,
             RegistryScope,
             AzureProviderRegistryAuthority.RbacAdministratorRoleDefinitionId,
@@ -227,7 +345,7 @@ public sealed class AzureProviderNarrowPreflightTests : IDisposable
                 "group" => "true",
                 "rest" => RoleDefinitionOutput,
                 "role" when arguments.Contains(RegistryScope) => RegistryAssignmentOutput,
-                "role" when arguments.Contains(RegistryGroupScope) => AssignmentJson(RegistryGroupAssignmentId, RegistryGroupScope, RoleDefinitionId),
+                "role" when arguments.Contains(RegistryGroupScope) => MetadataAssignmentOutput,
                 "role" => "[\"/subscriptions/11111111-1111-1111-1111-111111111111/providers/Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c\",\"/subscriptions/11111111-1111-1111-1111-111111111111/providers/Microsoft.Authorization/roleDefinitions/f58310d9-a9f6-439a-9e8d-f62e7b41a168\"]",
                 _ => string.Empty
             };

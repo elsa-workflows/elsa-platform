@@ -14,7 +14,7 @@ param registryName string
 @description('Object ID of the customer-workload provisioner user-assigned identity.')
 param provisionerPrincipalId string
 
-var metadataRoleName = 'Elsa Control Registry Deployment Metadata Reader'
+var metadataRoleName = 'Elsa Control Registry Deployment Metadata Operator'
 var metadataRoleDefinitionGuid = guid(subscription().id, 'elsa-control-registry-deployment-metadata-v1')
 var rbacAdministratorRoleDefinitionId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f58310d9-a9f6-439a-9e8d-f62e7b41a168')
 var registryRoleAdministrationCondition = '''

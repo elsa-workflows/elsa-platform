@@ -275,7 +275,7 @@ public sealed class AzureProviderAuthorityPreflight : IAzureProviderAuthorityPre
     private async Task<PreflightRoleDefinition?> RunRoleDefinitionObservationAsync(CancellationToken cancellationToken)
     {
         var roleDefinitionId = AzureProviderRegistryAuthority.RoleDefinitionResourceId(_options.RegistryDeploymentMetadataRoleDefinitionId!);
-        var url = $"https://management.azure.com{substituteRegistryRoleDefinitionPath(roleDefinitionId)}?api-version=2022-04-01";
+        var url = $"https://management.azure.com/subscriptions/{_scope.RegistrySubscriptionId}/resourceGroups/{_scope.RegistryResourceGroupName}/providers/Microsoft.Authorization/roleDefinitions/{roleDefinitionId}?api-version=2022-04-01";
         var result = await _process.ExecuteAsync(
             Request(["rest", "--method", "get", "--url", url,
                 "--query", "{id:id,type:properties.type,permissions:properties.permissions,assignableScopes:properties.assignableScopes}",
@@ -284,9 +284,6 @@ public sealed class AzureProviderAuthorityPreflight : IAzureProviderAuthorityPre
             cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         return result.Succeeded ? result.Value : null;
-
-        string substituteRegistryRoleDefinitionPath(string id) =>
-            $"/subscriptions/{_scope.RegistrySubscriptionId}/resourceGroups/{_scope.RegistryResourceGroupName}/providers/Microsoft.Authorization/roleDefinitions/{id}";
     }
 
     private AzureCommandProcessRequest Request(IReadOnlyList<string> arguments) =>
