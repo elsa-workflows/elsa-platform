@@ -28,13 +28,11 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropColumn(
-                name: "PreviewManifestDigest",
-                table: "ElsaInstances");
-
-            migrationBuilder.DropColumn(
-                name: "PreviewManifestDigest",
-                table: "ElsaInstanceIntentRevisions");
+            // SQLite 3.35+ supports native DROP COLUMN. Using it here keeps
+            // native database triggers intact; the provider's table-rebuild
+            // fallback can otherwise invalidate triggers referencing ElsaInstances.
+            migrationBuilder.Sql("ALTER TABLE ElsaInstances DROP COLUMN PreviewManifestDigest;");
+            migrationBuilder.Sql("ALTER TABLE ElsaInstanceIntentRevisions DROP COLUMN PreviewManifestDigest;");
         }
     }
 }
