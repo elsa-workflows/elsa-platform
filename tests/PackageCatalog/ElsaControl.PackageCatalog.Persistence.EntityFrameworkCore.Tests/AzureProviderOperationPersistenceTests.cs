@@ -108,6 +108,78 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
         Assert.Null(active.DeletedAt);
     }
 
+    [Fact]
+    public async Task Failed_step_diagnostics_round_trip_through_checkpoint_and_finalization()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var organizationId = Guid.NewGuid();
+        var instanceId = Guid.NewGuid();
+        AzureProviderOperation operation;
+        AzureProviderOperation checkpointed;
+        var expectedCodes = new[]
+        {
+            "azure.step.acr-pull.failed",
+            "azure.step.acr-pull.process.non-zero-exit"
+        };
+
+        using (var db = CreateContext())
+        {
+            var store = new AzureProviderOperationStore(db);
+            var assignment = await Assignment(store, organizationId, instanceId, now);
+            operation = await store.CreateOrGetAsync(Request() with
+            {
+                TargetKey = "diagnostic-round-trip",
+                IdempotencyKey = "diagnostic-round-trip",
+                OrganizationId = organizationId,
+                InstanceId = instanceId,
+                LifecycleAction = ElsaInstanceOperationAction.Reconcile,
+                ProviderAssignmentId = assignment.Id
+            }, now);
+            var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+                _workspaceId, operation.Id, "worker", "lease", TimeSpan.FromMinutes(1), now, operation.Version));
+
+            checkpointed = Assert.IsType<AzureProviderOperation>(await store.CheckpointAsync(
+                _workspaceId,
+                operation.Id,
+                "lease",
+                new(
+                    AzureProviderOperationPhase.FoundationSubmitted,
+                    expectedCodes[0],
+                    "The provider step failed.",
+                    new(ResourceGroupName: assignment.ResourceGroupName),
+                    null,
+                    AzureProviderHealth.Unknown,
+                    [
+                        new(expectedCodes[0], "untrusted step details"),
+                        new(expectedCodes[1], "untrusted process output")
+                    ]),
+                now,
+                claimed.Version));
+
+            var finalized = Assert.IsType<AzureProviderOperation>(await store.FinalizeAsync(
+                _workspaceId,
+                operation.Id,
+                "lease",
+                AzureProviderOperationStatus.Failed,
+                "azure.step.failed",
+                now.AddSeconds(1),
+                checkpointed.Version));
+            Assert.Equal(AzureProviderOperationStatus.Failed, finalized.Status);
+        }
+
+        using (var reloadedDb = CreateContext())
+        {
+            var reloadedStore = new AzureProviderOperationStore(reloadedDb);
+            var persisted = Assert.IsType<AzureProviderOperation>(await reloadedStore.GetAsync(_workspaceId, operation.Id));
+
+            Assert.Equal(AzureProviderOperationStatus.Failed, persisted.Status);
+            Assert.Equal(expectedCodes, persisted.Diagnostics.Select(diagnostic => diagnostic.Code));
+            Assert.All(persisted.Diagnostics, diagnostic => Assert.Equal(diagnostic.Code, diagnostic.Message));
+            Assert.DoesNotContain(persisted.Diagnostics, diagnostic => diagnostic.Message.Contains("untrusted", StringComparison.OrdinalIgnoreCase));
+            Assert.DoesNotContain(persisted.Diagnostics, diagnostic => diagnostic.Message.Contains("password", StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
     [Theory]
     [InlineData("organization")]
     [InlineData("instance")]

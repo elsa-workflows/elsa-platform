@@ -1,19 +1,12 @@
 namespace ElsaControl.Deployment.Azure;
 
 /// <summary>
-/// The only provider diagnostics that may cross the runner boundary.  The runner owns the
-/// allowlist because an <see cref="IAzureProviderRunner"/> can be supplied by an adapter or a
+/// The only provider diagnostics that may cross the runner boundary.  This shared component owns
+/// the allowlist because an <see cref="IAzureProviderRunner"/> can be supplied by an adapter or a
 /// test; a syntactically valid code is not evidence that it is safe to persist.
 /// </summary>
 internal static class AzureProviderSafeDiagnostics
 {
-    private static readonly HashSet<string> KnownCodes = new(StringComparer.Ordinal);
-
-    static AzureProviderSafeDiagnostics()
-    {
-        KnownCodes.UnionWith(CreateKnownCodes());
-    }
-
     public static IReadOnlyList<AzureProviderDiagnostic> Failure(
         AzureProviderRunnerStep step,
         AzureProviderRunnerOutcome outcome,
@@ -22,7 +15,7 @@ internal static class AzureProviderSafeDiagnostics
     {
         var diagnostics = new List<AzureProviderDiagnostic>(capacity: 3);
         Add(diagnostics, StepOutcomeCode(step, outcome));
-        if (PolicyCodes.Contains(code))
+        if (Array.IndexOf(PolicyCodes, code) >= 0)
             Add(diagnostics, code);
         if (processFailureKind is { } failureKind)
             Add(diagnostics, ProcessFailureCode(step, failureKind));
@@ -89,7 +82,7 @@ internal static class AzureProviderSafeDiagnostics
     private static void Add(List<AzureProviderDiagnostic> diagnostics, string code) =>
         diagnostics.Add(new AzureProviderDiagnostic(code, code));
 
-    private static readonly HashSet<string> PolicyCodes =
+    private static readonly string[] PolicyCodes =
     [
         "azure.acr.foundation-missing",
         "azure.acr.output-invalid",
@@ -153,6 +146,8 @@ internal static class AzureProviderSafeDiagnostics
         "azure.workload.foundation-missing",
         "azure.workload.output-invalid"
     ];
+
+    private static readonly HashSet<string> KnownCodes = CreateKnownCodes();
 
     private static HashSet<string> CreateKnownCodes()
     {
