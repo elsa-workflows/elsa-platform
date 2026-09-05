@@ -323,7 +323,7 @@ builder.Services.AddSingleton(services => new ManagedLifecycleOperationalHealthE
 builder.Services.Configure<ElsaInstanceLifecycleWorkerOptions>(builder.Configuration.GetSection(ElsaInstanceLifecycleWorkerOptions.ConfigurationSection));
 builder.Services.AddScoped<ICatalogStore, EfCoreCatalogStore>();
 builder.Services.AddScoped<IGovernedReleaseCatalogStore, GovernedReleaseCatalogStore>();
-builder.Services.AddScoped<IReleaseManifestSignatureVerifier, FailClosedReleaseManifestSignatureVerifier>();
+ReleaseManifestVerifierComposition.AddVerifier(builder.Services, builder.Configuration);
 builder.Services.AddScoped<ReleaseManifestAdmissionService>();
 builder.Services.AddScoped<GovernedReleaseCatalogIngestionService>();
 builder.Services.AddScoped<IReleaseCatalogIngestionService>(services =>
