@@ -93,6 +93,16 @@ class AzureApiDeployWorkflowTests(unittest.TestCase):
         self.assertNotIn("docker push", promote_script)
         self.assertIn('az webapp', promote_script)
 
+        job_env_start = self.source.index("    env:\n", self.source.index("    permissions:"))
+        job_env_end = self.source.index("    steps:\n", job_env_start)
+        job_env = self.source[job_env_start:job_env_end]
+        self.assertNotIn("ADMIN_API_KEY:", job_env)
+        self.assertNotIn("BUILDER_CLIENT_API_KEY:", job_env)
+        self.assertNotIn("SQL_ADMINISTRATOR_PASSWORD:", job_env)
+
+        self.assertIn("env.DEPLOY_MODE == 'infra' && secrets.ADMIN_API_KEY", self.source)
+        self.assertIn("env.DEPLOY_MODE == 'infra' && secrets.BUILDER_CLIENT_API_KEY", self.source)
+
     def test_health_identity_separates_candidate_source_from_promotion_run(self) -> None:
         self.assertIn('VALIDATED_CANDIDATE_SOURCE_SHA: ${{ steps.candidate-authority.outputs.candidate_source_sha }}', self.source)
         self.assertIn('expected_image_id="$VALIDATED_CANDIDATE_SOURCE_SHA"', self.source)

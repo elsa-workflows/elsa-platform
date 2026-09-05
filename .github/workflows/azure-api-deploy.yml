@@ -56,10 +56,6 @@ jobs:
       AZURE_CONTAINER_REGISTRY_ENDPOINT: ${{ vars.AZURE_CONTAINER_REGISTRY_ENDPOINT }}
       CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
       EXPECTED_CANDIDATE_DIGEST: ${{ inputs.candidate_digest }}
-      SQL_ADMINISTRATOR_LOGIN: ${{ vars.SQL_ADMINISTRATOR_LOGIN }}
-      ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
-      BUILDER_CLIENT_API_KEY: ${{ secrets.BUILDER_CLIENT_API_KEY }}
-      SQL_ADMINISTRATOR_PASSWORD: ${{ secrets.SQL_ADMINISTRATOR_PASSWORD }}
       DOTNET_NOLOGO: true
       DOTNET_CLI_TELEMETRY_OPTOUT: true
     steps:
@@ -80,6 +76,10 @@ jobs:
 
       - name: Check deployment configuration
         id: deployment-config
+        env:
+          SQL_ADMINISTRATOR_LOGIN: ${{ env.DEPLOY_MODE == 'infra' && vars.SQL_ADMINISTRATOR_LOGIN || '' }}
+          ADMIN_API_KEY: ${{ env.DEPLOY_MODE == 'infra' && secrets.ADMIN_API_KEY || '' }}
+          SQL_ADMINISTRATOR_PASSWORD: ${{ env.DEPLOY_MODE == 'infra' && secrets.SQL_ADMINISTRATOR_PASSWORD || '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -527,6 +527,10 @@ jobs:
         if: ${{ success() && steps.deployment-config.outputs.deploy_configured == 'true' && env.DEPLOY_MODE != 'build' }}
         env:
           VALIDATED_CANDIDATE_IMAGE: ${{ steps.candidate-authority.outputs.candidate_image }}
+          SQL_ADMINISTRATOR_LOGIN: ${{ env.DEPLOY_MODE == 'infra' && vars.SQL_ADMINISTRATOR_LOGIN || '' }}
+          ADMIN_API_KEY: ${{ env.DEPLOY_MODE == 'infra' && secrets.ADMIN_API_KEY || '' }}
+          BUILDER_CLIENT_API_KEY: ${{ env.DEPLOY_MODE == 'infra' && secrets.BUILDER_CLIENT_API_KEY || '' }}
+          SQL_ADMINISTRATOR_PASSWORD: ${{ env.DEPLOY_MODE == 'infra' && secrets.SQL_ADMINISTRATOR_PASSWORD || '' }}
         shell: bash
         run: |
           set -euo pipefail
