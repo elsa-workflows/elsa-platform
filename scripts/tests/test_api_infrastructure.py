@@ -229,6 +229,8 @@ class ApiInfrastructureTests(unittest.TestCase):
         """Run regeneration in a disposable project with a fake azd/az pair."""
 
         temporary = Path(tempfile.mkdtemp(prefix="api-infra-regeneration-"))
+        self.addCleanup(shutil.rmtree, temporary, ignore_errors=True)
+        (temporary / "temp").mkdir()
         (temporary / "dev").mkdir()
         (temporary / "infra").mkdir()
         shutil.copy2(REGENERATE_INFRA, temporary / "dev" / "regenerate-infra.sh")
@@ -261,6 +263,7 @@ class ApiInfrastructureTests(unittest.TestCase):
             command.chmod(0o755)
 
         environment = os.environ.copy()
+        environment["TMPDIR"] = str(temporary / "temp")
         environment["FAKE_AZD_MODE"] = mode
         environment["PATH"] = f"{fake_bin}{os.pathsep}{environment['PATH']}"
         result = subprocess.run(
@@ -282,7 +285,6 @@ class ApiInfrastructureTests(unittest.TestCase):
 
     def test_regeneration_success_restores_all_manual_authority_directories(self) -> None:
         result, project = self.run_regeneration_fixture("success")
-        self.addCleanup(shutil.rmtree, project, ignore_errors=True)
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assert_manual_directories(self, project)
@@ -290,14 +292,12 @@ class ApiInfrastructureTests(unittest.TestCase):
 
     def test_regeneration_failure_restores_all_manual_authority_directories(self) -> None:
         result, project = self.run_regeneration_fixture("failure")
-        self.addCleanup(shutil.rmtree, project, ignore_errors=True)
 
         self.assertNotEqual(result.returncode, 0)
         self.assert_manual_directories(self, project)
 
     def test_regeneration_collision_fails_without_overwriting_manual_authority(self) -> None:
         result, project = self.run_regeneration_fixture("collision")
-        self.addCleanup(shutil.rmtree, project, ignore_errors=True)
 
         self.assertNotEqual(result.returncode, 0)
         for relative_path in ("azure-workload-proof", "azure-customer-subscription"):
