@@ -373,9 +373,9 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         var temporaryDirectory = string.Empty;
         var scriptPath = string.Empty;
         var firewallCleaned = false;
+        EnsureMutationAuthority(command);
         try
         {
-            EnsureMutationAuthority(command);
             var firewall = await ExecuteAzAsync<AzureCommandNoOutput>(command,
                 ["sql", "server", "firewall-rule", "create", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
                     "--server", SqlServerName(command), "--name", TemporaryFirewallRuleName, "--start-ip-address", _options.SqlBootstrapIp,
@@ -1539,6 +1539,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     private string WorkloadDeploymentName(AzureProviderRunnerCommand command) => $"{DeploymentPrefix}-{command.Plan.WorkloadName}-{command.Plan.Fingerprint[..12]}-workload";
     private string AcrDeploymentName(AzureProviderRunnerCommand command, string principalId) => $"{DeploymentPrefix}-{command.Plan.WorkloadName}-{ShortHash($"{_scope.SubscriptionId}/{ResourceGroupName(command)}/{principalId}/{_scope.RegistrySubscriptionId}/{_scope.RegistryResourceGroupName}/{_scope.RegistryName}")}-acr";
     private string DeploymentPrefix => _options.DisposableProofMode ? "elsa108" : "elsa";
+    // This deterministic name is reserved for provider-owned temporary bootstrap rules;
+    // cleanup is authorized only for the exact assignment resource group.
     private string TemporaryFirewallRuleName => _options.DisposableProofMode ? "elsa108-bootstrap" : "elsa-bootstrap";
     private static string ShortHash(string value) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)))[..12];
     private static string DeploymentId(string subscription, string resourceGroup, string name) => $"/subscriptions/{subscription}/resourceGroups/{resourceGroup}/providers/Microsoft.Resources/deployments/{name}";

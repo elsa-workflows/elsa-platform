@@ -680,6 +680,32 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
 
         Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
         Assert.Equal("azure.step.uncertain", result.Code);
+        Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("create"));
+        Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("delete"));
+        Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("list"));
+        Assert.DoesNotContain(process.Calls, call => call.Contains("--authentication-method"));
+    }
+
+    [Fact]
+    public async Task Sql_bootstrap_preserves_uncertainty_when_failed_firewall_cleanup_is_not_verified()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("-?"), "Microsoft sqlcmd --authentication-method ActiveDirectoryDefault");
+        process.Failure(args => args.Contains("firewall-rule") && args.Contains("create"));
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("delete"));
+        process.Failure(args => args.Contains("firewall-rule") && args.Contains("list"));
+
+        var resources = _fixture.FoundationResources with
+        {
+            RegistryResourceId = _fixture.RegistryId,
+            AcrPullDeploymentId = _fixture.RegistryDeploymentId,
+            AcrPullRoleAssignmentId = _fixture.RegistryRoleAssignmentId
+        };
+        var result = await _fixture.Runner(process).RunAsync(_fixture.Command(AzureProviderRunnerStep.SqlBootstrap, resources));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
+        Assert.Equal("azure.runner.uncertain", result.Code);
+        Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("create"));
         Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("delete"));
         Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("list"));
         Assert.DoesNotContain(process.Calls, call => call.Contains("--authentication-method"));
@@ -712,6 +738,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
 
         Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
         Assert.Equal(expectedCode, result.Code);
+        Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("create"));
         Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("delete"));
         Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("list"));
         Assert.DoesNotContain(process.Calls, call => call.Contains("--authentication-method"));
