@@ -1,0 +1,164 @@
+using ElsaControl.Deployment.Abstractions.Instances;
+using ElsaControl.Deployment.Azure;
+using Xunit;
+
+namespace ElsaControl.Deployment.Azure.Tests;
+
+public sealed class AzureProviderRecoveryObservationContractTests
+{
+    [Fact]
+    public void Natural_key_ignores_polling_time_but_binds_changed_authority_tuple()
+    {
+        var observation = CreateObservation();
+        var unchangedPoll = observation with { ObservedAt = observation.ObservedAt.AddMinutes(5) };
+        var changedAuthority = observation with { ProviderVersion = observation.ProviderVersion + 1 };
+
+        Assert.Equal(observation.ComputeNaturalKey(), unchangedPoll.ComputeNaturalKey());
+        Assert.Equal(
+            observation.ComputeRecordDigest(RecordId),
+            unchangedPoll.ComputeRecordDigest(RecordId));
+        Assert.NotEqual(observation.ComputeNaturalKey(), changedAuthority.ComputeNaturalKey());
+        Assert.NotEqual(
+            observation.ComputeRecordDigest(RecordId),
+            changedAuthority.ComputeRecordDigest(RecordId));
+    }
+
+    [Fact]
+    public void Record_digest_is_bound_to_record_id()
+    {
+        var observation = CreateObservation();
+
+        Assert.NotEqual(
+            observation.ComputeRecordDigest(RecordId),
+            observation.ComputeRecordDigest(Guid.Parse("77777777-7777-7777-7777-777777777777")));
+    }
+
+    [Fact]
+    public void Legacy_phase_ordinals_are_preserved_and_recovery_phases_are_explicitly_ordered()
+    {
+        var legacyPhases = new[]
+        {
+            AzureProviderOperationPhase.Planned,
+            AzureProviderOperationPhase.FoundationSubmitted,
+            AzureProviderOperationPhase.FoundationReady,
+            AzureProviderOperationPhase.WorkloadSubmitted,
+            AzureProviderOperationPhase.WorkloadReady,
+            AzureProviderOperationPhase.HealthVerified,
+            AzureProviderOperationPhase.TrafficPromoted,
+            AzureProviderOperationPhase.CleanupSubmitted,
+            AzureProviderOperationPhase.CleanupVerified
+        };
+
+        Assert.Equal(Enumerable.Range(0, 9), legacyPhases.Select(phase => (int)phase));
+        Assert.True(AzureProviderOperationPhaseOrdering.Compare(
+            AzureProviderOperationPhase.FoundationSubmitted,
+            AzureProviderOperationPhase.FoundationObserved) < 0);
+        Assert.True(AzureProviderOperationPhaseOrdering.Compare(
+            AzureProviderOperationPhase.FoundationObserved,
+            AzureProviderOperationPhase.AcrPullObserved) < 0);
+        Assert.True(AzureProviderOperationPhaseOrdering.Compare(
+            AzureProviderOperationPhase.AcrPullObserved,
+            AzureProviderOperationPhase.SeedSecretsObserved) < 0);
+        Assert.True(AzureProviderOperationPhaseOrdering.Compare(
+            AzureProviderOperationPhase.SeedSecretsObserved,
+            AzureProviderOperationPhase.FoundationReady) < 0);
+    }
+
+    [Fact]
+    public void Checkpoint_validation_rejects_unknown_phase_and_attempted_step()
+    {
+        var checkpoint = new AzureProviderCheckpoint(
+            AzureProviderOperationPhase.FoundationSubmitted,
+            "azure.step.attempted",
+            "The Azure lifecycle step was marked before its remote call.",
+            new(),
+            null,
+            AzureProviderHealth.Unknown,
+            [],
+            AttemptedStep: AzureProviderRunnerStep.Foundation);
+
+        Assert.Throws<ArgumentException>(() => AzureProviderOperationValidation.ValidateCheckpoint(
+            checkpoint with { Phase = (AzureProviderOperationPhase)999 }));
+        Assert.Throws<ArgumentException>(() => AzureProviderOperationValidation.ValidateCheckpoint(
+            checkpoint with { AttemptedStep = (AzureProviderRunnerStep)999 }));
+    }
+
+    [Fact]
+    public void Observation_validation_accepts_confirmed_and_uncertain_shapes_but_rejects_mixed_values()
+    {
+        var confirmed = new AzureProviderRecoveryObservation(
+            AzureProviderRecoveryObservationKind.Confirmed,
+            AzureProviderRunnerStep.Foundation,
+            new(),
+            AzureProviderHealth.Unknown,
+            null,
+            "provider.recovery.foundation-observed",
+            "The retained foundation postcondition was observed.");
+        var uncertain = new AzureProviderRecoveryObservation(
+            AzureProviderRecoveryObservationKind.Unknown,
+            null,
+            new(),
+            AzureProviderHealth.Unknown,
+            null,
+            "provider.recovery.unknown",
+            "The retained provider state remains uncertain.");
+
+        confirmed.Validate();
+        uncertain.Validate();
+        var confirmedWithoutStep = confirmed with { CompletedStep = null };
+        var uncertainWithStep = uncertain with { CompletedStep = AzureProviderRunnerStep.Foundation };
+        var healthyUncertainty = uncertain with { Health = AzureProviderHealth.Healthy };
+        Assert.Throws<ArgumentException>(() => confirmedWithoutStep.Validate());
+        Assert.Throws<ArgumentException>(() => uncertainWithStep.Validate());
+        Assert.Throws<ArgumentException>(() => healthyUncertainty.Validate());
+    }
+
+    [Fact]
+    public void Observation_record_validation_rejects_unknown_phase_or_completed_step()
+    {
+        var observation = CreateObservation();
+
+        var unknownPhase = observation with
+        {
+            ObservedPhase = (AzureProviderOperationPhase)999
+        };
+        var unknownStep = observation with
+        {
+            CompletedStep = (AzureProviderRunnerStep)999
+        };
+        Assert.Throws<ArgumentException>(() => unknownPhase.Validate());
+        Assert.Throws<ArgumentException>(() => unknownStep.Validate());
+    }
+
+    private static readonly Guid RecordId = Guid.Parse("88888888-8888-8888-8888-888888888888");
+
+    private static AzureProviderRecoveryObservationRecord CreateObservation() => new(
+        Guid.Parse("11111111-1111-1111-1111-111111111111"),
+        Guid.Parse("22222222-2222-2222-2222-222222222222"),
+        Guid.Parse("33333333-3333-3333-3333-333333333333"),
+        Guid.Parse("44444444-4444-4444-4444-444444444444"),
+        ElsaInstanceOperationAction.Reconcile,
+        1,
+        3,
+        Guid.Parse("55555555-5555-5555-5555-555555555555"),
+        "operation-identity-1",
+        new string('a', 64),
+        1,
+        7,
+        3,
+        Guid.Parse("66666666-6666-6666-6666-666666666666"),
+        "elsa-instance",
+        new string('b', 64),
+        "plan-1",
+        1,
+        "https://control.example.test/api/workspaces/22222222-2222-2222-2222-222222222222/instances/33333333-3333-3333-3333-333333333333/resolved-plans/plan-1",
+        "sha256:" + new string('c', 64),
+        new string('d', 64),
+        new string('e', 64),
+        AzureProviderRunnerStep.Foundation,
+        AzureProviderOperationPhase.FoundationObserved,
+        AzureProviderHealth.Unknown,
+        new string('f', 64),
+        new string('0', 64),
+        DateTimeOffset.Parse("2026-09-06T08:00:00Z"));
+}
