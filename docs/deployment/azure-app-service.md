@@ -40,7 +40,7 @@ confirm the detected Aspire AppHost.
 
 ## GitHub Actions Deployment
 
-The `Azure Elsa Control API Deploy` workflow is manually dispatched from GitHub Actions.
+The `Azure Control API Deploy` workflow is manually dispatched from GitHub Actions.
 Its existing `deploy_mode: app` path builds the console, builds the API container with
 the console static assets mounted under `/admin`, pushes it to ACR, and updates the
 existing App Service container:
