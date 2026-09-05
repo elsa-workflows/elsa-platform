@@ -258,6 +258,162 @@ public sealed class AzureProviderOperationPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task Cleanup_rehydrates_group_only_checkpoint_before_and_after_delete_finalization()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var organizationId = Guid.NewGuid();
+        var instanceId = Guid.NewGuid();
+        var lifecycleOperationId = Guid.NewGuid();
+        var workloadName = $"e{instanceId:N}"[..16];
+        var operationId = Guid.Empty;
+        var leaseVersion = 0L;
+        var leaseToken = "cleanup-lease";
+        AzureProviderResourceAssignment assignment;
+
+        // Use the real EF store to create the assignment and to persist the exact
+        // checkpoint shape that cleanup observes after inventory has been cleared.
+        using (var db = CreateContext())
+        {
+            var store = new AzureProviderOperationStore(db);
+            assignment = await ((IAzureProviderResourceAssignmentStore)store).CreateOrGetAsync(
+                new(
+                    _workspaceId,
+                    organizationId,
+                    instanceId,
+                    new string('a', 64),
+                    "11111111-1111-1111-1111-111111111111",
+                    "rg-elsa",
+                    workloadName,
+                    "westeurope"),
+                now);
+            var operation = await store.CreateOrGetAsync(Request() with
+            {
+                TargetKey = workloadName,
+                Action = AzureProviderOperationAction.Delete,
+                IdempotencyKey = $"elsa-instance-operation:{lifecycleOperationId:D}:delete",
+                OrganizationId = organizationId,
+                InstanceId = instanceId,
+                LifecycleAction = ElsaInstanceOperationAction.Delete,
+                ProviderAssignmentId = assignment.Id,
+                ProviderScopeFingerprint = new string('a', 64)
+            }, now);
+            operationId = operation.Id;
+            var claimed = Assert.IsType<AzureProviderOperation>(await store.ClaimAsync(
+                _workspaceId, operation.Id, "cleanup-worker", leaseToken, TimeSpan.FromMinutes(1), now));
+            var submitted = Assert.IsType<AzureProviderOperation>(await store.CheckpointAsync(
+                _workspaceId,
+                operation.Id,
+                leaseToken,
+                new(
+                    AzureProviderOperationPhase.CleanupSubmitted,
+                    "cleanup.submitted",
+                    "Submitted.",
+                    new(
+                        ResourceGroupName: assignment.ResourceGroupName,
+                        FoundationDeploymentId: $"/subscriptions/{assignment.SubscriptionId}/resourceGroups/{assignment.ResourceGroupName}/providers/Microsoft.Resources/deployments/foundation"),
+                    null,
+                    AzureProviderHealth.Unknown,
+                    []),
+                now,
+                claimed.Version));
+            var checkpointed = Assert.IsType<AzureProviderOperation>(await store.CheckpointAsync(
+                _workspaceId,
+                operation.Id,
+                leaseToken,
+                new(
+                    AzureProviderOperationPhase.CleanupVerified,
+                    "cleanup.verified",
+                    "Verified.",
+                    new(),
+                    null,
+                    AzureProviderHealth.Unknown,
+                    [],
+                    ReplaceResources: true),
+                now.AddSeconds(1),
+                submitted.Version));
+            leaseVersion = checkpointed.Version;
+        }
+
+        var options = new AzureElsaInstanceProviderOptions
+        {
+            Enabled = true,
+            TemplateFingerprint = new string('b', 64),
+            ProviderScopeFingerprint = new string('a', 64),
+            SubscriptionId = "11111111-1111-1111-1111-111111111111",
+            ResourceGroupNamePrefix = "rg-elsa"
+        };
+        var cleanupRequest = new ElsaInstanceCleanupRequest(
+            _workspaceId,
+            instanceId,
+            lifecycleOperationId,
+            1,
+            null,
+            new ElsaPlacementAssignmentReference(assignment.Id.ToString("D")),
+            null);
+
+        static Task<ElsaInstanceCleanupObservation> ObserveCleanupAsync(
+            AzureProviderOperationStore store,
+            AzureElsaInstanceProviderOptions options,
+            ElsaInstanceCleanupRequest request) =>
+            new AzureElsaInstanceProvider(
+                new AzureProviderOperationService(store), store, store, options: options)
+                .CleanupAsync(request);
+
+        // Rehydrate both assignment and operation through a new context while the
+        // provider operation is still Running after CleanupVerified. This is the
+        // narrow checkpoint/finalization window and must remain deferred, not recovery.
+        using (var beforeFinalizeDb = CreateContext())
+        {
+            var store = new AzureProviderOperationStore(beforeFinalizeDb);
+            var persisted = Assert.IsType<AzureProviderOperation>(await store.GetAsync(_workspaceId, operationId));
+            Assert.Equal(organizationId, persisted.OrganizationId);
+            Assert.Equal(instanceId, persisted.InstanceId);
+            Assert.Equal(assignment.Id, persisted.ProviderAssignmentId);
+            Assert.Equal(AzureProviderOperationAction.Delete, persisted.Action);
+            Assert.Equal(ElsaInstanceOperationAction.Delete, persisted.LifecycleAction);
+            Assert.Equal($"elsa-instance-operation:{lifecycleOperationId:D}:delete", persisted.IdempotencyKey);
+            Assert.Equal(workloadName, persisted.TargetKey);
+            Assert.Equal(new string('a', 64), persisted.ProviderScopeFingerprint);
+            var observation = await ObserveCleanupAsync(store, options, cleanupRequest);
+
+            Assert.Equal(ElsaInstanceCleanupObservationKind.InProgress, observation.Kind);
+            Assert.Equal("deletion.provider-cleanup-pending", observation.DiagnosticCode);
+        }
+
+        using (var finalizeDb = CreateContext())
+        {
+            var store = new AzureProviderOperationStore(finalizeDb);
+            Assert.Equal(
+                AzureProviderOperationStatus.Succeeded,
+                (await store.FinalizeAsync(
+                    _workspaceId,
+                    operationId,
+                    leaseToken,
+                    AzureProviderOperationStatus.Succeeded,
+                    "cleanup.succeeded",
+                    now.AddSeconds(2),
+                    leaseVersion))?.Status);
+        }
+
+        // A second fresh context must see the immutable assignment group retained
+        // by FinalizeAsync and confirm deletion without submitting another provider call.
+        using (var afterFinalizeDb = CreateContext())
+        {
+            var store = new AzureProviderOperationStore(afterFinalizeDb);
+            var afterFinalizeRequest = cleanupRequest with { AttemptNumber = 2 };
+            var observation = await ObserveCleanupAsync(store, options, afterFinalizeRequest);
+
+            Assert.Equal(ElsaInstanceCleanupObservationKind.ConfirmedAbsent, observation.Kind);
+            Assert.Equal("deletion.provider-confirmed-absent", observation.DiagnosticCode);
+            var persistedAssignment = Assert.IsType<AzureProviderResourceAssignment>(await
+                ((IAzureProviderResourceAssignmentStore)store).GetAsync(_workspaceId, assignment.Id));
+            Assert.Equal(AzureProviderAssignmentState.Deleted, persistedAssignment.State);
+            Assert.Equal(assignment.ResourceGroupName, persistedAssignment.ResourceGroupName);
+            Assert.Equal(new AzureProviderResourceReferences(assignment.ResourceGroupName), persistedAssignment.Resources);
+        }
+    }
+
+    [Fact]
     public async Task Commercial_denial_is_authorized_and_held_in_the_same_operation_CAS()
     {
         var now = DateTimeOffset.UtcNow;

@@ -351,7 +351,7 @@ public sealed class AzureElsaInstanceProviderTests
     [Theory]
     [InlineData(false, AzureProviderOperationStatus.Succeeded, false, ElsaInstanceCleanupObservationKind.ConfirmedAbsent)]
     [InlineData(true, AzureProviderOperationStatus.Succeeded, false, ElsaInstanceCleanupObservationKind.ConfirmedAbsent)]
-    [InlineData(true, AzureProviderOperationStatus.Running, false, ElsaInstanceCleanupObservationKind.Unknown)]
+    [InlineData(true, AzureProviderOperationStatus.Running, false, ElsaInstanceCleanupObservationKind.InProgress)]
     [InlineData(true, AzureProviderOperationStatus.Succeeded, true, ElsaInstanceCleanupObservationKind.Unknown)]
     [InlineData(false, AzureProviderOperationStatus.Accepted, false, ElsaInstanceCleanupObservationKind.InProgress)]
     [InlineData(false, AzureProviderOperationStatus.Queued, false, ElsaInstanceCleanupObservationKind.InProgress)]
@@ -366,9 +366,21 @@ public sealed class AzureElsaInstanceProviderTests
     [InlineData(true, AzureProviderOperationStatus.Succeeded, false, ElsaInstanceCleanupObservationKind.Ambiguous, "invalid-retry")]
     [InlineData(true, AzureProviderOperationStatus.Succeeded, false, ElsaInstanceCleanupObservationKind.Ambiguous, "hashed-retry")]
     [InlineData(true, AzureProviderOperationStatus.Succeeded, false, ElsaInstanceCleanupObservationKind.ConfirmedAbsent, "retry")]
+    [InlineData(true, AzureProviderOperationStatus.Running, false, ElsaInstanceCleanupObservationKind.Unknown, null, "missing-group")]
+    [InlineData(true, AzureProviderOperationStatus.Running, false, ElsaInstanceCleanupObservationKind.Unknown, null, "wrong-group")]
+    [InlineData(true, AzureProviderOperationStatus.Running, false, ElsaInstanceCleanupObservationKind.Unknown, null, "retained-inventory")]
+    [InlineData(true, AzureProviderOperationStatus.Running, false, ElsaInstanceCleanupObservationKind.Unknown, null, "endpoint")]
+    [InlineData(true, AzureProviderOperationStatus.Running, false, ElsaInstanceCleanupObservationKind.Unknown, null, "wrong-phase")]
+    [InlineData(true, AzureProviderOperationStatus.Accepted, false, ElsaInstanceCleanupObservationKind.Unknown)]
+    [InlineData(true, AzureProviderOperationStatus.Queued, false, ElsaInstanceCleanupObservationKind.Unknown)]
+    [InlineData(true, AzureProviderOperationStatus.Succeeded, false, ElsaInstanceCleanupObservationKind.Unknown, null, "missing-group")]
+    [InlineData(true, AzureProviderOperationStatus.Succeeded, false, ElsaInstanceCleanupObservationKind.Unknown, null, "wrong-group")]
+    [InlineData(true, AzureProviderOperationStatus.Succeeded, false, ElsaInstanceCleanupObservationKind.Unknown, null, "retained-inventory")]
+    [InlineData(true, AzureProviderOperationStatus.Succeeded, false, ElsaInstanceCleanupObservationKind.Unknown, null, "wrong-phase")]
+    [InlineData(true, AzureProviderOperationStatus.Succeeded, false, ElsaInstanceCleanupObservationKind.Unknown, null, "endpoint")]
     public async Task Cleanup_submits_or_reobserves_delete_and_confirms_only_verified_absence(
         bool alreadyDeleted, AzureProviderOperationStatus status, bool retainedResource, ElsaInstanceCleanupObservationKind expectedKind,
-        string? correlation = null)
+        string? correlation = null, string? observationVariant = null)
     {
         var workspaceId = Guid.NewGuid();
         var lifecycleOperationId = Guid.NewGuid();
@@ -434,7 +446,25 @@ public sealed class AzureElsaInstanceProviderTests
             OperationIdentity = AzureProviderOperationValidation.ComputeOperationIdentity(
                 AzureProviderOperationService.CreateOperationRequest(reconcile))
         };
-        delete = delete with { ProviderAssignmentId = assignment.Id };
+        // The durable provider store preserves the assignment's immutable resource-group
+        // authority when cleanup clears every other resource reference. Keep the test double's
+        // completed operation shaped like that rehydrated row rather than an impossible all-null
+        // resource snapshot.
+        delete = delete with
+        {
+            ProviderAssignmentId = assignment.Id,
+            Phase = observationVariant == "wrong-phase" ? AzureProviderOperationPhase.CleanupSubmitted : delete.Phase,
+            Resources = observationVariant switch
+            {
+                "missing-group" => new(),
+                "wrong-group" => new AzureProviderResourceReferences("rg-wrong"),
+                "retained-inventory" => new AzureProviderResourceReferences(
+                    assignment.ResourceGroupName,
+                    WorkloadResourceId: "/subscriptions/retained/resourceGroups/retained/providers/Microsoft.App/containerApps/retained"),
+                _ => new AzureProviderResourceReferences(assignment.ResourceGroupName)
+            },
+            Endpoint = observationVariant == "endpoint" ? "https://runtime.example.test" : null
+        };
         var service = new CapturingOperationService(reconcile) { DeleteOperation = delete };
         var provider = new AzureElsaInstanceProvider(service, new CapturingOperationStore(reconcile, delete), assignmentStore, options: EnabledOptions());
 

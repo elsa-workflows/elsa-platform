@@ -257,19 +257,36 @@ public sealed class AzureElsaInstanceProvider(
                 !string.Equals(observed.ProviderScopeFingerprint, NormalizeScope(_options.ProviderScopeFingerprint), StringComparison.Ordinal))
                 return CleanupUnknown(request, "deletion.provider-correlation-invalid", ElsaInstanceCleanupObservationKind.Ambiguous);
 
+            var cleanupInventoryCleared =
+                observed.Resources == new AzureProviderResourceReferences(assignment.ResourceGroupName) &&
+                observed.Endpoint is null;
             return observed.Status == AzureProviderOperationStatus.Succeeded &&
                    observed.Phase == AzureProviderOperationPhase.CleanupVerified &&
-                   observed.Resources == new AzureProviderResourceReferences() &&
-                   observed.Endpoint is null
+                   cleanupInventoryCleared
                 ? new(ElsaInstanceCleanupObservationKind.ConfirmedAbsent, request.OperationId,
                     request.AttemptNumber, "deletion.provider-confirmed-absent")
-                : CleanupUnknown(request, observed.Status is AzureProviderOperationStatus.Failed or AzureProviderOperationStatus.Cancelled
+                : ObservePendingCleanup(observed, cleanupInventoryCleared);
+
+            ElsaInstanceCleanupObservation ObservePendingCleanup(
+                AzureProviderOperation pending,
+                bool inventoryCleared)
+            {
+                var finalizationInProgress = assignment.State == AzureProviderAssignmentState.Deleted &&
+                    pending.Status == AzureProviderOperationStatus.Running &&
+                    pending.Phase == AzureProviderOperationPhase.CleanupVerified &&
+                    inventoryCleared;
+                var providerOperationInProgress = assignment.State != AzureProviderAssignmentState.Deleted &&
+                    pending.Status is AzureProviderOperationStatus.Accepted or AzureProviderOperationStatus.Queued or AzureProviderOperationStatus.Running;
+                var diagnosticCode = pending.Status is AzureProviderOperationStatus.Failed or AzureProviderOperationStatus.Cancelled
                     ? "deletion.provider-cleanup-failed"
-                    : "deletion.provider-cleanup-pending",
-                    assignment.State != AzureProviderAssignmentState.Deleted &&
-                    observed.Status is AzureProviderOperationStatus.Accepted or AzureProviderOperationStatus.Queued or AzureProviderOperationStatus.Running
+                    : "deletion.provider-cleanup-pending";
+                return CleanupUnknown(
+                    request,
+                    diagnosticCode,
+                    finalizationInProgress || providerOperationInProgress
                         ? ElsaInstanceCleanupObservationKind.InProgress
                         : ElsaInstanceCleanupObservationKind.Unknown);
+            }
         }
     }
 
