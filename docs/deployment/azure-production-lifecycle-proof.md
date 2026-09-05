@@ -80,8 +80,20 @@ it creates and consumes a real delete confirmation, waits for `Deleted`, and ver
 assignment is `Deleted` with only its immutable resource-group identity retained and no
 remaining workload-resource inventory.
 
+The accepted asynchronous hand-off deliberately uses lifecycle `RecoveryRequired` while the
+provider is pending. The proof polls the exact assigned provider operation rather than failing
+on that lifecycle state alone. Provider `Accepted`/`Running` remains pending; provider
+`RecoveryRequired`, failure, cancellation, or invalid correlation fails the run. Provider success
+alone is insufficient: the lifecycle must still reach the healthy or confirmed-deleted state.
+The runner's command timeout defaults to 15 minutes and can be explicitly configured with
+`Deployment:AzureProvider:Runner:CommandTimeout` for a bounded cold-start allowance; the harness's
+overall bound is separate. A local command timeout does not establish that Azure stopped working.
+
 Every polling loop is bounded. A failure attempts product cleanup once more through the lifecycle
-service. The catalog database is never deleted. The evidence file contains only safe organization,
+service. If the exact predecessor and its assigned provider operation both require explicit
+recovery, a waiting Delete is reported as blocked cleanup promptly rather than waiting out the
+full proof timeout. This neither releases the reservation nor replays uncertain provider work.
+The catalog database is never deleted. The evidence file contains only safe organization,
 workspace, account, instance, operation, assignment, and provider-operation IDs plus stage and
 cleanup status and scope (`none`, `local`, or `provider`); provider exceptions, configuration,
 connection strings, secret values, and raw Azure output are not written.

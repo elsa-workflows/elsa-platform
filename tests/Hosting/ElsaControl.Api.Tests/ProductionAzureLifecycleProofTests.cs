@@ -23,7 +23,7 @@ namespace ElsaControl.Api.Tests;
 /// Opt-in live proof for the production Azure composition. The default test run must never
 /// contact Azure: this test has no fallback or mock path when its gate is absent.
 /// </summary>
-public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
+public sealed partial class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
 {
     private const string Gate = "ELSA_CONTROL_LIVE_AZURE_LIFECYCLE_PROOF";
     private const string ConfigurationPath = "ELSA_CONTROL_LIVE_AZURE_LIFECYCLE_PROOF_CONFIG";
@@ -491,8 +491,19 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
             var operation = await apiStore.GetOperationAsync(state.WorkspaceId, state.InstanceId, operationId, cancellationToken);
             if (instance is not null && operation is not null)
             {
-                if (operation.State is ElsaInstanceOperationState.Failed or ElsaInstanceOperationState.RecoveryRequired)
+                if (operation.InstanceId != state.InstanceId ||
+                    operation.State is ElsaInstanceOperationState.Failed or ElsaInstanceOperationState.Cancelled)
                     throw new ProofFailureException();
+
+                if (await HasCorrelatedProviderFailureAsync(
+                        scope.ServiceProvider,
+                        state,
+                        instance,
+                        operation,
+                        AzureProviderOperationAction.Reconcile,
+                        cancellationToken))
+                    throw new ProofFailureException();
+
                 if (operation.State == ElsaInstanceOperationState.Succeeded &&
                     instance.ObservedLifecycle == ElsaObservedLifecycle.Ready &&
                     instance.Health == ElsaInstanceHealth.Healthy)
@@ -547,8 +558,19 @@ public sealed class ProductionAzureLifecycleProofTests(ITestOutputHelper output)
             var operation = await apiStore.GetOperationAsync(state.WorkspaceId, state.InstanceId, operationId, cancellationToken);
             if (instance is not null && operation is not null)
             {
-                if (operation.State is ElsaInstanceOperationState.Failed or ElsaInstanceOperationState.RecoveryRequired)
+                if (operation.InstanceId != state.InstanceId ||
+                    operation.State is ElsaInstanceOperationState.Failed or ElsaInstanceOperationState.Cancelled)
                     throw new ProofFailureException();
+
+                if (await HasCorrelatedProviderFailureAsync(
+                        scope.ServiceProvider,
+                        state,
+                        instance,
+                        operation,
+                        AzureProviderOperationAction.Delete,
+                        cancellationToken))
+                    throw new ProofFailureException();
+
                 if (operation.State == ElsaInstanceOperationState.Succeeded &&
                     instance.ObservedLifecycle == ElsaObservedLifecycle.Deleted)
                 {
