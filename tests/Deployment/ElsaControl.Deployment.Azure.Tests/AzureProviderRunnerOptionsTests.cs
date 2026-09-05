@@ -116,6 +116,47 @@ public sealed class AzureProviderRunnerOptionsTests : IDisposable
     }
 
     [Fact]
+    public void Provider_scope_fingerprint_binds_the_normalized_release_feed_service_index()
+    {
+        var options = ValidOptions();
+        var scope = ValidScope();
+        var original = options.ComputeProviderScopeFingerprint(scope);
+
+        Assert.Equal(
+            original,
+            (options with { ReleaseFeedServiceIndex = " https://api.nuget.org/v3/index.json " })
+                .ComputeProviderScopeFingerprint(scope));
+        Assert.NotEqual(
+            original,
+            (options with { ReleaseFeedServiceIndex = "https://pkgs.example.test/v3/index.json" })
+                .ComputeProviderScopeFingerprint(scope));
+        var context = new AzureProviderExecutionContext(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+            "operation-identity", "idempotency-key", "target-key", "provider-assignment",
+            new string('a', 64), new string('b', 64), original);
+        Assert.Throws<InvalidOperationException>(() =>
+            (options with { ReleaseFeedServiceIndex = "https://pkgs.example.test/v3/index.json" })
+                .ValidateExecutionAuthority(context, scope));
+    }
+
+    [Theory]
+    [InlineData("http://pkgs.example.test/v3/index.json")]
+    [InlineData("https://pkgs.example.test")]
+    [InlineData("https://pkgs.example.test/v3/index.json?token=secret")]
+    [InlineData("https://user:password@pkgs.example.test/v3/index.json")]
+    [InlineData("https://pkgs.example.test:8443/v3/index.json")]
+    [InlineData("https://pkgs.example.test/v3\\index.json")]
+    [InlineData("https://pkgs.example.test/v3/index.json#fragment")]
+    [InlineData("https://pkgs.example.test/v3/index.json?")]
+    [InlineData("https://@pkgs.example.test/v3/index.json")]
+    [InlineData("https://127.0.0.1/v3/index.json")]
+    [InlineData("https://pkgs.example.test/v3/index.json\n")]
+    public void Rejects_unsafe_release_feed_service_index(string feed)
+    {
+        Assert.Throws<ArgumentException>(() => (ValidOptions() with { ReleaseFeedServiceIndex = feed }).Validate());
+    }
+
+    [Fact]
     public void Provider_scope_fingerprint_binds_the_managed_identity_client_id()
     {
         var options = ValidOptions();

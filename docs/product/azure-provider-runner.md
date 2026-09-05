@@ -15,6 +15,17 @@ provider-scope fingerprints are derived directly from this validated runner
 authority. The host rejects lifecycle enablement without the concrete worker;
 there is no duplicated or shipped fallback fingerprint that can become stale.
 
+`Deployment:AzureProvider:Runner:ReleaseFeedServiceIndex` selects the trusted
+server-governed NuGet service index used for the admitted release's exact optional
+SQL package versions. It defaults to `https://api.nuget.org/v3/index.json`; a host
+using producer packages from another feed must explicitly configure that feed.
+The locator must be safe HTTPS without credentials, query strings, fragments, or
+non-default ports. It is passed to both production deployment phases and bound
+into provider execution authority, so it must not change during an operation.
+This host setting does not admit packages, infer versions, or replace release
+signature verification. The standalone disposable-proof template keeps its
+separate feed contract.
+
 The worker receives only admitted immutable plan identities and governed secret
 references. Secret aliases are configured under
 `Deployment:AzureProvider:Secrets:<index>:Name` and `Reference`. The

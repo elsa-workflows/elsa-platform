@@ -1617,7 +1617,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
 
     private string[] ReleaseIdentityArguments(AzureProviderRunnerCommand command) => _options.DisposableProofMode
         ? []
-        : [$"releaseLine={command.Plan.ReleaseLine}"];
+        : [$"releaseLine={command.Plan.ReleaseLine}", $"releaseFeedServiceIndex={_options.NormalizeReleaseFeedServiceIndex()}"];
 
     private string[] SqlAuthenticationArguments() => _options.DisposableProofMode
         ? ["--authentication-method", "ActiveDirectoryDefault"]

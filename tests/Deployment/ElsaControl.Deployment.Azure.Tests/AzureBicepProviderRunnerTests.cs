@@ -42,7 +42,9 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.Contains("proofName=proof", deployment);
         Assert.Contains("expiryUtc=2026-09-30", deployment);
         Assert.Contains("adminUsername=proof-admin", deployment);
-        Assert.DoesNotContain(deployment, value => value.StartsWith("workloadName=", StringComparison.Ordinal) || value.StartsWith("releaseLine=", StringComparison.Ordinal));
+        Assert.DoesNotContain(deployment, value => value.StartsWith("workloadName=", StringComparison.Ordinal) ||
+            value.StartsWith("releaseLine=", StringComparison.Ordinal) ||
+            value.StartsWith("releaseFeedServiceIndex=", StringComparison.Ordinal));
         Assert.Contains("/elsa108-", result.Resources.FoundationDeploymentId);
     }
 
@@ -65,6 +67,50 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         var deploymentCall = process.Calls.Single(call => call.Contains("deployment") && call.Contains("create"));
         Assert.DoesNotContain("topology=", string.Join(" ", deploymentCall), StringComparison.Ordinal);
         Assert.All(process.Calls, call => Assert.DoesNotContain("secret://", string.Join(" ", call), StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Production_foundation_and_workload_pass_the_governed_release_feed_to_Bicep()
+    {
+        const string feed = "https://pkgs.example.test/v3/index.json";
+        var options = _fixture.Options with { ReleaseFeedServiceIndex = feed };
+        var context = _fixture.Context with
+        {
+            ProviderScopeFingerprint = options.ComputeProviderScopeFingerprint(_fixture.Scope)
+        };
+
+        var foundationProcess = new FakeCommandProcess();
+        foundationProcess.Success(args => args is ["group", "exists", ..], "false");
+        foundationProcess.Success(args => args is ["group", "create", ..]);
+        foundationProcess.Success(args => args.Contains("deployment") && args.Contains("group") && args.Contains("create"), FoundationOutputs());
+
+        var foundation = await new AzureBicepProviderRunner(options, _fixture.Scope, foundationProcess)
+            .RunAsync(_fixture.Command(AzureProviderRunnerStep.Foundation) with { Context = context });
+
+        Assert.Equal(AzureProviderRunnerOutcome.Completed, foundation.Outcome);
+        var foundationDeployment = foundationProcess.Calls.Single(call => call.Contains("deployment") && call.Contains("create"));
+        Assert.Contains($"releaseFeedServiceIndex={feed}", foundationDeployment);
+
+        var workloadProcess = new FakeCommandProcess();
+        workloadProcess.Success(args => args.Contains("resource") && args.Contains("list"), "0");
+        workloadProcess.Success(args => args.Contains("resource") && args.Contains("list"), "0");
+        workloadProcess.Success(args => args.Contains("deployment") && args.Contains("create"), WorkloadOutputs());
+        workloadProcess.Success(args => args.Contains("sql") && args.Contains("server") && args.Contains("list"), "1");
+        workloadProcess.Success(args => args.Contains("ad-admin") && args.Contains("list"), "[{\"login\":\"proof-bootstrap\",\"sid\":\"11111111-1111-1111-1111-111111111111\"}]");
+        workloadProcess.Success(args => args.Contains("ad-only-auth") && args.Contains("enable"));
+        var resources = _fixture.FoundationResources with
+        {
+            RegistryResourceId = _fixture.RegistryId,
+            AcrPullDeploymentId = _fixture.RegistryDeploymentId,
+            AcrPullRoleAssignmentId = _fixture.RegistryRoleAssignmentId
+        };
+
+        var workload = await new AzureBicepProviderRunner(options, _fixture.Scope, workloadProcess)
+            .RunAsync(_fixture.Command(AzureProviderRunnerStep.Workload, resources) with { Context = context });
+
+        Assert.Equal(AzureProviderRunnerOutcome.Completed, workload.Outcome);
+        var workloadDeployment = workloadProcess.Calls.Single(call => call.Contains("deployment") && call.Contains("create"));
+        Assert.Contains($"releaseFeedServiceIndex={feed}", workloadDeployment);
     }
 
     [Fact]

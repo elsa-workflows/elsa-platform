@@ -50,6 +50,12 @@ profile; the default remains `restricted`, which this profile cannot realize. Th
 release must declare exact `Elsa.Persistence.EFCore.SqlServer` and
 `Elsa.Scheduling.Quartz.EFCore.SqlServer` package versions. Validate the catalog-to-plan-to-Azure
 translation offline before provisioning; never infer missing versions from the Elsa release.
+Configure `Deployment:AzureProvider:Runner:ReleaseFeedServiceIndex` to the verified
+producer feed that actually contains those exact package versions. The default
+is NuGet.org; the Build 147 SQL preview proof uses
+`https://f.feedz.io/elsa-workflows/elsa-3/nuget/index.json`. This credential-free
+HTTPS locator is server configuration bound to execution authority, not a
+caller-supplied package source or evidence of production release admission.
 
 ## Azure prerequisites
 

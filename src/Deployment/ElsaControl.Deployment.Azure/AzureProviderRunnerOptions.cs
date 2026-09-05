@@ -66,6 +66,7 @@ public sealed record AzureProviderTargetScope(
 public sealed record AzureProviderRunnerOptions
 {
     public const string ConfigurationSection = "Deployment:AzureProvider:Runner";
+    public const string DefaultReleaseFeedServiceIndex = "https://api.nuget.org/v3/index.json";
     public bool Enabled { get; init; }
     /// <summary>Absolute Azure CLI executable bound into provider authority.</summary>
     public string AzureCliPath { get; init; } = "";
@@ -80,6 +81,8 @@ public sealed record AzureProviderRunnerOptions
     public string SqlBootstrapLogin { get; init; } = "";
     public string SqlBootstrapIp { get; init; } = "";
     public string RuntimeAdminUsername { get; init; } = "";
+    /// <summary>Server-governed Nuplane release package feed. Customer requests cannot override it.</summary>
+    public string ReleaseFeedServiceIndex { get; init; } = DefaultReleaseFeedServiceIndex;
     /// <summary>Selects the legacy disposable-proof template and ownership dialect.</summary>
     public bool DisposableProofMode { get; init; }
     /// <summary>Expiry bound to disposable-proof ownership. Production deployments omit it.</summary>
@@ -115,6 +118,7 @@ public sealed record AzureProviderRunnerOptions
             sqlBootstrapLogin = SqlBootstrapLogin,
             sqlBootstrapIp = SqlBootstrapIp,
             runtimeAdminUsername = RuntimeAdminUsername,
+            releaseFeedServiceIndex = NormalizeReleaseFeedServiceIndex(),
             disposableProofMode = DisposableProofMode,
             disposableExpiryUtc = DisposableExpiryUtc?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
             owner = Owner.ToLowerInvariant()
@@ -175,6 +179,7 @@ public sealed record AzureProviderRunnerOptions
             throw new ArgumentException("The SQL bootstrap address must be one exact non-zero IPv4 address.", nameof(SqlBootstrapIp));
         if (!Regex.IsMatch(Owner ?? "", "^[a-z0-9][a-z0-9-]{0,62}\\z", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking))
             throw new ArgumentException("The Azure owner tag is unsafe.", nameof(Owner));
+        _ = NormalizeReleaseFeedServiceIndex();
         if (CommandTimeout <= TimeSpan.Zero || CommandTimeout > TimeSpan.FromHours(1))
             throw new ArgumentOutOfRangeException(nameof(CommandTimeout), "The command timeout must be positive and no longer than one hour.");
         if (MaximumOutputCharacters is < 1024 or > 16_777_216)
@@ -190,6 +195,25 @@ public sealed record AzureProviderRunnerOptions
         if (string.IsNullOrWhiteSpace(value) || value.Length > 1024 || value.Any(char.IsControl) ||
             !Path.IsPathFullyQualified(value) || !File.Exists(value) || IsSymbolicLink(value))
             throw new ArgumentException("The executable locator is unsafe.", name);
+    }
+
+    internal string NormalizeReleaseFeedServiceIndex()
+    {
+        if (string.IsNullOrWhiteSpace(ReleaseFeedServiceIndex) || ReleaseFeedServiceIndex.Length > 2048 ||
+            ReleaseFeedServiceIndex.Any(char.IsControl) || ReleaseFeedServiceIndex.Contains('\\') ||
+            ReleaseFeedServiceIndex.Contains('?') || ReleaseFeedServiceIndex.Contains('#') ||
+            ReleaseFeedServiceIndex.Contains('@'))
+            throw new ArgumentException("The release feed service index is unsafe.", nameof(ReleaseFeedServiceIndex));
+
+        var value = ReleaseFeedServiceIndex.Trim();
+        if (value.Any(char.IsWhiteSpace) || !Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps || uri.HostNameType != UriHostNameType.Dns ||
+            string.IsNullOrWhiteSpace(uri.Host) || uri.AbsolutePath is "" or "/" || !uri.IsDefaultPort ||
+            !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Query) ||
+            !string.IsNullOrEmpty(uri.Fragment))
+            throw new ArgumentException("The release feed service index is unsafe.", nameof(ReleaseFeedServiceIndex));
+
+        return new UriBuilder(uri) { Scheme = Uri.UriSchemeHttps, Port = -1 }.Uri.AbsoluteUri;
     }
 
     public string ComputeTemplateAuthorityFingerprint()
