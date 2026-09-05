@@ -23,7 +23,7 @@ The packaged wrapper sets `ASPNETCORE_ENVIRONMENT=Production`, unsets conflictin
 `DOTNET_ENVIRONMENT`, sets the opt-in gate, and pins the API content root and staged configuration
 path before starting the testhost. It supplies a transient test API key and the validated outbound
 SQL-bootstrap IP required by the enabled runner, applies the overall timeout, and enforces the
-result-capture and evidence-retention gates below. The ninth package uses
+result-capture and evidence-retention gates below. The reference Linux package layout uses
 `/src/src/Hosting/ElsaControl.Api` as its content root and the SDK's VSTest entrypoint against
 `/run/elsa-control/tests/api/ElsaControl.Api.Tests.dll`. These are package inputs, not paths to infer
 from a developer checkout. A direct testhost invocation without the wrapper's inputs and result
@@ -112,6 +112,12 @@ alone is insufficient: the lifecycle must still reach the healthy or confirmed-d
 The runner's command timeout defaults to 15 minutes and can be explicitly configured with
 `Deployment:AzureProvider:Runner:CommandTimeout` for a bounded cold-start allowance; the harness's
 overall bound is separate. A local command timeout does not establish that Azure stopped working.
+The external test-process limit must cover both the primary proof budget and its independent
+failure-cleanup budget, plus shutdown headroom. For a 7200-second proof budget, use a bounded
+15000-second test-process limit rather than allowing only a few minutes for failure cleanup.
+Evidence upload has its own bounded allowance after the test process exits. If the outer limit
+expires, retain the host and exact cleanup authority until owned resources and available evidence
+are accounted for; never infer cleanup from the process being terminated.
 
 Every polling loop is bounded. A failure attempts product cleanup once more through the lifecycle
 service. If the exact predecessor and its assigned provider operation both require explicit
