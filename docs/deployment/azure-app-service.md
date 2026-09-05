@@ -40,11 +40,10 @@ confirm the detected Aspire AppHost.
 
 ## GitHub Actions Deployment
 
-The `Azure Elsa Control API Deploy` workflow runs on pushes to `main` and can also be run
-manually from GitHub Actions. Normal `main` deployments build the console,
-build the API container with the console static assets mounted
-under `/admin`, push it to ACR, and update the existing App Service site
-container:
+The `Azure Control API Deploy` workflow is manually dispatched from GitHub Actions.
+Its existing `deploy_mode: app` path builds the console, builds the API container with
+the console static assets mounted under `/admin`, pushes it to ACR, and updates the
+existing App Service container:
 
 ```bash
 docker build --file src/Hosting/ElsaControl.Api/Dockerfile --tag <acr>/<repo>:<sha> .
@@ -70,6 +69,27 @@ azd up --no-prompt
 manual choice so routine code changes do not spend time checking and updating
 Azure resources on every push.
 
+### Staged immutable promotion
+
+Choose `deploy_mode: build` from the `main` branch to run the required checks, build and push one candidate,
+resolve its ACR manifest digest, and upload a safe candidate descriptor. This mode does
+not inspect or mutate the Web App and does not run production startup migrations.
+
+Choose `deploy_mode: promote` only after the controlled Catalog PITR rehearsal has been
+performed by the operator. Supply the successful same-repository build run ID and the
+descriptor's exact `sha256:` digest. The workflow verifies the descriptor, successful
+workflow run, source commit ancestry to `main`, repository binding, and digest, and
+confirms that the digest is still present in the configured ACR before capturing the
+current deployment. It then deploys the exact `repository@sha256:digest` reference
+without rebuilding or retagging.
+
+The rehearsal remains an external operational gate: it must use a uniquely owned Catalog
+PITR clone, the candidate image in Production/SQL Server mode, the API managed identity
+(or an explicitly bootstrapped rehearsal identity), startup migration/integrity checks,
+and the previous image against the migrated clone. A successful build descriptor or
+workflow promotion does not claim that rehearsal was performed. Image rollback restores
+the captured immutable image and settings only; it never reverses database migrations.
+
 Configure the workflow in a GitHub environment named `production` unless you
 change the workflow environment name. With OIDC, the Microsoft Entra federated
 credential should trust this repository and environment. If using the default
@@ -78,6 +98,11 @@ GitHub environment subject, it is:
 ```text
 repo:<owner>/<repo>:environment:production
 ```
+
+The production environment must also enforce a selected-branch policy for `main`.
+The workflow repeats this as a defense-in-depth check before Azure login for every
+mutating mode; the protected GitHub environment policy remains the authoritative
+remote boundary and must not be replaced by the workflow check.
 
 Required GitHub Actions variables:
 
