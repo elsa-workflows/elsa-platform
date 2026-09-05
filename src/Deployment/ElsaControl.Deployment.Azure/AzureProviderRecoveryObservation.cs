@@ -278,17 +278,29 @@ public sealed record AzureProviderRecoveryObservationBinding(
 {
     public void Validate()
     {
-        if (RecoveryRequestId == Guid.Empty || OrganizationId == Guid.Empty ||
-            WorkspaceId == Guid.Empty || InstanceId == Guid.Empty || LifecycleOperationId == Guid.Empty ||
-            ObservedLifecycleAttemptNumber < 1 || ObservedInstanceVersion < 1 ||
-            AcceptedLifecycleAttemptNumber < 2 || AcceptedInstanceVersion < 1 ||
-            string.IsNullOrWhiteSpace(IdempotencyScope) || IdempotencyScope.Length > 256 ||
-            string.IsNullOrWhiteSpace(IdempotencyKey) || IdempotencyKey.Length > 128 ||
-            IdempotencyKey.Any(char.IsControl) || RequestHash is null || RequestHash.Length != 64 ||
-            RequestHash.AsSpan().ContainsAnyExcept("0123456789abcdef") ||
-            !ElsaInstanceProviderRecoveryObservationReference.TryParse(Reference, out _, out var referenceDigest) ||
-            !string.Equals(referenceDigest, Digest, StringComparison.Ordinal))
+        try
+        {
+            new ElsaInstanceProviderRecoveryEnvelope(
+                RecoveryRequestId,
+                OrganizationId,
+                WorkspaceId,
+                InstanceId,
+                LifecycleOperationId,
+                ObservedLifecycleAttemptNumber,
+                ObservedInstanceVersion,
+                AcceptedLifecycleAttemptNumber,
+                AcceptedInstanceVersion,
+                IdempotencyScope,
+                IdempotencyKey,
+                RequestHash,
+                Reference,
+                Digest).Validate();
+        }
+        catch (InvalidOperationException)
+        {
+            // Preserve the Azure boundary's stable, value-free validation error.
             throw new ArgumentException("Recovery observation binding is invalid.");
+        }
     }
 }
 

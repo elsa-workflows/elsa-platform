@@ -1,4 +1,5 @@
 using ElsaControl.Deployment.Abstractions.Instances;
+using ElsaControl.Deployment.Core.Instances;
 using ElsaControl.Deployment.Azure;
 using Xunit;
 
@@ -130,6 +131,34 @@ public sealed class AzureProviderRecoveryObservationContractTests
         Assert.Throws<ArgumentException>(() => unknownStep.Validate());
     }
 
+    [Fact]
+    public void Observation_binding_accepts_distinct_recovery_and_observation_ids()
+    {
+        CreateBinding().Validate();
+    }
+
+    [Theory]
+    [InlineData("bad scope", "recovery-key", 2, 4)]
+    [InlineData("instances/operations", "recovery:key", 2, 4)]
+    [InlineData("instances/operations", "recovery-key", 3, 4)]
+    [InlineData("instances/operations", "recovery-key", 2, 3)]
+    public void Observation_binding_rejects_core_envelope_invariants(
+        string scope,
+        string key,
+        int acceptedAttempt,
+        int acceptedVersion)
+    {
+        var binding = CreateBinding() with
+        {
+            IdempotencyScope = scope,
+            IdempotencyKey = key,
+            AcceptedLifecycleAttemptNumber = acceptedAttempt,
+            AcceptedInstanceVersion = acceptedVersion
+        };
+
+        Assert.Throws<ArgumentException>(binding.Validate);
+    }
+
     [Theory]
     [InlineData("https://control.example.test/api/workspaces/22222222-2222-2222-2222-222222222222/instances/33333333-3333-3333-3333-333333333333/resolved-plans/plan-1?token=secret")]
     [InlineData("https://control.example.test/api/workspaces/22222222-2222-2222-2222-222222222222/instances/33333333-3333-3333-3333-333333333333/resolved-plans/plan-1#fragment")]
@@ -172,4 +201,25 @@ public sealed class AzureProviderRecoveryObservationContractTests
         new string('f', 64),
         new string('0', 64),
         DateTimeOffset.Parse("2026-09-06T08:00:00Z"));
+
+    private static AzureProviderRecoveryObservationBinding CreateBinding()
+    {
+        var digest = "sha256:" + new string('a', 64);
+        return new(
+            Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            Guid.Parse("22222222-2222-2222-2222-222222222222"),
+            Guid.Parse("33333333-3333-3333-3333-333333333333"),
+            Guid.Parse("44444444-4444-4444-4444-444444444444"),
+            1,
+            3,
+            2,
+            4,
+            "instances/operations",
+            "recovery-key",
+            new string('b', 64),
+            ElsaInstanceProviderRecoveryObservationReference.Create(
+                Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"), digest),
+            digest);
+    }
 }
