@@ -4,10 +4,10 @@
 
 Accepted — user decision on 2026-09-05. Provisioning and runtime enablement are separate verification gates.
 
-Creation verified on 2026-09-05: subscription `a54cd7b1-3d13-48ce-9dce-5ae013142c85`,
-tenant `f35bcd45-7991-4e24-84f1-e964394501ad`, state `Enabled`, alias
-`elsa-cloud-customer-workloads`. No provisioner role grants or runtime enablement were
-performed as part of subscription creation.
+Creation was verified on 2026-09-05 with state `Enabled` in the expected tenant.
+Exact deployment identifiers and readback evidence are retained in the private
+operations record, not this architectural contract. No provisioner role grants or
+runtime enablement were performed as part of subscription creation.
 
 ## Context
 
