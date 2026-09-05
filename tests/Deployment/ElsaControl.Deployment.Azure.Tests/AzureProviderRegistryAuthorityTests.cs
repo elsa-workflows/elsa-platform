@@ -71,6 +71,25 @@ public sealed class AzureProviderRegistryAuthorityTests : IDisposable
     }
 
     [Fact]
+    public void Registry_scope_validation_does_not_read_local_executables_or_templates()
+    {
+        var options = ValidOptions() with
+        {
+            AzureCliPath = Path.Combine(_root, "missing-az"),
+            TemplateRoot = Path.Combine(_root, "missing-templates"),
+            RegistryAuthorityMode = AzureProviderRegistryAuthorityMode.Narrow,
+            RegistryDeploymentMetadataRoleDefinitionId = RoleDefinitionId,
+            RegistryDeploymentMetadataRoleAssignmentId = RegistryGroupAssignmentId,
+            RegistryRoleAdministrationAssignmentId = RegistryAssignmentId
+        };
+
+        options.ValidateRegistryAuthority(ValidScope());
+        Assert.Throws<ArgumentException>(() => options.Validate());
+        Assert.Throws<ArgumentException>(() => options.ValidateRegistryAuthority(
+            ValidScope() with { RegistryResourceGroupName = "different-registry-rg" }));
+    }
+
+    [Fact]
     public void Legacy_profile_fingerprint_is_byte_compatible_and_rejects_narrow_values()
     {
         var options = ValidOptions();

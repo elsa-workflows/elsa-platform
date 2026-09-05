@@ -72,7 +72,7 @@ internal static class AzureProviderRunnerComposition
         scope.Validate();
         // Bind the selected registry authority to the concrete target before composing any
         // credential or worker service. This also rejects pinned IDs outside the exact scopes.
-        _ = options.ComputeProviderScopeFingerprint(scope);
+        options.ValidateRegistryAuthority(scope);
         var managedIdentity = new Azure.Identity.ManagedIdentityCredential(
             Azure.Identity.ManagedIdentityId.FromUserAssignedClientId(options.AzureCliClientId!));
         services.AddSingleton<IAzureKeyVaultSecretReader>(_ => new AzureKeyVaultSecretReader(managedIdentity));

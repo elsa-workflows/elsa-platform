@@ -114,37 +114,40 @@ public sealed record AzureProviderRunnerOptions
         Validate();
         scope.Validate();
         ValidateRegistryAuthority(scope);
-        var canonicalValues = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["targetScopeFingerprint"] = scope.ComputeFingerprint(),
-            ["azureCliPath"] = Path.GetFullPath(AzureCliPath),
-            ["azureCliDigest"] = ComputeFileDigest(AzureCliPath),
-            ["azureCliClientId"] = AzureCliClientId?.ToLowerInvariant(),
-            ["sqlCmdPath"] = Path.GetFullPath(SqlCmdPath),
-            ["sqlCmdDigest"] = ComputeFileDigest(SqlCmdPath),
-            ["curlPath"] = Path.GetFullPath(CurlPath),
-            ["curlDigest"] = ComputeFileDigest(CurlPath),
-            ["templateRoot"] = NormalizeRoot(TemplateRoot),
-            ["templateAuthorityFingerprint"] = ComputeTemplateAuthorityFingerprint(),
-            ["sqlBootstrapObjectId"] = SqlBootstrapObjectId.ToLowerInvariant(),
-            ["sqlBootstrapLogin"] = SqlBootstrapLogin,
-            ["sqlBootstrapIp"] = SqlBootstrapIp,
-            ["runtimeAdminUsername"] = RuntimeAdminUsername,
-            ["releaseFeedServiceIndex"] = NormalizeReleaseFeedServiceIndex(),
-            ["disposableProofMode"] = DisposableProofMode,
-            ["disposableExpiryUtc"] = DisposableExpiryUtc?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-            ["owner"] = Owner.ToLowerInvariant()
-        };
+        // Property order is a persisted contract, including the original BuiltIn payload.
+        using var canonical = new MemoryStream();
+        using var writer = new Utf8JsonWriter(canonical);
+        writer.WriteStartObject();
+        writer.WriteString("targetScopeFingerprint", scope.ComputeFingerprint());
+        writer.WriteString("azureCliPath", Path.GetFullPath(AzureCliPath));
+        writer.WriteString("azureCliDigest", ComputeFileDigest(AzureCliPath));
+        writer.WriteString("azureCliClientId", AzureCliClientId?.ToLowerInvariant());
+        writer.WriteString("sqlCmdPath", Path.GetFullPath(SqlCmdPath));
+        writer.WriteString("sqlCmdDigest", ComputeFileDigest(SqlCmdPath));
+        writer.WriteString("curlPath", Path.GetFullPath(CurlPath));
+        writer.WriteString("curlDigest", ComputeFileDigest(CurlPath));
+        writer.WriteString("templateRoot", NormalizeRoot(TemplateRoot));
+        writer.WriteString("templateAuthorityFingerprint", ComputeTemplateAuthorityFingerprint());
+        writer.WriteString("sqlBootstrapObjectId", SqlBootstrapObjectId.ToLowerInvariant());
+        writer.WriteString("sqlBootstrapLogin", SqlBootstrapLogin);
+        writer.WriteString("sqlBootstrapIp", SqlBootstrapIp);
+        writer.WriteString("runtimeAdminUsername", RuntimeAdminUsername);
+        writer.WriteString("releaseFeedServiceIndex", NormalizeReleaseFeedServiceIndex());
+        writer.WriteBoolean("disposableProofMode", DisposableProofMode);
+        writer.WriteString("disposableExpiryUtc", DisposableExpiryUtc?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+        writer.WriteString("owner", Owner.ToLowerInvariant());
         if (RegistryAuthorityMode == AzureProviderRegistryAuthorityMode.Narrow)
-            canonicalValues["registryAuthority"] = new
-            {
-                mode = RegistryAuthorityMode.ToString(),
-                roleDefinitionId = RegistryDeploymentMetadataRoleDefinitionId!.ToLowerInvariant(),
-                roleAssignmentId = RegistryDeploymentMetadataRoleAssignmentId!.ToLowerInvariant(),
-                roleAdministrationAssignmentId = RegistryRoleAdministrationAssignmentId!.ToLowerInvariant()
-            };
-        var canonical = JsonSerializer.Serialize(canonicalValues);
-        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+        {
+            writer.WriteStartObject("registryAuthority");
+            writer.WriteString("mode", RegistryAuthorityMode.ToString());
+            writer.WriteString("roleDefinitionId", RegistryDeploymentMetadataRoleDefinitionId!.ToLowerInvariant());
+            writer.WriteString("roleAssignmentId", RegistryDeploymentMetadataRoleAssignmentId!.ToLowerInvariant());
+            writer.WriteString("roleAdministrationAssignmentId", RegistryRoleAdministrationAssignmentId!.ToLowerInvariant());
+            writer.WriteEndObject();
+        }
+        writer.WriteEndObject();
+        writer.Flush();
+        return Convert.ToHexStringLower(SHA256.HashData(canonical.ToArray()));
     }
 
     /// <summary>
@@ -216,7 +219,8 @@ public sealed record AzureProviderRunnerOptions
             throw new ArgumentOutOfRangeException(nameof(ObservationDelay));
     }
 
-    internal void ValidateRegistryAuthority(AzureProviderTargetScope scope)
+    /// <summary>Validates pinned registry authority against the target scope without filesystem access.</summary>
+    public void ValidateRegistryAuthority(AzureProviderTargetScope scope)
     {
         ArgumentNullException.ThrowIfNull(scope);
         scope.Validate();
