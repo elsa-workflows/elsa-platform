@@ -760,7 +760,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                 ["role", "assignment", "delete", "--ids", roleAssignmentId, "--output", "none", "--only-show-errors"],
                 static _ => AzureCommandNoOutput.Instance,
                 cancellationToken);
-            if (!await RoleAssignmentAbsentAsync(command, roleAssignmentId, workloadIdentityPrincipalId, cancellationToken))
+            if (!await RoleAssignmentAbsentAsync(command, registryId, roleAssignmentId, workloadIdentityPrincipalId, cancellationToken))
                 return Uncertain(command, AzureProviderOperationPhase.CleanupVerified, "azure.cleanup.role-uncertain", "The owned ACR role assignment could not be proven absent.");
         }
 
@@ -859,12 +859,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     {
         for (var attempt = 0; attempt < _options.ObservationAttempts; attempt++)
         {
-            var list = await ExecuteAzAsync(command,
-                ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--all",
-                    "--assignee-object-id", principalId,
-                    "--output", "json", "--only-show-errors"],
-                ParseRoleAssignmentsAsync,
-                cancellationToken);
+            var list = await ListRegistryRoleAssignmentsAsync(command, registryId, principalId, cancellationToken);
             if (!list.Succeeded)
             {
                 if (list.Status == AzureCommandProcessStatus.Cancelled || cancellationToken.IsCancellationRequested)
@@ -1081,18 +1076,14 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
 
     private async Task<bool> RoleAssignmentAbsentAsync(
         AzureProviderRunnerCommand command,
+        string registryId,
         string assignmentId,
         string principalId,
         CancellationToken cancellationToken)
     {
         for (var attempt = 0; attempt < _options.ObservationAttempts; attempt++)
         {
-            var list = await ExecuteAzAsync(command,
-                ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--all",
-                    "--assignee-object-id", principalId,
-                    "--output", "json", "--only-show-errors"],
-                ParseRoleAssignmentsAsync,
-                cancellationToken);
+            var list = await ListRegistryRoleAssignmentsAsync(command, registryId, principalId, cancellationToken);
             if (list.Succeeded && list.Value is not null && !list.Value.Value.Any(x => string.Equals(x.Id, assignmentId, StringComparison.OrdinalIgnoreCase)))
                 return true;
             if (attempt + 1 < _options.ObservationAttempts)
@@ -1107,12 +1098,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         string principalId,
         CancellationToken cancellationToken)
     {
-        var list = await ExecuteAzAsync(command,
-            ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--all",
-                "--assignee-object-id", principalId,
-                "--output", "json", "--only-show-errors"],
-            ParseRoleAssignmentsAsync,
-            cancellationToken);
+        var list = await ListRegistryRoleAssignmentsAsync(command, registryId, principalId, cancellationToken);
         if (!list.Succeeded || list.Value is null)
             return new(AcrRoleDiscoveryStatus.Uncertain, null);
 
@@ -1144,12 +1130,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     {
         for (var attempt = 0; attempt < _options.ObservationAttempts; attempt++)
         {
-            var list = await ExecuteAzAsync(command,
-                ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId, "--all",
-                    "--assignee-object-id", principalId,
-                    "--output", "json", "--only-show-errors"],
-                ParseRoleAssignmentsAsync,
-                cancellationToken);
+            var list = await ListRegistryRoleAssignmentsAsync(command, registryId, principalId, cancellationToken);
             if (list.Succeeded && list.Value is not null)
             {
                 var exact = list.Value.Value.Where(x => string.Equals(x.Id, assignmentId, StringComparison.OrdinalIgnoreCase)).ToArray();
@@ -1168,6 +1149,19 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         }
         return null;
     }
+
+    private Task<AzureCommandProcessResult<SafeValue<IReadOnlyList<RoleAssignment>>>> ListRegistryRoleAssignmentsAsync(
+        AzureProviderRunnerCommand command,
+        string registryId,
+        string principalId,
+        CancellationToken cancellationToken) =>
+        ExecuteAzAsync(command,
+            ["role", "assignment", "list", "--subscription", _scope.RegistrySubscriptionId,
+                "--scope", registryId, "--assignee-object-id", principalId,
+                "--fill-principal-name", "false", "--fill-role-definition-name", "false",
+                "--output", "json", "--only-show-errors"],
+            ParseRoleAssignmentsAsync,
+            cancellationToken);
 
     private async Task<bool> DeploymentAbsentAsync(AzureProviderRunnerCommand command, string deploymentName, CancellationToken cancellationToken)
     {

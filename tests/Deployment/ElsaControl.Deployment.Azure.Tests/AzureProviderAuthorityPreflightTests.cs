@@ -73,7 +73,10 @@ public sealed class AzureProviderAuthorityPreflightTests : IDisposable
     [Fact]
     public async Task Missing_required_role_fails_closed()
     {
-        var process = new FakeCommandProcess { TargetRoles = ["Contributor"] };
+        var process = new FakeCommandProcess
+        {
+            TargetRoles = ["/subscriptions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/providers/Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c"]
+        };
         var result = await Preflight(process).ValidateAsync();
 
         Assert.False(result.Succeeded);
@@ -169,8 +172,16 @@ public sealed class AzureProviderAuthorityPreflightTests : IDisposable
         public bool TargetGroupExists { get; init; } = true;
         public string PrincipalOutput { get; init; } = "[\"22222222-2222-2222-2222-222222222222\"]";
         public string AccountOutput { get; init; } = "{\"id\":\"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\",\"name\":\"userAssignedIdentity\",\"type\":\"servicePrincipal\",\"identity\":\"MSIClient-11111111-1111-1111-1111-111111111111\"}";
-        public IReadOnlyList<string> TargetRoles { get; init; } = ["Contributor", "Role Based Access Control Administrator"];
-        public IReadOnlyList<string> RegistryRoles { get; init; } = ["Contributor", "Role Based Access Control Administrator"];
+        public IReadOnlyList<string> TargetRoles { get; init; } =
+        [
+            "/subscriptions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/providers/Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c",
+            "/subscriptions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/providers/Microsoft.Authorization/roleDefinitions/f58310d9-a9f6-439a-9e8d-f62e7b41a168"
+        ];
+        public IReadOnlyList<string> RegistryRoles { get; init; } =
+        [
+            "/subscriptions/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/providers/Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c",
+            "/subscriptions/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/providers/Microsoft.Authorization/roleDefinitions/f58310d9-a9f6-439a-9e8d-f62e7b41a168"
+        ];
 
         public Task<AzureCommandProcessResult<T>> ExecuteAsync<T>(
             AzureCommandProcessRequest request,

@@ -29,19 +29,6 @@ public sealed class AzureProviderAuthorityPreflight : IAzureProviderAuthorityPre
     private const string ObservationInvalidCode = "azure.preflight.observation-invalid";
     private const string RbacInsufficientCode = "azure.preflight.rbac-insufficient";
 
-    private static readonly HashSet<string> MutationRoles = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Contributor",
-        "Owner"
-    };
-
-    private static readonly HashSet<string> RoleAssignmentRoles = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Owner",
-        "User Access Administrator",
-        "Role Based Access Control Administrator"
-    };
-
     private readonly AzureProviderRunnerOptions _options;
     private readonly AzureProviderTargetScope _scope;
     private readonly IAzureCommandProcess _process;
@@ -63,6 +50,7 @@ public sealed class AzureProviderAuthorityPreflight : IAzureProviderAuthorityPre
         _process = process ?? throw new ArgumentNullException(nameof(process));
         _options.Validate();
         _scope.Validate();
+        _options.ValidateRegistryAuthority(_scope);
     }
 
     public async Task<AzureProviderAuthorityPreflightResult> ValidateAsync(CancellationToken cancellationToken = default)
@@ -75,6 +63,7 @@ public sealed class AzureProviderAuthorityPreflight : IAzureProviderAuthorityPre
             {
                 _options.Validate();
                 _scope.Validate();
+                _options.ValidateRegistryAuthority(_scope);
             }
             catch (ArgumentException)
             {
@@ -155,20 +144,49 @@ public sealed class AzureProviderAuthorityPreflight : IAzureProviderAuthorityPre
             // assignment at the registry resource scope. Check both scopes: a Contributor role
             // assigned only to the registry resource cannot submit the group deployment, while a
             // role-assignment role assigned only to the group does not authorize the child scope.
-            var registryGroupRoles = await RunRoleObservationAsync(
-                ResourceGroupScope(_scope.RegistrySubscriptionId, _scope.RegistryResourceGroupName),
-                principalId,
-                cancellationToken);
-            if (registryGroupRoles is null)
-                return Failed(ObservationFailureCode, "The configured Azure registry resource group permissions could not be observed.");
-            if (!HasMutationRole(registryGroupRoles))
-                return Failed(RbacInsufficientCode, "The managed Azure identity lacks registry deployment permissions.");
+            if (_options.RegistryAuthorityMode == AzureProviderRegistryAuthorityMode.Narrow)
+            {
+                var definition = await RunRoleDefinitionObservationAsync(cancellationToken);
+                if (definition is null)
+                    return Failed(ObservationFailureCode, "The configured Azure registry role definition could not be observed.");
+                if (!MatchesNarrowMetadataRole(definition))
+                    return Failed(RbacInsufficientCode, "The configured Azure registry metadata role is not the reviewed role.");
 
-            var registryResourceRoles = await RunRoleObservationAsync(RegistryScope(_scope), principalId, cancellationToken);
-            if (registryResourceRoles is null)
-                return Failed(ObservationFailureCode, "The configured Azure registry role-assignment permissions could not be observed.");
-            if (!HasRoleAssignmentPermission(registryResourceRoles))
-                return Failed(RbacInsufficientCode, "The managed Azure identity lacks the required registry-scope permissions.");
+                var metadataAssignment = await RunRoleAssignmentObservationAsync(
+                    AzureProviderRegistryAuthority.ResourceGroupScope(_scope.RegistrySubscriptionId, _scope.RegistryResourceGroupName),
+                    principalId,
+                    cancellationToken);
+                if (metadataAssignment is null)
+                    return Failed(ObservationFailureCode, "The configured Azure registry metadata assignment could not be observed.");
+                if (!HasExactMetadataAssignment(metadataAssignment, principalId))
+                    return Failed(RbacInsufficientCode, "The managed Azure identity lacks the configured registry metadata authority.");
+
+                var registryAssignment = await RunRoleAssignmentObservationAsync(
+                    AzureProviderRegistryAuthority.RegistryScope(_scope),
+                    principalId,
+                    cancellationToken);
+                if (registryAssignment is null)
+                    return Failed(ObservationFailureCode, "The configured Azure registry administration assignment could not be observed.");
+                if (!HasExactRegistryAdministrationAssignment(registryAssignment, principalId))
+                    return Failed(RbacInsufficientCode, "The managed Azure identity lacks the configured registry administration authority.");
+            }
+            else
+            {
+                var registryGroupRoles = await RunRoleObservationAsync(
+                    AzureProviderRegistryAuthority.ResourceGroupScope(_scope.RegistrySubscriptionId, _scope.RegistryResourceGroupName),
+                    principalId,
+                    cancellationToken);
+                if (registryGroupRoles is null)
+                    return Failed(ObservationFailureCode, "The configured Azure registry resource group permissions could not be observed.");
+                if (!HasMutationRole(registryGroupRoles))
+                    return Failed(RbacInsufficientCode, "The managed Azure identity lacks registry deployment permissions.");
+
+                var registryResourceRoles = await RunRoleObservationAsync(AzureProviderRegistryAuthority.RegistryScope(_scope), principalId, cancellationToken);
+                if (registryResourceRoles is null)
+                    return Failed(ObservationFailureCode, "The configured Azure registry role-assignment permissions could not be observed.");
+                if (!HasRoleAssignmentPermission(registryResourceRoles))
+                    return Failed(RbacInsufficientCode, "The managed Azure identity lacks the required registry-scope permissions.");
+            }
 
             return new AzureProviderAuthorityPreflightResult(
                 true,
@@ -230,9 +248,39 @@ public sealed class AzureProviderAuthorityPreflight : IAzureProviderAuthorityPre
     {
         var result = await _process.ExecuteAsync(
             Request(["role", "assignment", "list", "--scope", scope, "--assignee-object-id", principalId, "--fill-principal-name", "false",
-                "--include-inherited", "--query", "[].roleDefinitionName", "--output", "json",
+                "--fill-role-definition-name", "false", "--include-inherited", "--query", "[].roleDefinitionId", "--output", "json",
                 "--only-show-errors"]),
             ParseRoles,
+            cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        return result.Succeeded ? result.Value : null;
+    }
+
+    private async Task<PreflightRoleAssignments?> RunRoleAssignmentObservationAsync(
+        string scope,
+        string principalId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _process.ExecuteAsync(
+            Request(["role", "assignment", "list", "--scope", scope, "--assignee-object-id", principalId,
+                "--fill-principal-name", "false", "--fill-role-definition-name", "false", "--include-inherited",
+                "--query", "[].{id:id,scope:scope,principalId:principalId,principalType:principalType,roleDefinitionId:roleDefinitionId,condition:condition,conditionVersion:conditionVersion}",
+                "--output", "json", "--only-show-errors"]),
+            ParseRoleAssignments,
+            cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        return result.Succeeded ? result.Value : null;
+    }
+
+    private async Task<PreflightRoleDefinition?> RunRoleDefinitionObservationAsync(CancellationToken cancellationToken)
+    {
+        var roleDefinitionId = AzureProviderRegistryAuthority.RoleDefinitionResourceId(_options.RegistryDeploymentMetadataRoleDefinitionId!);
+        var url = $"https://management.azure.com/subscriptions/{_scope.RegistrySubscriptionId}/resourceGroups/{_scope.RegistryResourceGroupName}/providers/Microsoft.Authorization/roleDefinitions/{roleDefinitionId}?api-version=2022-04-01";
+        var result = await _process.ExecuteAsync(
+            Request(["rest", "--method", "get", "--url", url,
+                "--query", "{id:id,type:properties.type,permissions:properties.permissions,assignableScopes:properties.assignableScopes}",
+                "--output", "json", "--only-show-errors"]),
+            ParseRoleDefinition,
             cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         return result.Succeeded ? result.Value : null;
@@ -307,32 +355,186 @@ public sealed class AzureProviderAuthorityPreflight : IAzureProviderAuthorityPre
             if (element.ValueKind != JsonValueKind.String)
                 throw new FormatException("The Azure role observation contains an invalid role.");
             var role = element.GetString();
-            if (string.IsNullOrWhiteSpace(role) || role.Length > 128 || role.Any(char.IsControl))
+            if (string.IsNullOrWhiteSpace(role) || role.Length > 2048 || role.Any(char.IsControl) ||
+                !TryGetRoleDefinitionGuid(role, out var roleDefinitionId))
                 throw new FormatException("The Azure role observation contains an invalid role.");
-            roles.Add(role);
+            roles.Add(roleDefinitionId);
         }
         return new(roles);
     }
 
+    private static PreflightRoleAssignments ParseRoleAssignments(ReadOnlyMemory<char> output)
+    {
+        using var document = JsonDocument.Parse(output);
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+            throw new FormatException("The Azure role assignment observation shape is invalid.");
+
+        var assignments = new List<PreflightRoleAssignment>();
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var element in document.RootElement.EnumerateArray())
+        {
+            if (element.ValueKind != JsonValueKind.Object ||
+                !ReadRequiredString(element, "id", out var id) ||
+                !ReadRequiredString(element, "scope", out var scope) ||
+                !ReadRequiredString(element, "principalId", out var principalId) ||
+                !ReadRequiredString(element, "principalType", out var principalType) ||
+                !ReadRequiredString(element, "roleDefinitionId", out var roleDefinitionId) ||
+                !AzureProviderRegistryAuthority.IsCanonicalRoleAssignmentId(id) ||
+                !IsCanonicalArmPath(scope) ||
+                !IsCanonicalGuid(principalId) ||
+                !string.Equals(principalType, "ServicePrincipal", StringComparison.OrdinalIgnoreCase) ||
+                !IsCanonicalArmPath(roleDefinitionId) ||
+                !TryGetRoleDefinitionGuid(roleDefinitionId, out _))
+                throw new FormatException("The Azure role assignment observation contains an invalid assignment.");
+
+            var condition = ReadOptionalString(element, "condition");
+            var conditionVersion = ReadOptionalString(element, "conditionVersion");
+            if (condition is not null && condition.Length > 4096 || conditionVersion is not null && conditionVersion.Length > 32)
+                throw new FormatException("The Azure role assignment observation contains an invalid condition.");
+            if (!ids.Add(id))
+                throw new FormatException("The Azure role assignment observation contains a duplicate assignment.");
+            assignments.Add(new(id, scope, principalId, principalType, roleDefinitionId, condition, conditionVersion));
+        }
+        return new(assignments);
+    }
+
+    private static PreflightRoleDefinition ParseRoleDefinition(ReadOnlyMemory<char> output)
+    {
+        using var document = JsonDocument.Parse(output);
+        var root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object ||
+            !ReadRequiredString(root, "id", out var id) ||
+            !ReadRequiredString(root, "type", out var type) ||
+            !IsCanonicalArmPath(id) ||
+            !string.Equals(type, "CustomRole", StringComparison.OrdinalIgnoreCase) ||
+            !root.TryGetProperty("assignableScopes", out var scopes) || scopes.ValueKind != JsonValueKind.Array ||
+            scopes.GetArrayLength() != 1 || scopes[0].ValueKind != JsonValueKind.String ||
+            !IsCanonicalArmPath(scopes[0].GetString()))
+            throw new FormatException("The Azure role definition observation shape is invalid.");
+
+        if (!root.TryGetProperty("permissions", out var permissions) || permissions.ValueKind != JsonValueKind.Array ||
+            permissions.GetArrayLength() != 1)
+            throw new FormatException("The Azure role definition permissions are invalid.");
+
+        var permission = permissions[0];
+        if (permission.ValueKind != JsonValueKind.Object ||
+            !ReadStringSet(permission, "actions", out var actions) ||
+            !ReadStringSet(permission, "notActions", out var notActions) ||
+            !ReadStringSet(permission, "dataActions", out var dataActions) ||
+            !ReadStringSet(permission, "notDataActions", out var notDataActions))
+            throw new FormatException("The Azure role definition permissions are invalid.");
+
+        return new(id, scopes[0].GetString()!, actions, notActions, dataActions, notDataActions);
+    }
+
+    private bool MatchesNarrowMetadataRole(PreflightRoleDefinition definition) =>
+        string.Equals(definition.Id, _options.RegistryDeploymentMetadataRoleDefinitionId, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(definition.AssignableScope, AzureProviderRegistryAuthority.ResourceGroupScope(_scope.RegistrySubscriptionId, _scope.RegistryResourceGroupName), StringComparison.OrdinalIgnoreCase) &&
+        definition.Actions.SetEquals(AzureProviderRegistryAuthority.NarrowMetadataActions) &&
+        definition.NotActions.Count == 0 && definition.DataActions.Count == 0 && definition.NotDataActions.Count == 0;
+
+    private bool HasExactMetadataAssignment(PreflightRoleAssignments observed, string principalId) =>
+        observed.Assignments.Count(assignment =>
+            string.Equals(assignment.Id, _options.RegistryDeploymentMetadataRoleAssignmentId, StringComparison.OrdinalIgnoreCase)) == 1 &&
+        observed.Assignments.Any(assignment =>
+            string.Equals(assignment.Id, _options.RegistryDeploymentMetadataRoleAssignmentId, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(assignment.Scope, AzureProviderRegistryAuthority.ResourceGroupScope(_scope.RegistrySubscriptionId, _scope.RegistryResourceGroupName), StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(assignment.PrincipalId, principalId, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(assignment.RoleDefinitionId, _options.RegistryDeploymentMetadataRoleDefinitionId, StringComparison.OrdinalIgnoreCase) &&
+            assignment.Condition is null && assignment.ConditionVersion is null);
+
+    private bool HasExactRegistryAdministrationAssignment(PreflightRoleAssignments observed, string principalId) =>
+        observed.Assignments.Count(assignment =>
+            string.Equals(assignment.Id, _options.RegistryRoleAdministrationAssignmentId, StringComparison.OrdinalIgnoreCase)) == 1 &&
+        observed.Assignments.Any(assignment =>
+            string.Equals(assignment.Id, _options.RegistryRoleAdministrationAssignmentId, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(assignment.Scope, AzureProviderRegistryAuthority.RegistryScope(_scope), StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(assignment.PrincipalId, principalId, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(
+                assignment.RoleDefinitionId,
+                $"/subscriptions/{_scope.RegistrySubscriptionId}/providers/Microsoft.Authorization/roleDefinitions/{AzureProviderRegistryAuthority.RbacAdministratorRoleDefinitionId}",
+                StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(assignment.ConditionVersion, AzureProviderRegistryAuthority.RegistryRoleAdministrationConditionVersion, StringComparison.Ordinal) &&
+            assignment.Condition is not null &&
+            string.Equals(
+                AzureProviderRegistryAuthority.NormalizeCondition(assignment.Condition),
+                AzureProviderRegistryAuthority.NormalizeCondition(AzureProviderRegistryAuthority.RegistryRoleAdministrationCondition),
+                StringComparison.Ordinal));
+
+    private static bool ReadRequiredString(JsonElement element, string name, out string value)
+    {
+        value = "";
+        if (!element.TryGetProperty(name, out var property) || property.ValueKind != JsonValueKind.String)
+            return false;
+
+        var candidate = property.GetString();
+        if (candidate is null || string.IsNullOrWhiteSpace(candidate) || candidate.Any(char.IsControl))
+            return false;
+
+        value = candidate;
+        return true;
+    }
+
+    private static string? ReadOptionalString(JsonElement element, string name)
+    {
+        if (!element.TryGetProperty(name, out var property) || property.ValueKind == JsonValueKind.Null)
+            return null;
+        if (property.ValueKind != JsonValueKind.String)
+            throw new FormatException("The Azure role assignment condition is invalid.");
+        var value = property.GetString();
+        return value is null || value.Any(character => char.IsControl(character) && character is not '\r' and not '\n')
+            ? throw new FormatException("The Azure role assignment condition is invalid.")
+            : value;
+    }
+
+    private static bool ReadStringSet(JsonElement element, string name, out IReadOnlySet<string> values)
+    {
+        values = new HashSet<string>(StringComparer.Ordinal);
+        if (!element.TryGetProperty(name, out var property) || property.ValueKind != JsonValueKind.Array)
+            return false;
+        foreach (var item in property.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(item.GetString()) || item.GetString()!.Any(char.IsControl))
+                return false;
+            if (!((HashSet<string>)values).Add(item.GetString()!))
+                return false;
+        }
+        return true;
+    }
+
+    private static bool TryGetRoleDefinitionGuid(string value, out string roleDefinitionId)
+    {
+        roleDefinitionId = "";
+        if (!IsCanonicalArmPath(value))
+            return false;
+        var marker = "/providers/Microsoft.Authorization/roleDefinitions/";
+        var index = value.LastIndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (index < 0)
+            return false;
+        var candidate = value[(index + marker.Length)..];
+        if (!Guid.TryParseExact(candidate, "D", out var guid) || guid == Guid.Empty || candidate.Contains('/', StringComparison.Ordinal))
+            return false;
+        roleDefinitionId = guid.ToString("D");
+        return true;
+    }
+
+    private static bool IsCanonicalArmPath(string? value) =>
+        value is not null && value.Length is > 0 and <= 2048 && value[0] == '/' &&
+        !value.Any(char.IsWhiteSpace) && !value.Any(char.IsControl) &&
+        !value.Contains("//", StringComparison.Ordinal) && !value.Contains('?', StringComparison.Ordinal) &&
+        !value.Contains('#', StringComparison.Ordinal) && !value.Contains('\\', StringComparison.Ordinal);
+
     private static bool HasRequiredRoles(PreflightRoles observed) =>
         HasMutationRole(observed) && HasRoleAssignmentPermission(observed);
 
-    private static bool HasMutationRole(PreflightRoles observed) => observed.Roles.Any(MutationRoles.Contains);
+    private static bool HasMutationRole(PreflightRoles observed) => observed.Roles.Any(AzureProviderRegistryAuthority.BuiltInMutationRoleDefinitionIds.Contains);
 
     private static bool HasRoleAssignmentPermission(PreflightRoles observed) =>
-        observed.Roles.Any(RoleAssignmentRoles.Contains);
+        observed.Roles.Any(AzureProviderRegistryAuthority.BuiltInRoleAssignmentRoleDefinitionIds.Contains);
 
     private static bool IsCanonicalGuid(string? value) =>
         Guid.TryParseExact(value, "D", out _) &&
         string.Equals(value, value?.ToLowerInvariant(), StringComparison.Ordinal);
-
-    private static string SubscriptionScope(string subscriptionId) => $"/subscriptions/{subscriptionId}";
-
-    private static string ResourceGroupScope(string subscriptionId, string resourceGroupName) =>
-        $"{SubscriptionScope(subscriptionId)}/resourceGroups/{resourceGroupName}";
-
-    private static string RegistryScope(AzureProviderTargetScope scope) =>
-        $"{ResourceGroupScope(scope.RegistrySubscriptionId, scope.RegistryResourceGroupName)}/providers/Microsoft.ContainerRegistry/registries/{scope.RegistryName}";
 
     private static AzureProviderAuthorityPreflightResult Failed(string code, string message) =>
         new(false, code, message);
@@ -351,5 +553,35 @@ public sealed class AzureProviderAuthorityPreflight : IAzureProviderAuthorityPre
     private sealed class PreflightRoles(IReadOnlySet<string> roles) : AzureCommandSafeOutput
     {
         public IReadOnlySet<string> Roles { get; } = roles;
+    }
+
+    private sealed class PreflightRoleAssignments(IReadOnlyList<PreflightRoleAssignment> assignments) : AzureCommandSafeOutput
+    {
+        public IReadOnlyList<PreflightRoleAssignment> Assignments { get; } = assignments;
+    }
+
+    private sealed record PreflightRoleAssignment(
+        string Id,
+        string Scope,
+        string PrincipalId,
+        string PrincipalType,
+        string RoleDefinitionId,
+        string? Condition,
+        string? ConditionVersion);
+
+    private sealed class PreflightRoleDefinition(
+        string id,
+        string assignableScope,
+        IReadOnlySet<string> actions,
+        IReadOnlySet<string> notActions,
+        IReadOnlySet<string> dataActions,
+        IReadOnlySet<string> notDataActions) : AzureCommandSafeOutput
+    {
+        public string Id { get; } = id;
+        public string AssignableScope { get; } = assignableScope;
+        public IReadOnlySet<string> Actions { get; } = actions;
+        public IReadOnlySet<string> NotActions { get; } = notActions;
+        public IReadOnlySet<string> DataActions { get; } = dataActions;
+        public IReadOnlySet<string> NotDataActions { get; } = notDataActions;
     }
 }

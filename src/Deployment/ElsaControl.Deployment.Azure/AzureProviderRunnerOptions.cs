@@ -87,6 +87,17 @@ public sealed record AzureProviderRunnerOptions
     public bool DisposableProofMode { get; init; }
     /// <summary>Expiry bound to disposable-proof ownership. Production deployments omit it.</summary>
     public DateOnly? DisposableExpiryUtc { get; init; }
+    /// <summary>
+    /// Registry authority dialect. The built-in default intentionally leaves the legacy
+    /// execution-authority fingerprint byte-compatible for retained operations.
+    /// </summary>
+    public AzureProviderRegistryAuthorityMode RegistryAuthorityMode { get; init; }
+    /// <summary>Full resource ID of the reviewed custom registry metadata role definition.</summary>
+    public string? RegistryDeploymentMetadataRoleDefinitionId { get; init; }
+    /// <summary>Full resource ID of the exact registry resource-group role assignment.</summary>
+    public string? RegistryDeploymentMetadataRoleAssignmentId { get; init; }
+    /// <summary>Full resource ID of the exact registry-scoped RBAC administrator assignment.</summary>
+    public string? RegistryRoleAdministrationAssignmentId { get; init; }
     public string Owner { get; init; } = "elsa-control";
     public TimeSpan CommandTimeout { get; init; } = TimeSpan.FromMinutes(15);
     public int MaximumOutputCharacters { get; init; } = 1_048_576;
@@ -102,28 +113,41 @@ public sealed record AzureProviderRunnerOptions
         ArgumentNullException.ThrowIfNull(scope);
         Validate();
         scope.Validate();
-        var canonical = JsonSerializer.Serialize(new
+        ValidateRegistryAuthority(scope);
+        // Property order is a persisted contract, including the original BuiltIn payload.
+        using var canonical = new MemoryStream();
+        using var writer = new Utf8JsonWriter(canonical);
+        writer.WriteStartObject();
+        writer.WriteString("targetScopeFingerprint", scope.ComputeFingerprint());
+        writer.WriteString("azureCliPath", Path.GetFullPath(AzureCliPath));
+        writer.WriteString("azureCliDigest", ComputeFileDigest(AzureCliPath));
+        writer.WriteString("azureCliClientId", AzureCliClientId?.ToLowerInvariant());
+        writer.WriteString("sqlCmdPath", Path.GetFullPath(SqlCmdPath));
+        writer.WriteString("sqlCmdDigest", ComputeFileDigest(SqlCmdPath));
+        writer.WriteString("curlPath", Path.GetFullPath(CurlPath));
+        writer.WriteString("curlDigest", ComputeFileDigest(CurlPath));
+        writer.WriteString("templateRoot", NormalizeRoot(TemplateRoot));
+        writer.WriteString("templateAuthorityFingerprint", ComputeTemplateAuthorityFingerprint());
+        writer.WriteString("sqlBootstrapObjectId", SqlBootstrapObjectId.ToLowerInvariant());
+        writer.WriteString("sqlBootstrapLogin", SqlBootstrapLogin);
+        writer.WriteString("sqlBootstrapIp", SqlBootstrapIp);
+        writer.WriteString("runtimeAdminUsername", RuntimeAdminUsername);
+        writer.WriteString("releaseFeedServiceIndex", NormalizeReleaseFeedServiceIndex());
+        writer.WriteBoolean("disposableProofMode", DisposableProofMode);
+        writer.WriteString("disposableExpiryUtc", DisposableExpiryUtc?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+        writer.WriteString("owner", Owner.ToLowerInvariant());
+        if (RegistryAuthorityMode == AzureProviderRegistryAuthorityMode.Narrow)
         {
-            targetScopeFingerprint = scope.ComputeFingerprint(),
-            azureCliPath = Path.GetFullPath(AzureCliPath),
-            azureCliDigest = ComputeFileDigest(AzureCliPath),
-            azureCliClientId = AzureCliClientId?.ToLowerInvariant(),
-            sqlCmdPath = Path.GetFullPath(SqlCmdPath),
-            sqlCmdDigest = ComputeFileDigest(SqlCmdPath),
-            curlPath = Path.GetFullPath(CurlPath),
-            curlDigest = ComputeFileDigest(CurlPath),
-            templateRoot = NormalizeRoot(TemplateRoot),
-            templateAuthorityFingerprint = ComputeTemplateAuthorityFingerprint(),
-            sqlBootstrapObjectId = SqlBootstrapObjectId.ToLowerInvariant(),
-            sqlBootstrapLogin = SqlBootstrapLogin,
-            sqlBootstrapIp = SqlBootstrapIp,
-            runtimeAdminUsername = RuntimeAdminUsername,
-            releaseFeedServiceIndex = NormalizeReleaseFeedServiceIndex(),
-            disposableProofMode = DisposableProofMode,
-            disposableExpiryUtc = DisposableExpiryUtc?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-            owner = Owner.ToLowerInvariant()
-        });
-        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+            writer.WriteStartObject("registryAuthority");
+            writer.WriteString("mode", RegistryAuthorityMode.ToString());
+            writer.WriteString("roleDefinitionId", RegistryDeploymentMetadataRoleDefinitionId!.ToLowerInvariant());
+            writer.WriteString("roleAssignmentId", RegistryDeploymentMetadataRoleAssignmentId!.ToLowerInvariant());
+            writer.WriteString("roleAdministrationAssignmentId", RegistryRoleAdministrationAssignmentId!.ToLowerInvariant());
+            writer.WriteEndObject();
+        }
+        writer.WriteEndObject();
+        writer.Flush();
+        return Convert.ToHexStringLower(SHA256.HashData(canonical.ToArray()));
     }
 
     /// <summary>
@@ -179,6 +203,11 @@ public sealed record AzureProviderRunnerOptions
             throw new ArgumentException("The SQL bootstrap address must be one exact non-zero IPv4 address.", nameof(SqlBootstrapIp));
         if (!Regex.IsMatch(Owner ?? "", "^[a-z0-9][a-z0-9-]{0,62}\\z", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking))
             throw new ArgumentException("The Azure owner tag is unsafe.", nameof(Owner));
+        AzureProviderRegistryAuthority.ValidateConfiguration(
+            RegistryAuthorityMode,
+            RegistryDeploymentMetadataRoleDefinitionId,
+            RegistryDeploymentMetadataRoleAssignmentId,
+            RegistryRoleAdministrationAssignmentId);
         _ = NormalizeReleaseFeedServiceIndex();
         if (CommandTimeout <= TimeSpan.Zero || CommandTimeout > TimeSpan.FromHours(1))
             throw new ArgumentOutOfRangeException(nameof(CommandTimeout), "The command timeout must be positive and no longer than one hour.");
@@ -188,6 +217,19 @@ public sealed record AzureProviderRunnerOptions
             throw new ArgumentOutOfRangeException(nameof(ObservationAttempts));
         if (ObservationDelay < TimeSpan.Zero || ObservationDelay > TimeSpan.FromMinutes(1))
             throw new ArgumentOutOfRangeException(nameof(ObservationDelay));
+    }
+
+    /// <summary>Validates pinned registry authority against the target scope without filesystem access.</summary>
+    public void ValidateRegistryAuthority(AzureProviderTargetScope scope)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        scope.Validate();
+        AzureProviderRegistryAuthority.ValidateForScope(
+            scope,
+            RegistryAuthorityMode,
+            RegistryDeploymentMetadataRoleDefinitionId,
+            RegistryDeploymentMetadataRoleAssignmentId,
+            RegistryRoleAdministrationAssignmentId);
     }
 
     private static void ValidateExecutable(string? value, string name)
@@ -220,7 +262,8 @@ public sealed record AzureProviderRunnerOptions
     {
         if (string.IsNullOrWhiteSpace(TemplateRoot) || !Path.IsPathFullyQualified(TemplateRoot))
             throw new ArgumentException("The Azure template root must be an absolute path.", nameof(TemplateRoot));
-        return ComputeTemplateAuthorityFingerprint(NormalizeRoot(TemplateRoot));
+        return ComputeTemplateAuthorityFingerprint(
+            NormalizeRoot(TemplateRoot));
     }
 
     private static string ComputeTemplateAuthorityFingerprint(string root)

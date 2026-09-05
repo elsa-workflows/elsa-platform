@@ -554,6 +554,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.Equal(AzureProviderRunnerOutcome.Completed, result.Outcome);
         Assert.Equal(_fixture.RegistryId, result.Resources.RegistryResourceId);
         Assert.Equal(_fixture.RegistryRoleAssignmentId, result.Resources.AcrPullRoleAssignmentId);
+        AssertRegistryRoleObservationsAreScoped(process);
     }
 
     [Fact]
@@ -1058,7 +1059,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
             call.Contains("--scope") &&
             call.Contains(_fixture.FoundationResources.KeyVaultResourceId!) &&
             !call.Contains("--all"));
-        Assert.All(roleLists.Where(call => !call.Contains("--scope")), call => Assert.Contains("--all", call));
+        AssertRegistryRoleObservationsAreScoped(process);
         Assert.Equal(2, process.Calls.Count(call => call.Contains("list-deleted")));
     }
 
@@ -1082,6 +1083,25 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.Equal(AzureProviderRunnerOutcome.Completed, result.Outcome);
         Assert.Contains(process.Calls, call => call.Contains("role") && call.Contains("delete") && call.Contains(_fixture.RegistryRoleAssignmentId));
         Assert.Contains(process.Calls, call => call.Contains("deployment") && call.Contains("delete") && call.Contains(Path.GetFileName(_fixture.RegistryDeploymentId)));
+        AssertRegistryRoleObservationsAreScoped(process);
+    }
+
+    private void AssertRegistryRoleObservationsAreScoped(FakeCommandProcess process)
+    {
+        var observations = process.Calls.Where(call =>
+            call is ["role", "assignment", "list", ..] && call.Contains(_fixture.Scope.RegistrySubscriptionId)).ToArray();
+        Assert.NotEmpty(observations);
+        Assert.All(observations, call =>
+        {
+            Assert.DoesNotContain("--all", call);
+            Assert.Contains("--scope", call);
+            Assert.Equal(_fixture.RegistryId, call[Array.IndexOf(call, "--scope") + 1]);
+            Assert.Contains("--assignee-object-id", call);
+            Assert.Contains("--fill-principal-name", call);
+            Assert.Equal("false", call[Array.IndexOf(call, "--fill-principal-name") + 1]);
+            Assert.Contains("--fill-role-definition-name", call);
+            Assert.Equal("false", call[Array.IndexOf(call, "--fill-role-definition-name") + 1]);
+        });
     }
 
     [Fact]
