@@ -73,4 +73,22 @@ and prove negative cases make no catalog writes. Keep raw payloads, certificates
 identities, tool output, bearer tokens and SAS queries out of diagnostic/evidence exports.
 Never report an unavailable verifier as a successful or advisory-only admission.
 
+The opt-in `ProductionReleaseManifestAdmissionProofTests` harness requires early
+`ASPNETCORE_ENVIRONMENT=Production`, an absolute test content root, and its staged
+`appsettings.Production.json`. It rejects effective environment overrides of database,
+verification and worker authority; every conditional background worker must be disabled.
+Use `Authentication__ApiKey` for a transient administrator key, never a checked-in value.
+Run three separate processes with a fresh isolated SQLite database per process:
+
+1. `ReleaseCatalog:AdmissionProof:Scenario=Admit` with the approved signer policy proves
+   admission, idempotent replay and no-write altered-payload/mutable-reference rejection.
+2. `Scenario=RejectPolicy` with only the expected signer subject changed proves rejection
+   of the unchanged real signed release and an unchanged empty catalog.
+3. `Scenario=RejectPolicy` with only the expected issuer changed proves the same API
+   no-write property for issuer mismatch.
+
+Stage each process's configuration before starting it. Do not override services or mutate
+policy inside a running host, and do not substitute standalone crypto rejection for these
+API-level checks.
+
 Design rationale: [ADR-0015](adr/0015-production-release-manifest-verification.md).
