@@ -138,6 +138,17 @@ jobs:
 
           echo "::notice::Deployment skipped because configuration is incomplete. Missing: $missing_names"
 
+      - name: Require main ref for Azure mutation
+        if: ${{ success() && steps.deployment-config.outputs.deploy_configured == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Azure deployment and candidate publication are permitted only from the main branch; refusing to continue."
+            exit 1
+          fi
+
       - name: Restore
         run: dotnet restore ElsaControl.sln
 
@@ -248,9 +259,14 @@ jobs:
             echo "::error::The configured container registry endpoint has an unexpected format; refusing to publish a candidate."
             exit 1
           fi
+          if [[ ! "$GITHUB_RUN_ID" =~ ^[1-9][0-9]{0,19}$ || ! "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]{0,5}$ ]]; then
+            echo "::error::The build run identity has an unexpected format; refusing to publish a candidate."
+            exit 1
+          fi
 
           acr_name="${AZURE_CONTAINER_REGISTRY_ENDPOINT%%.azurecr.io}"
-          image="$AZURE_CONTAINER_REGISTRY_ENDPOINT/elsa-control/api:$GITHUB_SHA"
+          candidate_tag="candidate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_SHA}"
+          image="$AZURE_CONTAINER_REGISTRY_ENDPOINT/elsa-control/api:$candidate_tag"
           image_repository="$AZURE_CONTAINER_REGISTRY_ENDPOINT/elsa-control/api"
           candidate_descriptor_directory="$RUNNER_TEMP/elsa-control-api-candidate"
           candidate_descriptor="$candidate_descriptor_directory/candidate.json"
@@ -266,7 +282,7 @@ jobs:
 
           digest="$(az acr manifest show-metadata \
             --registry "$acr_name" \
-            --name "elsa-control/api:$GITHUB_SHA" \
+            --name "elsa-control/api:$candidate_tag" \
             --query digest \
             --output tsv \
             --only-show-errors)"
@@ -609,6 +625,35 @@ jobs:
                 --output none
             else
               echo "::error::The captured deployment mode is unsupported; refusing promotion."
+              exit 1
+            fi
+
+            expected_runtime_reference="$image"
+            if [ "$current_deployment_mode" = "classic" ]; then
+              expected_runtime_reference="DOCKER|$image"
+              if ! configured_runtime_reference="$(az webapp config show \
+                --resource-group "$AZURE_RESOURCE_GROUP" \
+                --name "$AZURE_WEBAPP_NAME" \
+                --query linuxFxVersion \
+                --output tsv \
+                --only-show-errors)"; then
+                echo "::error::The promoted Docker runtime could not be read back; refusing promotion acceptance."
+                exit 1
+              fi
+            else
+              if ! configured_runtime_reference="$(az webapp sitecontainers show \
+                --resource-group "$AZURE_RESOURCE_GROUP" \
+                --name "$AZURE_WEBAPP_NAME" \
+                --container-name main \
+                --query properties.image \
+                --output tsv \
+                --only-show-errors)"; then
+                echo "::error::The promoted main sitecontainer could not be read back; refusing promotion acceptance."
+                exit 1
+              fi
+            fi
+            if [ "$configured_runtime_reference" != "$expected_runtime_reference" ]; then
+              echo "::error::The promoted runtime did not match the validated immutable image; refusing promotion acceptance."
               exit 1
             fi
           else

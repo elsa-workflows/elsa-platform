@@ -87,6 +87,7 @@ jq -e \
    .status == "completed" and
    .conclusion == "success" and
    .event == "workflow_dispatch" and
+   .head_branch == "main" and
    .head_sha == $source_sha and
    (.run_number | tostring) == $run_number' \
   "$run_file" >/dev/null 2>&1 || fail "candidate workflow run is not a trusted successful build"

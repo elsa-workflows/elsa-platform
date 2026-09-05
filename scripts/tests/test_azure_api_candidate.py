@@ -78,6 +78,7 @@ esac
             "status": "completed",
             "conclusion": "success",
             "event": "workflow_dispatch",
+            "head_branch": "main",
             "head_sha": SOURCE_SHA,
             "run_number": 77,
         }
@@ -155,6 +156,7 @@ esac
                     "status": "completed",
                     "conclusion": "failure",
                     "event": "workflow_dispatch",
+                    "head_branch": "main",
                     "head_sha": SOURCE_SHA,
                     "run_number": 77,
                 }
@@ -177,6 +179,30 @@ esac
                     "status": "completed",
                     "conclusion": "success",
                     "event": "workflow_dispatch",
+                    "head_branch": "main",
+                    "head_sha": SOURCE_SHA,
+                    "run_number": 77,
+                }
+            )
+        )
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("trusted successful build", result.stderr)
+        self.assertFalse(self.output.exists())
+
+    def test_workflow_run_from_a_non_main_ref_is_rejected(self) -> None:
+        result = self.run_helper(
+            FAKE_RUN_JSON=json.dumps(
+                {
+                    "id": 123,
+                    "name": "Azure Control API Deploy",
+                    "path": ".github/workflows/azure-api-deploy.yml",
+                    "repository": {"full_name": SOURCE_REPOSITORY},
+                    "head_repository": {"full_name": SOURCE_REPOSITORY},
+                    "status": "completed",
+                    "conclusion": "success",
+                    "event": "workflow_dispatch",
+                    "head_branch": "release/preview",
                     "head_sha": SOURCE_SHA,
                     "run_number": 77,
                 }

@@ -50,11 +50,24 @@ class AzureApiDeployWorkflowTests(unittest.TestCase):
         self.assertIn("Verify candidate image in ACR", self.source)
         self.assertIn('"::error::The validated candidate image is not present in the configured registry; refusing promotion."', self.source)
         self.assertIn('command -v jq >/dev/null 2>&1', self.source)
+        self.assertIn('candidate_tag="candidate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_SHA}"', self.source)
+        self.assertIn('--name "elsa-control/api:$candidate_tag"', self.source)
         self.assertIn("candidate_descriptor_directory=\"$RUNNER_TEMP/elsa-control-api-candidate\"", self.source)
         self.assertIn('"$RUNNER_TEMP/elsa-control-api-candidate/candidate.json"', self.source)
         self.assertIn("capture_succeeded=false", self.source)
         self.assertIn("capture_succeeded=true", self.source)
         self.assertIn("steps.current-deployment.outputs.capture_succeeded == 'true'", self.source)
+        main_guard_start = self.source.index("      - name: Require main ref for Azure mutation")
+        restore_start = self.source.index("      - name: Restore")
+        login_start = self.source.index("      - name: Log in Azure CLI")
+        self.assertLess(main_guard_start, restore_start)
+        self.assertLess(main_guard_start, login_start)
+        main_guard = self.source[main_guard_start:restore_start]
+        self.assertIn('GITHUB_REF:-', main_guard)
+        self.assertNotIn("DEPLOY_MODE != 'build'", main_guard)
+        self.assertIn("The promoted runtime did not match the validated immutable image", self.source)
+        self.assertIn("--query linuxFxVersion", self.source)
+        self.assertIn("--query properties.image", self.source)
         self.assertIn(
             'current_deployment_mode="${{ steps.current-deployment.outputs.deployment_mode }}"',
             self.source,
@@ -86,6 +99,8 @@ class AzureApiDeployWorkflowTests(unittest.TestCase):
         build_script = self.source[build_start:build_end]
         self.assertNotIn("az webapp", build_script)
         self.assertNotIn("restart", build_script)
+        self.assertNotIn('image="$AZURE_CONTAINER_REGISTRY_ENDPOINT/elsa-control/api:$GITHUB_SHA"', build_script)
+        self.assertIn('--build-arg ELSA_CONTROL_IMAGE_ID="$GITHUB_SHA"', build_script)
 
         promote_start = self.source.index('elif [ "$DEPLOY_MODE" = "promote" ]; then')
         promote_end = self.source.index('else\n            echo "::error::The selected deployment mode cannot mutate', promote_start)
@@ -103,6 +118,100 @@ class AzureApiDeployWorkflowTests(unittest.TestCase):
 
         self.assertIn("env.DEPLOY_MODE == 'infra' && secrets.ADMIN_API_KEY", self.source)
         self.assertIn("env.DEPLOY_MODE == 'infra' && secrets.BUILDER_CLIENT_API_KEY", self.source)
+
+    def test_promotion_reads_back_exact_runtime_before_settings_or_restart(self) -> None:
+        deploy_start = self.source.index(
+            "        run: |\n",
+            self.source.index("      - name: Deploy API app"),
+        )
+        deploy_end = self.source.index("\n      - name:", deploy_start)
+        deploy_script = dedent(self.source[deploy_start + len("        run: |\n") : deploy_end])
+        deploy_script = deploy_script.replace(
+            '${{ steps.current-deployment.outputs.deployment_mode }}',
+            '"$CURRENT_DEPLOYMENT_MODE"',
+        )
+        candidate_image = "acr.azurecr.io/elsa-control/api@sha256:" + "c" * 64
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            fake_az = temp_path / "az"
+            fake_az.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "${AZ_CALL_LOG:?}"
+case "$*" in
+  *"webapp sitecontainers update"*) exit 0 ;;
+  *"webapp config container set"*) exit 0 ;;
+  *"webapp sitecontainers show"*) printf '%s\\n' "${RUNTIME_READBACK:?}" ;;
+  *"webapp config show"*) printf '%s\\n' "${RUNTIME_READBACK:?}" ;;
+  *"webapp config appsettings set"*) exit 0 ;;
+  *"webapp restart"*) exit 0 ;;
+  *) exit 1 ;;
+esac
+"""
+            )
+            fake_az.chmod(0o755)
+            call_log = temp_path / "az-calls"
+
+            def run_promotion(
+                current_deployment_mode: str,
+                runtime_readback: str,
+            ) -> subprocess.CompletedProcess[str]:
+                call_log.unlink(missing_ok=True)
+                environment = os.environ.copy()
+                environment.update(
+                    {
+                        "PATH": f"{temp_path}:{environment['PATH']}",
+                        "AZ_CALL_LOG": str(call_log),
+                        "AZURE_RESOURCE_GROUP": "test-rg",
+                        "AZURE_WEBAPP_NAME": "test-api",
+                        "AZURE_CONTAINER_REGISTRY_ENDPOINT": "acr.azurecr.io",
+                        "DEPLOY_MODE": "promote",
+                        "GITHUB_RUN_NUMBER": "1786839398",
+                        "VALIDATED_CANDIDATE_IMAGE": candidate_image,
+                        "CURRENT_DEPLOYMENT_MODE": current_deployment_mode,
+                        "RUNTIME_READBACK": runtime_readback,
+                    }
+                )
+                return subprocess.run(
+                    ["bash", "-c", deploy_script],
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=10,
+                )
+
+            classic = run_promotion("classic", f"DOCKER|{candidate_image}")
+            self.assertEqual(0, classic.returncode, classic.stderr)
+            classic_calls = call_log.read_text()
+            self.assertIn("webapp config container set", classic_calls)
+            self.assertIn("webapp config show", classic_calls)
+            self.assertIn("webapp config appsettings set", classic_calls)
+            self.assertIn("webapp restart", classic_calls)
+
+            sitecontainers = run_promotion("sitecontainers", candidate_image)
+            self.assertEqual(0, sitecontainers.returncode, sitecontainers.stderr)
+            sitecontainer_calls = call_log.read_text()
+            self.assertIn("webapp sitecontainers update", sitecontainer_calls)
+            self.assertIn("webapp sitecontainers show", sitecontainer_calls)
+            self.assertIn("webapp config appsettings set", sitecontainer_calls)
+            self.assertIn("webapp restart", sitecontainer_calls)
+
+            mismatch = run_promotion(
+                "classic",
+                "DOCKER|acr.azurecr.io/elsa-control/api@sha256:" + "d" * 64,
+            )
+            self.assertNotEqual(0, mismatch.returncode)
+            self.assertIn(
+                "did not match the validated immutable image",
+                mismatch.stdout + mismatch.stderr,
+            )
+            mismatch_calls = call_log.read_text()
+            self.assertIn("webapp config container set", mismatch_calls)
+            self.assertIn("webapp config show", mismatch_calls)
+            self.assertNotIn("webapp config appsettings set", mismatch_calls)
+            self.assertNotIn("webapp restart", mismatch_calls)
 
     def test_health_identity_separates_candidate_source_from_promotion_run(self) -> None:
         self.assertIn('VALIDATED_CANDIDATE_SOURCE_SHA: ${{ steps.candidate-authority.outputs.candidate_source_sha }}', self.source)

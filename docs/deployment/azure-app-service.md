@@ -71,7 +71,7 @@ Azure resources on every push.
 
 ### Staged immutable promotion
 
-Choose `deploy_mode: build` to run the required checks, build and push one candidate,
+Choose `deploy_mode: build` from the `main` branch to run the required checks, build and push one candidate,
 resolve its ACR manifest digest, and upload a safe candidate descriptor. This mode does
 not inspect or mutate the Web App and does not run production startup migrations.
 
@@ -98,6 +98,11 @@ GitHub environment subject, it is:
 ```text
 repo:<owner>/<repo>:environment:production
 ```
+
+The production environment must also enforce a selected-branch policy for `main`.
+The workflow repeats this as a defense-in-depth check before Azure login for every
+mutating mode; the protected GitHub environment policy remains the authoritative
+remote boundary and must not be replaced by the workflow check.
 
 Required GitHub Actions variables:
 
