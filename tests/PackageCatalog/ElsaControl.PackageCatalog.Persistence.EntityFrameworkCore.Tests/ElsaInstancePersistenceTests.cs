@@ -442,6 +442,36 @@ public sealed class ElsaInstancePersistenceTests
     }
 
     [Fact]
+    public async Task Rolling_back_preview_consent_preserves_instance_delete_guard()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+
+        var workspace = new Workspace { Name = "Preview consent rollback workspace" };
+        db.Workspaces.Add(workspace);
+        await db.SaveChangesAsync();
+        var instance = NewInstance(workspace.OrganizationId, workspace.Id);
+        db.ElsaInstances.Add(instance);
+        await db.SaveChangesAsync();
+
+        await db.Database.MigrateAsync("20260904105437_AddAzureProviderResourceAssignments");
+        db.ChangeTracker.Clear();
+        var triggerNames = await db.Database.SqlQueryRaw<string>(
+            "SELECT name AS Value FROM sqlite_master WHERE type = 'trigger' AND name IN ('TR_ElsaInstances_NoDelete', 'TR_DeploymentEnvironments_ManagedInstanceBinding_Update')")
+            .ToListAsync();
+        Assert.Contains("TR_ElsaInstances_NoDelete", triggerNames);
+        Assert.Contains("TR_DeploymentEnvironments_ManagedInstanceBinding_Update", triggerNames);
+        await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(
+            $"DELETE FROM ElsaInstances WHERE Id = {instance.Id}"));
+
+        await db.Database.MigrateAsync();
+        await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync(
+            $"DELETE FROM ElsaInstances WHERE Id = {instance.Id}"));
+    }
+
+    [Fact]
     public async Task Instance_tenant_audience_must_be_derived_from_instance_id()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -1513,8 +1543,24 @@ public sealed class ElsaInstancePersistenceTests
         db.Workspaces.Add(workspace);
         await db.SaveChangesAsync();
         var instance = NewInstance(workspace.OrganizationId, workspace.Id);
-        db.ElsaInstances.Add(instance);
-        await db.SaveChangesAsync();
+        // The current EF model includes fields added after this historical
+        // boundary, so seed through the exact legacy column set instead of
+        // asking the current model to write a column that does not exist yet.
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO ElsaInstances
+                (Id, OrganizationId, WorkspaceId, Name, Slug, DistributionId,
+                 ReleaseLine, Channel, PatchUpdates, MinorUpdates, MajorMigrations,
+                 TopologyId, FeatureOverridesJson, TargetMode, RegionCode,
+                 IsolationProfile, CapacityProfile, NetworkOutcome, DomainOutcome,
+                 DesiredLifecycle, ObservedLifecycle, Health, Version, CreatedAt, UpdatedAt)
+            VALUES
+                ({instance.Id}, {instance.OrganizationId}, {instance.WorkspaceId}, {instance.Name}, {instance.Slug}, {instance.DistributionId},
+                 {instance.ReleaseLine}, {instance.Channel}, {instance.PatchUpdates}, {instance.MinorUpdates}, {instance.MajorMigrations},
+                 {instance.TopologyId}, {instance.FeatureOverridesJson}, {instance.TargetMode}, {instance.RegionCode},
+                 {instance.IsolationProfile}, {instance.CapacityProfile}, {instance.NetworkOutcome}, {instance.DomainOutcome},
+                 {instance.DesiredLifecycle.ToString()}, {instance.ObservedLifecycle.ToString()}, {instance.Health.ToString()},
+                 {instance.Version}, {instance.CreatedAt.UtcTicks}, {instance.UpdatedAt.UtcTicks})
+            """);
         var migrationId = Guid.NewGuid();
         var cutover = DateTimeOffset.UtcNow.AddDays(-31);
         var sourcePlanId = "source-plan";

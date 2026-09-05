@@ -204,6 +204,64 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSourceTests : IAs
     }
 
     [Fact]
+    public async Task Explicit_preview_consent_resolves_a_matching_preview_or_promoted_entry()
+    {
+        var consented = ConsentInstance();
+        var source = new CatalogElsaInstanceLifecycleResolutionInputSource(
+            _db,
+            new StaticCatalog(CreateEntry("preview")),
+            new ElsaInstancePlanAuthorityOptions { Origin = "https://control.example.test" },
+            GovernedSecrets);
+
+        var result = await source.GetAsync(consented, _accepted.Operation);
+
+        Assert.NotNull(result);
+        Assert.Equal("sha256:" + new string('c', 64), result!.PlanRequest.ReleaseManifest.Digest);
+
+        var promoted = new CatalogElsaInstanceLifecycleResolutionInputSource(
+            _db,
+            new StaticCatalog(CreateEntry("supported")),
+            new ElsaInstancePlanAuthorityOptions { Origin = "https://control.example.test" },
+            GovernedSecrets);
+        Assert.NotNull(await promoted.GetAsync(consented, _accepted.Operation));
+    }
+
+    [Fact]
+    public async Task Preview_consent_rejects_digest_mismatch_ambiguity_and_maintenance_lifecycle()
+    {
+        var consented = ConsentInstance();
+        var authority = new ElsaInstancePlanAuthorityOptions { Origin = "https://control.example.test" };
+
+        var mismatch = await new CatalogElsaInstanceLifecycleResolutionInputSource(
+            _db,
+            new StaticCatalog(CreateEntry("preview") with { ManifestDigest = "sha256:" + new string('d', 64) }),
+            authority,
+            GovernedSecrets).GetAsync(consented, _accepted.Operation);
+        Assert.Null(mismatch);
+
+        var ambiguity = await new CatalogElsaInstanceLifecycleResolutionInputSource(
+            _db,
+            new StaticCatalog(CreateEntry("preview"), CreateEntry("preview") with { ManifestDigest = "sha256:" + new string('d', 64) }),
+            authority,
+            GovernedSecrets).GetAsync(consented, _accepted.Operation);
+        Assert.Null(ambiguity);
+
+        var maintenance = await new CatalogElsaInstanceLifecycleResolutionInputSource(
+            _db,
+            new StaticCatalog(CreateEntry("maintenance")),
+            authority,
+            GovernedSecrets).GetAsync(consented, _accepted.Operation);
+        Assert.Null(maintenance);
+
+        var crossLifecycleAmbiguity = await new CatalogElsaInstanceLifecycleResolutionInputSource(
+            _db,
+            new StaticCatalog(CreateEntry("supported"), CreateEntry("preview")),
+            authority,
+            GovernedSecrets).GetAsync(consented, _accepted.Operation);
+        Assert.Null(crossLifecycleAmbiguity);
+    }
+
+    [Fact]
     public async Task Catalog_release_resolves_and_creates_a_durable_Azure_provider_operation()
     {
         var catalog = new GovernedReleaseCatalogStore(_dbOptions);
@@ -267,6 +325,18 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSourceTests : IAs
     private CatalogElsaInstanceLifecycleResolutionInputSource CreateSource(string? origin) =>
         new(_db, new StaticCatalog(CreateEntry()), new ElsaInstancePlanAuthorityOptions { Origin = origin }, GovernedSecrets);
 
+    private ElsaInstance ConsentInstance() => new(
+        _accepted.Instance.Id,
+        _accepted.Instance.OrganizationId,
+        _accepted.Instance.WorkspaceId,
+        _accepted.Instance.Name,
+        _accepted.Instance.Slug,
+        _accepted.Instance.Intent with
+        {
+            Release = new ElsaReleaseIntent(
+                "future-runtime", "5.0", "5.0.0", previewManifestDigest: "sha256:" + new string('c', 64))
+        });
+
     private GovernedReleaseCatalogEntry CreateEntry(string catalogLifecycle = "supported") => new(
         "2.0.0",
         "https://catalog.example.test/manifests/5.0.0.json",
@@ -319,7 +389,7 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSourceTests : IAs
         return new Guid(bytes[..16]);
     }
 
-    private sealed class StaticCatalog(GovernedReleaseCatalogEntry entry) : IGovernedReleaseCatalogStore
+    private sealed class StaticCatalog(params GovernedReleaseCatalogEntry[] entries) : IGovernedReleaseCatalogStore
     {
         public Task<GovernedReleaseCatalogWriteResult> StoreAsync(
             IReadOnlyList<GovernedReleaseCatalogEntry> entries,
@@ -330,9 +400,10 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSourceTests : IAs
             GovernedReleaseCatalogQuery query,
             CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<GovernedReleaseCatalogEntry>>(
-                string.Equals(query.CatalogLifecycle, entry.CatalogLifecycle, StringComparison.OrdinalIgnoreCase)
-                    ? [entry]
-                    : []);
+                entries
+                    .Where(entry => query.CatalogLifecycle is null ||
+                                    string.Equals(query.CatalogLifecycle, entry.CatalogLifecycle, StringComparison.OrdinalIgnoreCase))
+                    .ToArray());
     }
 
     private sealed class EmptyResolutionInputSource : IElsaInstanceLifecycleResolutionInputSource

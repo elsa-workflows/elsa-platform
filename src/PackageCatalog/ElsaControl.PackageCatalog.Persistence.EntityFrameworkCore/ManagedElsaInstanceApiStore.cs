@@ -127,7 +127,8 @@ public sealed class EfCoreManagedElsaInstanceApiStore(CatalogDbContext dbContext
             x.DomainOutcome,
             x.DesiredLifecycle,
             x.AuthoredAt,
-            x.CreatedByAccountId)).ToList();
+            x.CreatedByAccountId,
+            x.PreviewManifestDigest)).ToList();
     }
 
     public async Task<ElsaInstanceResolvedPlanSummary?> GetResolvedPlanAsync(

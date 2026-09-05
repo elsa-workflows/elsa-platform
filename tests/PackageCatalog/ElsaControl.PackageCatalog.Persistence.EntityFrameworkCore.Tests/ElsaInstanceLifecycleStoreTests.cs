@@ -138,6 +138,26 @@ public sealed class ElsaInstanceLifecycleStoreTests
     }
 
     [Fact]
+    public void Sql_server_preview_consent_migration_adds_nullable_digest_columns()
+    {
+        var migration = new AddPreviewManifestConsent();
+        var columns = migration.UpOperations.OfType<AddColumnOperation>()
+            .Where(x => x.Name == "PreviewManifestDigest")
+            .ToArray();
+
+        Assert.Equal(
+            ["ElsaInstances", "ElsaInstanceIntentRevisions"],
+            columns.Select(x => x.Table).ToArray());
+        Assert.All(columns, column =>
+        {
+            Assert.Equal(typeof(string), column.ClrType);
+            Assert.Equal("nvarchar(71)", column.ColumnType);
+            Assert.Equal(71, column.MaxLength);
+            Assert.True(column.IsNullable);
+        });
+    }
+
+    [Fact]
     public void Worker_store_requires_a_governed_resolution_source_at_composition()
     {
         Assert.Throws<ArgumentNullException>(() =>
@@ -266,6 +286,98 @@ public sealed class ElsaInstanceLifecycleStoreTests
         Assert.Equal(1, await db.ElsaInstanceIntentRevisions.CountAsync());
         Assert.Equal(1, await db.ElsaInstanceOperations.CountAsync());
         Assert.Equal(1, await db.ElsaInstanceLifecycleOutbox.CountAsync());
+    }
+
+    [Fact]
+    public async Task Preview_consent_is_persisted_on_current_instance_and_immutable_revision()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = await CreateWorkspaceAsync(db, "Preview consent workspace");
+        const string digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        var intent = CreateIntent() with
+        {
+            Release = new ElsaReleaseIntent("server-studio", "3.10", "3.10.4", previewManifestDigest: digest)
+        };
+
+        var created = await new ElsaInstanceLifecycleService(CreateStore(db)).CreateAsync(
+            new ElsaInstanceCreateRequest(workspace.OrganizationId, workspace.Id,
+                "Preview Elsa", "preview-elsa", intent, "preview-consent-create"));
+        db.ChangeTracker.Clear();
+
+        await using (var reloadedDb = CreateMigratedContext(connection))
+        {
+            var persisted = await reloadedDb.ElsaInstances.AsNoTracking().SingleAsync(x => x.Id == created.Instance.Id);
+            var revision = await reloadedDb.ElsaInstanceIntentRevisions.AsNoTracking().SingleAsync(x => x.InstanceId == created.Instance.Id);
+            Assert.Equal(digest, persisted.PreviewManifestDigest);
+            Assert.Equal(digest, revision.PreviewManifestDigest);
+            Assert.Equal(intent.ComputeCanonicalHash(), revision.ContentHash);
+            Assert.Equal(digest, (await CreateStore(reloadedDb).GetInstanceAsync(workspace.Id, created.Instance.Id))!.ReleaseIntent.PreviewManifestDigest);
+            await CompleteOperationAsync(reloadedDb, created.Operation.Id);
+        }
+
+        var revokedIntent = intent with
+        {
+            Release = new ElsaReleaseIntent(
+                "server-studio", "3.10", "3.10.4", "stable",
+                "automatic-within-minor", "explicit-approval", "explicit-migration")
+        };
+        await using (var updateDb = CreateMigratedContext(connection))
+        {
+            var updated = await new ElsaInstanceLifecycleService(CreateStore(updateDb), new FixedTimeProvider(Now))
+                .UpdateIntentAsync(new ElsaInstanceIntentUpdateRequest(
+                    workspace.Id, created.Instance.Id,
+                    revokedIntent, created.Instance.Version, "preview-consent-revoked"));
+            var revisions = await updateDb.ElsaInstanceIntentRevisions.AsNoTracking()
+                .Where(x => x.InstanceId == created.Instance.Id)
+                .OrderBy(x => x.RevisionNumber)
+                .ToArrayAsync();
+            Assert.Equal(2, revisions.Length);
+            Assert.Equal(revokedIntent.ComputeCanonicalHash(), revisions[1].ContentHash);
+            Assert.Null(revisions[1].PreviewManifestDigest);
+            Assert.Null((await CreateStore(updateDb).GetInstanceAsync(workspace.Id, created.Instance.Id))!.ReleaseIntent.PreviewManifestDigest);
+            Assert.Equal(created.Instance.Version + 1, updated.Instance.Version);
+        }
+    }
+
+    [Fact]
+    public async Task Worker_uses_durable_preview_consent_after_context_reload()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var workspace = await CreateWorkspaceAsync(db, "Preview worker workspace");
+        const string digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        var intent = WorkerIntent() with
+        {
+            Release = new ElsaReleaseIntent(
+                "future-runtime", "5.0", "5.0.0-preview.1", "preview",
+                "automatic-within-minor", "explicit-approval", "explicit-migration", digest)
+        };
+        var created = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now)).CreateAsync(
+            new ElsaInstanceCreateRequest(workspace.OrganizationId, workspace.Id,
+                "Preview worker Elsa", "preview-worker-elsa", intent, "preview-worker-create"));
+        var target = await AddManagedEnvironmentAsync(db, workspace, created.Instance.Id);
+        db.ChangeTracker.Clear();
+
+        string? observedConsent = null;
+        await using var reloadedDb = CreateMigratedContext(connection);
+        var source = new DurableConsentResolutionInputSource(target, instance => observedConsent = instance.ReleaseIntent.PreviewManifestDigest);
+        var store = new EfCoreElsaInstanceLifecycleStore(reloadedDb, source, new FixedTimeProvider(Now));
+        var result = await new ElsaInstanceLifecycleWorker(
+                store,
+                new StaticResolver(SuccessfulResolution(workspace.Id, created.Instance.Id)),
+                new FixedTimeProvider(Now))
+            .ProcessAvailableAsync("preview-worker");
+
+        var processed = Assert.Single(result.Results);
+        Assert.Equal(ElsaInstanceLifecycleWorkerOutcome.Queued, processed.Outcome);
+        Assert.Equal(digest, observedConsent);
+        Assert.Equal(digest, (await new EfCoreElsaInstanceLifecycleStore(reloadedDb, EmptyResolutionInputSource.Instance)
+            .GetInstanceAsync(workspace.Id, created.Instance.Id))!.ReleaseIntent.PreviewManifestDigest);
     }
 
     [Fact]
@@ -2504,6 +2616,20 @@ public sealed class ElsaInstanceLifecycleStoreTests
             ElsaInstanceOperation operation,
             CancellationToken cancellationToken = default) =>
             Task.FromResult<ElsaInstanceLifecycleResolutionInput?>(ResolutionInput(instance, target));
+    }
+
+    private sealed class DurableConsentResolutionInputSource(
+        (Guid ApplicationId, Guid EnvironmentId) target,
+        Action<ElsaInstance> observe) : IElsaInstanceLifecycleResolutionInputSource
+    {
+        public Task<ElsaInstanceLifecycleResolutionInput?> GetAsync(
+            ElsaInstance requestedInstance,
+            ElsaInstanceOperation operation,
+            CancellationToken cancellationToken = default)
+        {
+            observe(requestedInstance);
+            return Task.FromResult<ElsaInstanceLifecycleResolutionInput?>(ResolutionInput(requestedInstance, target));
+        }
     }
 
     private sealed class EmptyResolutionInputSource : IElsaInstanceLifecycleResolutionInputSource

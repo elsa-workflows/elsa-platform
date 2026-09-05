@@ -89,6 +89,7 @@ ElsaInstance
     DistributionId: catalog/distribution identity
     ReleaseLine: non-empty catalog value such as "3.8" or "4.1"
     RequestedVersion: optional exact catalog version for initial selection/approval
+    PreviewManifestDigest: optional explicit consent bound to one immutable manifest
     Channel: catalog value such as "preview" or "stable"
     PatchUpdates: policy value, initially automatic only after rollout validation
     MinorUpdates: explicit approval policy
@@ -229,6 +230,35 @@ catalog chooses the eligible patch. The resolved plan always records the exact
 version, release-manifest digest, component topology, package identities and
 compatibility evidence. The schema remains unchanged when the catalog contains
 3.9, 3.10, 4.0, 4.1, 5.0, or any number of subsequent release lines.
+
+### Explicit Preview consent
+
+Managed-instance selection is Supported-only unless the release intent includes
+`previewManifestDigest`. A channel named `preview` or a preview version suffix is
+not consent and does not determine the catalog lifecycle. The optional consent
+must be a canonical lowercase `sha256:` digest with 64 hexadecimal digits and
+requires an explicit `requestedVersion`.
+
+Consent permits one unambiguous paid catalog admission in either Supported or
+Preview lifecycle, with the exact selected distribution, release line, version,
+channel, topology and manifest digest. It never permits Maintenance or EndOfSupport
+entries. Ambiguity is rejected before digest matching; consent cannot select one
+row from conflicting admissions. Promoting that same immutable admission to
+Supported does not invalidate the intent. Changing its digest requires new consent.
+
+The onboarding API keeps its existing `releases` list Supported-only and exposes
+Preview choices separately in `previewReleases`, including their safe manifest
+digest. The create console requires an initially unchecked acknowledgment that
+Preview is for evaluation and carries no availability SLO. A change of workspace,
+release selection or manifest digest clears the acknowledgment. Neither the
+console selection nor catalog admission upgrades a Preview release to Supported.
+
+Consent is persisted on both the current instance and its immutable intent
+revision, contributes to the canonical intent hash, and is returned with revision
+metadata. Null consent is omitted from canonical JSON so existing no-consent
+revision bytes and hashes remain unchanged. API preflight rejects unavailable
+selections; the durable worker revalidates catalog eligibility after reload and
+remains the final authority before provider execution.
 
 The current projection must make the exact release dereferenceable, not merely
 repeat a display version. `ResolvedPlanReference` is:

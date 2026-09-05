@@ -2832,6 +2832,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         entity.PatchUpdates = release.PatchUpdates;
         entity.MinorUpdates = release.MinorUpdates;
         entity.MajorMigrations = release.MajorMigrations;
+        entity.PreviewManifestDigest = release.PreviewManifestDigest;
         entity.TopologyId = application.TopologyId;
         entity.FeaturePresetId = application.FeaturePresetId;
         entity.FeatureOverridesJson = SerializeFeatureOverrides(application.FeatureOverrides);
@@ -2932,6 +2933,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             PatchUpdates = release.PatchUpdates,
             MinorUpdates = release.MinorUpdates,
             MajorMigrations = release.MajorMigrations,
+            PreviewManifestDigest = release.PreviewManifestDigest,
             TopologyId = application.TopologyId,
             FeaturePresetId = application.FeaturePresetId,
             FeatureOverridesJson = SerializeFeatureOverrides(application.FeatureOverrides),
@@ -3058,6 +3060,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 entity.PatchUpdates,
                 entity.MinorUpdates,
                 entity.MajorMigrations,
+                entity.PreviewManifestDigest,
                 entity.TopologyId,
                 entity.FeaturePresetId,
                 entity.FeatureOverridesJson,
@@ -3108,6 +3111,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         string patchUpdates,
         string minorUpdates,
         string majorMigrations,
+        string? previewManifestDigest,
         string topologyId,
         string? featurePresetId,
         string featureOverridesJson,
@@ -3120,7 +3124,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         string networkOutcome,
         string domainOutcome,
         ElsaDesiredLifecycle desiredLifecycle) => new(
-        new ElsaReleaseIntent(distributionId, releaseLine, requestedVersion, channel, patchUpdates, minorUpdates, majorMigrations),
+        new ElsaReleaseIntent(distributionId, releaseLine, requestedVersion, channel, patchUpdates, minorUpdates, majorMigrations, previewManifestDigest),
         new ElsaApplicationIntent(topologyId, featurePresetId, ParseFeatureOverrides(featureOverridesJson), packagePolicy, configurationShapeRevisionId),
         new ElsaPlacementIntent(targetMode, regionCode, isolationProfile, capacityProfile, networkOutcome, domainOutcome),
         desiredLifecycle);

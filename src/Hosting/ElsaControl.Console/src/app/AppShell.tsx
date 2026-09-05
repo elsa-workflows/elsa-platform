@@ -149,9 +149,11 @@ function AppShellLayout({
       <div className="md:pl-72">
         <header className="sticky top-0 z-10 border-b border-border bg-background/95 px-4 py-3 backdrop-blur md:hidden">
           <div className="mb-2 flex items-center justify-between gap-3">
-            <p className="font-display text-sm font-semibold">Elsa Control</p>
+            <div className="min-w-0">
+              <p className="font-display text-sm font-semibold">Elsa Control</p>
+              <ApplicationBuildNumber />
+            </div>
             <div className="flex shrink-0 items-center gap-2">
-              <ApplicationBuildNumber className="text-right" />
               <WeaverTrigger onClick={() => setWeaverOpen(true)} compact />
               <ThemeAccentPicker themeAccent={themeAccent} onThemeAccentChange={onThemeAccentChange} compact />
               <ThemeToggle theme={theme} onThemeChange={onThemeChange} />
