@@ -2,7 +2,9 @@
 
 This subscription-scoped template implements the initial resource boundary in [ADR-0016](../../docs/adr/0016-customer-workload-subscription-boundary.md). Run it only against the explicitly selected **Elsa Cloud — Customer Workloads** subscription, never the existing Pay-As-You-Go or Control subscription. It does not create the subscription or change billing ownership.
 
-It creates an anchor resource group and a dedicated provisioner user-assigned managed identity in that subscription, and manages a monthly alert budget. It creates no role assignments, customer compute, databases, secrets, App Service attachments or runtime settings. The anchor group is platform bootstrap infrastructure; per-instance groups remain separate siblings owned by the existing provider assignment model.
+It creates an anchor resource group and a dedicated provisioner user-assigned managed identity in that subscription, and manages a monthly alert budget. The main template creates no role assignments, customer compute, databases, secrets, App Service attachments or runtime settings. The anchor group is platform bootstrap infrastructure; per-instance groups remain separate siblings owned by the existing provider assignment model.
+
+`registry-authority.bicep` is a separate operator-only bootstrap for the subscription that owns the shared runtime registry. It creates the reviewed custom deployment-metadata role at subscription scope, assigns it only at the exact registry resource group, and assigns the provisioner the exact registry-scoped RBAC Administrator role with the checked-in AcrPull-only write/delete condition. The workload's `AcrPull` assignment remains managed by `infra/azure-production/acr-pull-role.bicep`; this bootstrap never changes that assignment. The runtime provider does not execute this template, and its files are outside the runtime `TemplateRoot` fingerprint.
 
 The default names are `rg-elsa-cloud-workloads-platform-prod-weu`, `mi-elsa-cloud-provisioner-prod-weu` and `elsa-cloud-customer-workloads-monthly`. West Europe follows the governed provider profile. Actual subscription/tenant/identity IDs and contact addresses belong in the private operational record, not this template.
 
@@ -21,6 +23,19 @@ az deployment sub create --subscription <verified-customer-subscription-id> \
   --template-file infra/azure-customer-subscription/main.bicep \
   --parameters @<protected-parameters-file>
 ```
+
+For the shared-registry authority, run the separate template only after verifying the registry-owning subscription and provisioner principal ID against the private operational record:
+
+```sh
+az deployment sub what-if --subscription <verified-registry-subscription-id> \
+  --location westeurope --name elsa-control-registry-authority \
+  --template-file infra/azure-customer-subscription/registry-authority.bicep \
+  --parameters registryResourceGroupName=<verified-registry-resource-group> \
+               registryName=<verified-registry-name> \
+               provisionerPrincipalId=<verified-provisioner-object-id>
+```
+
+Require a reviewed what-if and explicit operator approval before `az deployment sub create`. Read back only the generated role-definition and assignment IDs for the Narrow runner configuration; never copy credentials or deployment output values into source control. The runtime preflight still verifies the exact IDs, scopes, principal and role-definition contents before any lifecycle mutation.
 
 Require successful deployment and read back the exact group, identity tenant/client/principal IDs, and budget amount/notifications. A compile or what-if alone is not deployment proof. Redeployments are incremental; removing a resource from the template does not delete it. Do not delete the anchor or identity after it is in use without reviewing attachments, grants and retained provider assignments.
 
