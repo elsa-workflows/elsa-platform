@@ -103,10 +103,11 @@ Durably completed reconciliation replays remain visible as spans with outcome
 `already_completed`, but do not increment completion, duration, or endpoint
 health measurements again.
 
-Use the operation outcome, lifecycle/health state, and operation state to filter
-the metric signals. Activity and trace diagnostic code tags use an explicit
-fixed-code allow-list and collapse anything else to `unknown`; diagnostics are
-not metric labels. The allowed tag list and redaction rules are defined in
+Use the action, operation outcome, lifecycle/health state, and operation state
+to filter the metric signals. Activity and trace diagnostic code tags use an
+explicit fixed-code allow-list and collapse anything else to `unknown`;
+diagnostics are not metric labels. The allowed tag list and redaction rules are
+defined in
 [Tenant and redaction rules](#tenant-and-redaction-rules).
 
 ## Deadline and retry boundaries
