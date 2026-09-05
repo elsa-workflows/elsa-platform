@@ -35,7 +35,8 @@ internal sealed class ConfiguredAcrReleaseManifestSignatureVerifier : IReleaseMa
                 !ReleaseRegistryProtocol.IsDigest(artifact.PayloadDigest) ||
                 !string.Equals(artifact.Reference, Reference(artifact.Digest), StringComparison.Ordinal) ||
                 string.IsNullOrWhiteSpace(_identity) || string.IsNullOrWhiteSpace(_issuer) ||
-                string.IsNullOrEmpty(artifact.Payload) || artifact.Payload.Length > ReleaseRegistryProtocol.MaximumManifestBytes)
+                string.IsNullOrEmpty(artifact.Payload) || artifact.Payload.Length > ReleaseRegistryProtocol.MaximumManifestBytes ||
+                Utf8.GetByteCount(artifact.Payload) > ReleaseRegistryProtocol.MaximumManifestBytes)
                 return Rejected;
 
             var payload = Utf8.GetBytes(artifact.Payload);

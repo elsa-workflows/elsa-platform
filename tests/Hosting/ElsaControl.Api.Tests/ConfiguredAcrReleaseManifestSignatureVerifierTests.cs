@@ -9,6 +9,25 @@ namespace ElsaControl.Api.Tests;
 public sealed class ConfiguredAcrReleaseManifestSignatureVerifierTests
 {
     [Fact]
+    public async Task Multibyte_payload_over_byte_limit_is_rejected_before_encoding_or_registry_access()
+    {
+        var fixture = new Fixture();
+        var artifact = fixture.Artifact with
+        {
+            Payload = new string('\u0800', ReleaseRegistryProtocol.MaximumManifestBytes / 3 + 1)
+        };
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        var verification = fixture.Verifier.VerifyAsync(artifact);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.True(verification.IsCompletedSuccessfully);
+        Assert.False((await verification).IsValid);
+        Assert.Equal(0, fixture.Reader.Opens);
+        Assert.True(allocated < ReleaseRegistryProtocol.MaximumManifestBytes,
+            "Oversized payload rejection must not allocate its UTF-8 byte buffer.");
+    }
+
+    [Fact]
     public async Task Exact_subject_payload_and_retained_bundle_produce_only_bound_verification_facts()
     {
         var fixture = new Fixture();
