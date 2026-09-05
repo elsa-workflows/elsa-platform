@@ -7,6 +7,31 @@ namespace ElsaControl.Deployment.Azure.Tests;
 
 public sealed class AzureProviderRecoveryObservationContractTests
 {
+    [Theory]
+    [InlineData("request")]
+    [InlineData("scope")]
+    [InlineData("plan")]
+    [InlineData("template")]
+    [InlineData("resources")]
+    [InlineData("postcondition")]
+    public void Observation_rejects_noncanonical_fingerprint_casing(string field)
+    {
+        var uppercase = new string('A', 64);
+        var observation = CreateObservation();
+        observation = field switch
+        {
+            "request" => observation with { ProviderRequestHash = uppercase },
+            "scope" => observation with { ProviderScopeFingerprint = uppercase },
+            "plan" => observation with { ProviderPlanFingerprint = uppercase },
+            "template" => observation with { ProviderTemplateFingerprint = uppercase },
+            "resources" => observation with { ResourceFingerprint = uppercase },
+            "postcondition" => observation with { PostconditionFingerprint = uppercase },
+            _ => throw new InvalidOperationException()
+        };
+
+        Assert.Throws<ArgumentException>(observation.Validate);
+    }
+
     [Fact]
     public void Natural_key_ignores_polling_time_but_binds_changed_authority_tuple()
     {

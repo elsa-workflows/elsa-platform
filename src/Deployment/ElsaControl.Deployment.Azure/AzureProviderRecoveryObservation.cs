@@ -182,7 +182,7 @@ public sealed record AzureProviderRecoveryObservationRecord(
 
     private static void RequireFingerprint(string? value, string name)
     {
-        if (value is null || value.Length != 64 || value.Any(ch => !char.IsAsciiHexDigit(ch)))
+        if (value is null || value.Length != 64 || value.AsSpan().ContainsAnyExcept("0123456789abcdef"))
             throw new ArgumentException($"{name} must be a SHA-256 fingerprint.", name);
     }
 }

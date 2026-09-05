@@ -43,7 +43,7 @@ public static class AzureProviderOperationValidation
         if (!Enum.IsDefined(checkpoint.Phase) || !Enum.IsDefined(checkpoint.Health) ||
             checkpoint.AttemptedStep is { } attemptedStep && !Enum.IsDefined(attemptedStep) ||
             !IsSafeCode(checkpoint.Code))
-            throw new ArgumentException("Checkpoint code, phase, and health are required.", nameof(checkpoint));
+            throw new ArgumentException("Checkpoint code, phase, health, or attempted step is invalid.", nameof(checkpoint));
         if (string.IsNullOrWhiteSpace(checkpoint.Message) || checkpoint.Message.Length > 2000 || checkpoint.Message.Any(char.IsControl) || ContainsSensitiveMarker(checkpoint.Message))
             throw new ArgumentException("Checkpoint message is unsafe.", nameof(checkpoint));
         ValidateEndpoint(checkpoint.Endpoint);
