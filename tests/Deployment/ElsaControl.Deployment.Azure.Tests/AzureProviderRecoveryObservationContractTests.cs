@@ -130,6 +130,17 @@ public sealed class AzureProviderRecoveryObservationContractTests
         Assert.Throws<ArgumentException>(() => unknownStep.Validate());
     }
 
+    [Theory]
+    [InlineData("https://control.example.test/api/workspaces/22222222-2222-2222-2222-222222222222/instances/33333333-3333-3333-3333-333333333333/resolved-plans/plan-1?token=secret")]
+    [InlineData("https://control.example.test/api/workspaces/22222222-2222-2222-2222-222222222222/instances/33333333-3333-3333-3333-333333333333/resolved-plans/plan-1#fragment")]
+    [InlineData("https://user:secret@control.example.test/api/workspaces/22222222-2222-2222-2222-222222222222/instances/33333333-3333-3333-3333-333333333333/resolved-plans/plan-1")]
+    [InlineData("http://control.example.test/api/workspaces/22222222-2222-2222-2222-222222222222/instances/33333333-3333-3333-3333-333333333333/resolved-plans/plan-1")]
+    [InlineData("https://control.example.test/plans/plan-1")]
+    public void Observation_record_validation_rejects_unsafe_resolved_plan_uris(string planUri)
+    {
+        Assert.Throws<ArgumentException>(() => (CreateObservation() with { ResolvedPlanUri = planUri }).Validate());
+    }
+
     private static readonly Guid RecordId = Guid.Parse("88888888-8888-8888-8888-888888888888");
 
     private static AzureProviderRecoveryObservationRecord CreateObservation() => new(

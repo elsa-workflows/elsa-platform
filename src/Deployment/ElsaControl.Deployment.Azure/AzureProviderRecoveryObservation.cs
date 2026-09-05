@@ -57,11 +57,23 @@ public sealed record AzureProviderRecoveryObservationRecord(
         RequireSafeToken(ProviderOperationIdentity, nameof(ProviderOperationIdentity), 64);
         RequireFingerprint(ProviderRequestHash, nameof(ProviderRequestHash));
         RequireSafeToken(TargetKey, nameof(TargetKey), 128);
-        RequireSafeToken(ResolvedPlanId, nameof(ResolvedPlanId), 128);
-        if (string.IsNullOrWhiteSpace(ResolvedPlanUri) || ResolvedPlanUri.Length > 2048 ||
-            ResolvedPlanUri.Any(char.IsControl) || ResolvedPlanUri.Any(char.IsWhiteSpace))
-            throw new ArgumentException("Resolved plan URI is invalid.", nameof(ResolvedPlanUri));
-        RequireSha256Digest(ResolvedPlanContentHash, nameof(ResolvedPlanContentHash));
+        ElsaResolvedPlanReference planReference;
+        try
+        {
+            planReference = new ElsaResolvedPlanReference(
+                ResolvedPlanId,
+                ResolvedPlanSchemaVersion,
+                ResolvedPlanContentHash,
+                ResolvedPlanUri);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new ArgumentException("Resolved plan reference is invalid.", nameof(ResolvedPlanUri), exception);
+        }
+        if (!string.Equals(planReference.PlanId, ResolvedPlanId, StringComparison.Ordinal) ||
+            !string.Equals(planReference.ContentHash, ResolvedPlanContentHash, StringComparison.Ordinal) ||
+            !string.Equals(planReference.PlanUri, ResolvedPlanUri, StringComparison.Ordinal))
+            throw new ArgumentException("Resolved plan reference is not canonical.", nameof(ResolvedPlanUri));
         RequireFingerprint(ProviderPlanFingerprint, nameof(ProviderPlanFingerprint));
         RequireFingerprint(ProviderTemplateFingerprint, nameof(ProviderTemplateFingerprint));
         RequireFingerprint(ResourceFingerprint, nameof(ResourceFingerprint));
@@ -172,13 +184,6 @@ public sealed record AzureProviderRecoveryObservationRecord(
     {
         if (value is null || value.Length != 64 || value.Any(ch => !char.IsAsciiHexDigit(ch)))
             throw new ArgumentException($"{name} must be a SHA-256 fingerprint.", name);
-    }
-
-    private static void RequireSha256Digest(string? value, string name)
-    {
-        if (value is null || value.Length != 71 || !value.StartsWith("sha256:", StringComparison.Ordinal) ||
-            value[7..].Any(ch => !char.IsAsciiHexDigit(ch)))
-            throw new ArgumentException($"{name} must be a SHA-256 digest.", name);
     }
 }
 
