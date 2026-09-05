@@ -70,7 +70,7 @@ descriptor_source_repository="$(jq -er '.sourceRepository' "$descriptor")" || fa
 run_file="$(mktemp)"
 trap 'rm -f "$run_file"' EXIT
 command -v gh >/dev/null 2>&1 || fail "GitHub CLI is unavailable"
-if ! gh api --silent "repos/$expected_github_repository/actions/runs/$candidate_run_id" >"$run_file" 2>/dev/null; then
+if ! gh api "repos/$expected_github_repository/actions/runs/$candidate_run_id" >"$run_file" 2>/dev/null; then
   fail "candidate workflow run could not be verified"
 fi
 

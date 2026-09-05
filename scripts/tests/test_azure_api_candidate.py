@@ -48,6 +48,7 @@ class AzureApiCandidateTests(unittest.TestCase):
         (self.bin / "gh").write_text(
             """#!/usr/bin/env bash
 set -euo pipefail
+[[ "$*" != *--silent* ]] || exit 91
 printf '%s' "${FAKE_RUN_JSON:?}"
 """
         )
