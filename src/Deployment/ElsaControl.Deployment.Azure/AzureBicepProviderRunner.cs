@@ -370,21 +370,21 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         if (!compatibility.Succeeded || compatibility.Value?.Value != true)
             return ProcessFailure(command, AzureProviderOperationPhase.FoundationReady, compatibility, command.Resources, mutation: false);
 
-        EnsureMutationAuthority(command);
-        var firewall = await ExecuteAzAsync<AzureCommandNoOutput>(command,
-            ["sql", "server", "firewall-rule", "create", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
-                "--server", SqlServerName(command), "--name", TemporaryFirewallRuleName, "--start-ip-address", _options.SqlBootstrapIp,
-                "--end-ip-address", _options.SqlBootstrapIp, "--output", "none", "--only-show-errors"],
-            static _ => AzureCommandNoOutput.Instance,
-            cancellationToken);
-        if (!firewall.Succeeded)
-            return ProcessFailure(command, AzureProviderOperationPhase.FoundationReady, firewall, command.Resources, mutation: true);
-
         var temporaryDirectory = string.Empty;
         var scriptPath = string.Empty;
         var firewallCleaned = false;
         try
         {
+            EnsureMutationAuthority(command);
+            var firewall = await ExecuteAzAsync<AzureCommandNoOutput>(command,
+                ["sql", "server", "firewall-rule", "create", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
+                    "--server", SqlServerName(command), "--name", TemporaryFirewallRuleName, "--start-ip-address", _options.SqlBootstrapIp,
+                    "--end-ip-address", _options.SqlBootstrapIp, "--output", "none", "--only-show-errors"],
+                static _ => AzureCommandNoOutput.Instance,
+                cancellationToken);
+            if (!firewall.Succeeded)
+                return ProcessFailure(command, AzureProviderOperationPhase.FoundationReady, firewall, command.Resources, mutation: true);
+
             (temporaryDirectory, scriptPath) = await WriteSqlBootstrapFileAsync(command.Resources.WorkloadIdentityClientId, command.Plan.WorkloadName, cancellationToken);
             var sqlSucceeded = false;
             AzureCommandProcessFailureKind? bootstrapFailureKind = null;
