@@ -134,6 +134,18 @@ public static class ManagedLifecycleTelemetry
             { DiagnosticCodeTag, DiagnosticValue(diagnosticCode) }
         };
 
+    private static TagList ToMetricTags(in TagList tags)
+    {
+        var metricTags = new TagList();
+        foreach (var tag in tags)
+        {
+            if (tag.Key != DiagnosticCodeTag)
+                metricTags.Add(tag.Key, tag.Value);
+        }
+
+        return metricTags;
+    }
+
     private static void Apply(Activity? activity, in TagList tags)
     {
         if (activity is null)
@@ -166,7 +178,9 @@ public static class ManagedLifecycleTelemetry
     }
 
     private static string EnumValue<T>(T value) where T : struct, Enum =>
-        value.ToString() switch
+        !Enum.IsDefined(typeof(T), value)
+            ? Unknown
+            : value.ToString() switch
         {
             { Length: 0 } => Unknown,
             var text => ToSnakeCase(text)
@@ -262,7 +276,7 @@ public static class ManagedLifecycleTelemetry
                 operationState,
                 null);
             Apply(_activity, tags);
-            _lastTags = tags;
+            _lastTags = ManagedLifecycleTelemetry.ToMetricTags(tags);
         }
 
         public void Complete(
@@ -283,10 +297,11 @@ public static class ManagedLifecycleTelemetry
                 operationState,
                 diagnosticCode);
             Apply(_activity, tags);
-            CompletionCounter.Add(1, tags);
+            var metricTags = ManagedLifecycleTelemetry.ToMetricTags(tags);
+            CompletionCounter.Add(1, metricTags);
             if (_recordsEndpointHealth)
-                EndpointHealthCounter.Add(1, tags);
-            RecordDuration(tags);
+                EndpointHealthCounter.Add(1, metricTags);
+            RecordDuration(metricTags);
             _activity?.SetStatus(_errorRecorded ? ActivityStatusCode.Error : ActivityStatusCode.Ok);
         }
 
@@ -307,7 +322,7 @@ public static class ManagedLifecycleTelemetry
                 operationState,
                 diagnosticCode);
             Apply(_activity, tags);
-            _lastTags = tags;
+            _lastTags = ManagedLifecycleTelemetry.ToMetricTags(tags);
             _durationRecorded = true;
             _activity?.SetStatus(ActivityStatusCode.Ok);
         }
@@ -329,8 +344,9 @@ public static class ManagedLifecycleTelemetry
                 operationState,
                 diagnosticCode);
             Apply(_activity, tags);
-            ErrorCounter.Add(1, tags);
-            _lastTags = tags;
+            var metricTags = ManagedLifecycleTelemetry.ToMetricTags(tags);
+            ErrorCounter.Add(1, metricTags);
+            _lastTags = metricTags;
             _errorRecorded = true;
             _activity?.SetStatus(ActivityStatusCode.Error);
         }
@@ -351,8 +367,9 @@ public static class ManagedLifecycleTelemetry
                 health,
                 operationState,
                 diagnosticCode);
-            TransitionCounter.Add(1, tags);
-            _lastTags = tags;
+            var metricTags = ManagedLifecycleTelemetry.ToMetricTags(tags);
+            TransitionCounter.Add(1, metricTags);
+            _lastTags = metricTags;
         }
 
         public void SetCorrelation(
@@ -376,7 +393,7 @@ public static class ManagedLifecycleTelemetry
                 health,
                 operationState,
                 null);
-            RetryCounter.Add(1, tags);
+            RetryCounter.Add(1, ManagedLifecycleTelemetry.ToMetricTags(tags));
         }
 
         public void Dispose()

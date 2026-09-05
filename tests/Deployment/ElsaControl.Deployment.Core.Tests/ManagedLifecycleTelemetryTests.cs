@@ -61,9 +61,9 @@ public sealed class ManagedLifecycleTelemetryTests
         var measurement = Assert.Single(capture.Measurements, x =>
             x.InstrumentName == ManagedLifecycleTelemetry.CompletionCounterName &&
             x.Tags.Any(tag => tag.Key == ManagedLifecycleTelemetry.ActionTag && tag.Value?.ToString() == "start") &&
-            x.Tags.Any(tag => tag.Key == ManagedLifecycleTelemetry.OutcomeTag && tag.Value?.ToString() == "succeeded") &&
-            x.Tags.Any(tag => tag.Key == ManagedLifecycleTelemetry.DiagnosticCodeTag && tag.Value?.ToString() == "unknown"));
+            x.Tags.Any(tag => tag.Key == ManagedLifecycleTelemetry.OutcomeTag && tag.Value?.ToString() == "succeeded"));
         Assert.Equal(1, measurement.Value);
+        Assert.DoesNotContain(measurement.Tags, tag => tag.Key == ManagedLifecycleTelemetry.DiagnosticCodeTag);
         Assert.Equal(
             new[]
             {
@@ -72,14 +72,117 @@ public sealed class ManagedLifecycleTelemetryTests
                 ManagedLifecycleTelemetry.DesiredLifecycleTag,
                 ManagedLifecycleTelemetry.ObservedLifecycleTag,
                 ManagedLifecycleTelemetry.HealthTag,
-                ManagedLifecycleTelemetry.OperationStateTag,
-                ManagedLifecycleTelemetry.DiagnosticCodeTag
+                ManagedLifecycleTelemetry.OperationStateTag
             },
             measurement.Tags.Select(x => x.Key).ToArray());
         Assert.DoesNotContain(measurement.Tags, tag =>
             tag.Value?.ToString()?.Contains("https://", StringComparison.OrdinalIgnoreCase) == true ||
             tag.Value?.ToString()?.Contains("token", StringComparison.OrdinalIgnoreCase) == true ||
             tag.Value?.ToString()?.Contains("secret", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    [Fact]
+    public void Metric_dimensions_map_undefined_enum_values_to_unknown()
+    {
+        using var capture = new TelemetryCapture();
+        using var operation = ManagedLifecycleTelemetry.StartOperation(
+            ManagedLifecycleTelemetry.WorkerActivityName,
+            (ElsaInstanceOperationAction)999,
+            (ElsaDesiredLifecycle)999,
+            (ElsaObservedLifecycle)999,
+            (ElsaInstanceHealth)999,
+            (ElsaInstanceOperationState)999);
+
+        operation.Complete(
+            outcome: "succeeded",
+            desiredLifecycle: (ElsaDesiredLifecycle)999,
+            observedLifecycle: (ElsaObservedLifecycle)999,
+            health: (ElsaInstanceHealth)999,
+            operationState: (ElsaInstanceOperationState)999);
+
+        var measurement = Assert.Single(capture.Measurements, x =>
+            x.InstrumentName == ManagedLifecycleTelemetry.CompletionCounterName);
+        Assert.Equal(
+            new Dictionary<string, string>
+            {
+                [ManagedLifecycleTelemetry.ActionTag] = "unknown",
+                [ManagedLifecycleTelemetry.OutcomeTag] = "succeeded",
+                [ManagedLifecycleTelemetry.DesiredLifecycleTag] = "unknown",
+                [ManagedLifecycleTelemetry.ObservedLifecycleTag] = "unknown",
+                [ManagedLifecycleTelemetry.HealthTag] = "unknown",
+                [ManagedLifecycleTelemetry.OperationStateTag] = "unknown"
+            },
+            measurement.Tags.ToDictionary(x => x.Key, x => x.Value?.ToString() ?? string.Empty));
+        Assert.DoesNotContain(measurement.Tags, tag => tag.Key == ManagedLifecycleTelemetry.DiagnosticCodeTag);
+    }
+
+    [Fact]
+    public void All_metric_instruments_use_the_exact_bounded_dimension_set()
+    {
+        using var capture = new TelemetryCapture();
+        using var operation = ManagedLifecycleTelemetry.StartOperation(
+            ManagedLifecycleTelemetry.ReconciliationActivityName,
+            ElsaInstanceOperationAction.Reconcile,
+            ElsaDesiredLifecycle.Running,
+            ElsaObservedLifecycle.Unknown,
+            ElsaInstanceHealth.Unknown,
+            ElsaInstanceOperationState.Queued,
+            attemptNumber: 2);
+
+        operation.RecordError(
+            ElsaDesiredLifecycle.Running,
+            ElsaObservedLifecycle.Unknown,
+            ElsaInstanceHealth.Unknown,
+            ElsaInstanceOperationState.Queued,
+            "provider.reconciliation.failed");
+        operation.RecordTransition(
+            ElsaDesiredLifecycle.Running,
+            ElsaObservedLifecycle.Ready,
+            ElsaInstanceHealth.Healthy,
+            ElsaInstanceOperationState.Succeeded,
+            "provider.reconciliation.converged");
+        operation.Complete(
+            "converged",
+            ElsaDesiredLifecycle.Running,
+            ElsaObservedLifecycle.Ready,
+            ElsaInstanceHealth.Healthy,
+            ElsaInstanceOperationState.Succeeded,
+            "provider.reconciliation.converged");
+
+        var measurements = capture.Measurements
+            .Where(measurement => IsMetricInstrument(measurement.InstrumentName))
+            .ToArray();
+        Assert.Equal(
+            new[]
+            {
+                ManagedLifecycleTelemetry.CompletionCounterName,
+                ManagedLifecycleTelemetry.ErrorCounterName,
+                ManagedLifecycleTelemetry.TransitionCounterName,
+                ManagedLifecycleTelemetry.RetryCounterName,
+                ManagedLifecycleTelemetry.DurationHistogramName,
+                ManagedLifecycleTelemetry.EndpointHealthCounterName
+            }.Order(),
+            measurements.Select(measurement => measurement.InstrumentName).Distinct().Order());
+        Assert.All(measurements, AssertExactMetricDimensions);
+    }
+
+    [Fact]
+    public void Dispose_records_only_duration_with_metric_dimensions()
+    {
+        using var capture = new TelemetryCapture();
+        using (ManagedLifecycleTelemetry.StartOperation(
+                   ManagedLifecycleTelemetry.WorkerActivityName,
+                   ElsaInstanceOperationAction.Start,
+                   ElsaDesiredLifecycle.Running,
+                   ElsaObservedLifecycle.Provisioning,
+                   ElsaInstanceHealth.Unknown,
+                   ElsaInstanceOperationState.Accepted))
+        {
+        }
+
+        var measurement = Assert.Single(capture.Measurements);
+        Assert.Equal(ManagedLifecycleTelemetry.DurationHistogramName, measurement.InstrumentName);
+        AssertExactMetricDimensions(measurement);
     }
 
     [Fact]
@@ -292,25 +395,44 @@ public sealed class ManagedLifecycleTelemetryTests
         Assert.All(retry.Tags, tag => Assert.Contains(tag.Key, AllowedTagKeys));
     }
 
-    private static readonly HashSet<string> AllowedTagKeys =
+    private static readonly string[] ExpectedMetricTagKeys =
     [
         ManagedLifecycleTelemetry.ActionTag,
         ManagedLifecycleTelemetry.OutcomeTag,
         ManagedLifecycleTelemetry.DesiredLifecycleTag,
         ManagedLifecycleTelemetry.ObservedLifecycleTag,
         ManagedLifecycleTelemetry.HealthTag,
-        ManagedLifecycleTelemetry.OperationStateTag,
-        ManagedLifecycleTelemetry.DiagnosticCodeTag
+        ManagedLifecycleTelemetry.OperationStateTag
+    ];
+
+    private static readonly HashSet<string> AllowedTagKeys =
+    [
+        .. ExpectedMetricTagKeys
     ];
 
     private static readonly HashSet<string> AllowedActivityTagKeys =
     [
         .. AllowedTagKeys,
+        ManagedLifecycleTelemetry.DiagnosticCodeTag,
         ManagedLifecycleTelemetry.OrganizationIdTag,
         ManagedLifecycleTelemetry.WorkspaceIdTag,
         ManagedLifecycleTelemetry.InstanceIdTag,
         ManagedLifecycleTelemetry.OperationIdTag
     ];
+
+    private static bool IsMetricInstrument(string instrumentName) => instrumentName is
+        ManagedLifecycleTelemetry.CompletionCounterName or
+        ManagedLifecycleTelemetry.ErrorCounterName or
+        ManagedLifecycleTelemetry.TransitionCounterName or
+        ManagedLifecycleTelemetry.RetryCounterName or
+        ManagedLifecycleTelemetry.DurationHistogramName or
+        ManagedLifecycleTelemetry.EndpointHealthCounterName;
+
+    private static void AssertExactMetricDimensions(Measurement measurement)
+    {
+        Assert.Equal(ExpectedMetricTagKeys, measurement.Tags.Select(tag => tag.Key).ToArray());
+        Assert.DoesNotContain(measurement.Tags, tag => tag.Key == ManagedLifecycleTelemetry.DiagnosticCodeTag);
+    }
 
     private static ElsaInstance TestInstance(Guid instanceId, Guid workspaceId) => ElsaInstance.Hydrate(
         instanceId,
