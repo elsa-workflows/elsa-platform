@@ -32,6 +32,9 @@ param api_identity_outputs_id string
 
 param api_identity_outputs_clientid string
 
+@description('Optional full resource ID of the dedicated Azure provider provisioner identity. The identity must be in the same Microsoft Entra tenant as this app; it may be hosted in another subscription. Empty preserves the existing API and ACR identity set.')
+param provisioner_identity_outputs_id string = ''
+
 param elsa_control_outputs_azure_app_service_dashboard_uri string
 
 param elsa_control_outputs_azure_website_contributor_managed_identity_id string
@@ -227,10 +230,21 @@ resource webapp 'Microsoft.Web/sites@2025-03-01' = {
   }
   identity: {
     type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${elsa_control_outputs_azure_container_registry_managed_identity_id}': { }
-      '${api_identity_outputs_id}': { }
-    }
+    // A user-assigned identity is a standalone resource and App Service supports multiple
+    // user-assigned identities. Keep the existing API/ACR identities as the default; the
+    // optional provisioner identity is only attached when explicitly supplied by the host.
+    // Same-tenant/cross-subscription use follows Microsoft's App Service managed-identity
+    // contract: https://learn.microsoft.com/en-us/azure/app-service/overview-managed-identity
+    userAssignedIdentities: union(
+      {
+        '${elsa_control_outputs_azure_container_registry_managed_identity_id}': { }
+        '${api_identity_outputs_id}': { }
+      },
+      empty(provisioner_identity_outputs_id)
+        ? { }
+        : {
+            '${provisioner_identity_outputs_id}': { }
+          })
   }
 }
 
