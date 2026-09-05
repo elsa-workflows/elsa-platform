@@ -13,6 +13,10 @@ public interface IElsaInstanceProviderPendingOperationStore
 /// provider observation. The optional submission is reconstructed from the
 /// persisted, already-admitted plan; it is intentionally absent when the store
 /// cannot prove that reconstruction is safe.
+/// Recovery carries a durably accepted explicit recovery envelope, not an inferred
+/// retry based on an attempt number. It is absent for ordinary pending work or when
+/// the store cannot prove the accepted recovery binding. Recovery hand-off requires
+/// both a valid submission and its matching envelope; absence never authorizes replay.
 /// </summary>
 public sealed record ElsaInstanceProviderPendingOperation(
     Guid WorkspaceId,
