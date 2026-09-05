@@ -2656,6 +2656,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("PreviewManifestDigest")
+                        .HasMaxLength(71)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("RegionCode")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -2848,6 +2852,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.Property<string>("PatchUpdates")
                         .IsRequired()
                         .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PreviewManifestDigest")
+                        .HasMaxLength(71)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RegionCode")

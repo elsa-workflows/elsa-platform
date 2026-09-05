@@ -26,6 +26,7 @@ public sealed class ManagedElsaInstanceApiTests : IClassFixture<ManagedElsaInsta
             CatalogEntry("future-runtime", "5.0", "5.0.1", "stable", "combined", "supported", "paid"),
             CatalogEntry("ambiguous-runtime", "4.2", "4.2.0", "stable", "combined", "supported", "paid"),
             CatalogEntry("ambiguous-runtime", "4.2", "4.2.0", "stable", "combined", "supported", "paid", digestMarker: 'd'),
+            CatalogEntry("ambiguous-runtime", "4.2", "4.2.0", "stable", "combined", "preview", "paid", digestMarker: 'e'),
             CatalogEntry("preview-runtime", "4.1", "4.1.0-preview.1", "preview", "combined", "preview", "paid"),
             CatalogEntry("community-runtime", "3.9", "3.9.0", "stable", "combined", "supported", "community")
         ]);
@@ -44,14 +45,18 @@ public sealed class ManagedElsaInstanceApiTests : IClassFixture<ManagedElsaInsta
         Assert.Equal("standard-small", options.LaunchProfile.CapacityProfile);
         Assert.Equal("public", options.LaunchProfile.NetworkOutcome);
         Assert.Equal("managed", options.LaunchProfile.DomainOutcome);
-        Assert.Equal("supported", _fixture.ReleaseCatalog.Query?.CatalogLifecycle);
-        Assert.Equal("paid", _fixture.ReleaseCatalog.Query?.RegistryClass);
+        Assert.Contains(_fixture.ReleaseCatalog.Queries, query => query.CatalogLifecycle == "supported" && query.RegistryClass == "paid");
+        Assert.Contains(_fixture.ReleaseCatalog.Queries, query => query.CatalogLifecycle == "preview" && query.RegistryClass == "paid");
         var release = Assert.Single(options.Releases);
         Assert.Equal("future-runtime", release.DistributionId);
         Assert.Equal("5.0", release.ReleaseLine);
         Assert.Equal("5.0.1", release.Version);
         Assert.Equal("stable", release.Channel);
         Assert.Equal("combined", release.TopologyId);
+        var preview = Assert.Single(options.PreviewReleases!);
+        Assert.Equal("preview-runtime", preview.DistributionId);
+        Assert.Equal("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", preview.ManifestDigest);
+        Assert.DoesNotContain(options.PreviewReleases!, x => x.DistributionId == "ambiguous-runtime");
     }
 
     [Fact]
@@ -96,6 +101,39 @@ public sealed class ManagedElsaInstanceApiTests : IClassFixture<ManagedElsaInsta
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         Assert.Contains("instance.catalog-selection-unavailable", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Create_accepts_only_an_explicit_matching_preview_manifest_consent()
+    {
+        const string digest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        var app = await PrepareApplicationAsync([], [
+            CatalogEntry("preview-runtime", "4.1", "4.1.0-preview.1", "preview", "combined", "preview", "paid")
+        ]);
+        var client = app.CreateTrustedWorkspaceClient("managed-preview-owner");
+        var workspaceId = await client.GetDefaultWorkspaceIdAsync();
+        await EnableManagedHostingAsync(app, workspaceId);
+        var intent = Intent() with
+        {
+            Release = new ElsaReleaseIntent("preview-runtime", "4.1", "4.1.0-preview.1", "preview",
+                previewManifestDigest: digest)
+        };
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/workspaces/{workspaceId}/instances")
+        {
+            Content = JsonContent.Create(new ManagedElsaInstanceCreateRequest("Preview runtime", "preview-runtime", intent),
+                options: ControlApiTestApplication.JsonOptions)
+        };
+        request.Headers.Add("Idempotency-Key", "create-preview-runtime");
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        var accepted = await response.Content.ReadFromJsonAsync<ManagedElsaInstanceAcceptedResponse>(ControlApiTestApplication.JsonOptions);
+        Assert.NotNull(accepted);
+        var revisions = await client.GetControlJsonAsync<ManagedElsaInstanceRevisionsResponse>(
+            $"/api/workspaces/{workspaceId}/instances/{accepted!.Instance.InstanceId}/revisions");
+        var revision = Assert.Single(revisions!.Items);
+        Assert.Equal(digest, revision.PreviewManifestDigest);
     }
 
     [Fact]
@@ -935,11 +973,13 @@ public sealed class ManagedElsaInstanceApiTests : IClassFixture<ManagedElsaInsta
         private IReadOnlyList<GovernedReleaseCatalogEntry> _entries = [];
 
         public GovernedReleaseCatalogQuery? Query { get; private set; }
+        public List<GovernedReleaseCatalogQuery> Queries { get; } = [];
 
         public void SetEntries(IReadOnlyList<GovernedReleaseCatalogEntry> entries)
         {
             _entries = entries.ToArray();
             Query = null;
+            Queries.Clear();
         }
 
         public Task<GovernedReleaseCatalogWriteResult> StoreAsync(
@@ -951,6 +991,7 @@ public sealed class ManagedElsaInstanceApiTests : IClassFixture<ManagedElsaInsta
             CancellationToken cancellationToken = default)
         {
             Query = query;
+            Queries.Add(query);
             return Task.FromResult<IReadOnlyList<GovernedReleaseCatalogEntry>>(_entries
                 .Where(entry => query.DistributionId is null || string.Equals(entry.Distribution.Id, query.DistributionId, StringComparison.OrdinalIgnoreCase))
                 .Where(entry => query.ReleaseLine is null || string.Equals(entry.Distribution.ReleaseLine, query.ReleaseLine, StringComparison.OrdinalIgnoreCase))

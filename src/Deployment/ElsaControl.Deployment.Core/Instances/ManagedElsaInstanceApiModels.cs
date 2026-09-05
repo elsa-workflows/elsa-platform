@@ -90,7 +90,8 @@ public sealed record ElsaInstanceIntentRevisionSummary(
     string DomainOutcome,
     ElsaDesiredLifecycle DesiredLifecycle,
     DateTimeOffset AuthoredAt,
-    Guid? CreatedByAccountId);
+    Guid? CreatedByAccountId,
+    string? PreviewManifestDigest = null);
 
 public sealed record ElsaInstancePlanEvidenceSummary(
     string Kind,

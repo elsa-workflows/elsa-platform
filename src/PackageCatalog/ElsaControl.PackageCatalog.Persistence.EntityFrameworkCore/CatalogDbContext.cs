@@ -670,6 +670,10 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             instance.PatchUpdates = RequireCatalogValue(instance.PatchUpdates, nameof(instance.PatchUpdates));
             instance.MinorUpdates = RequireCatalogValue(instance.MinorUpdates, nameof(instance.MinorUpdates));
             instance.MajorMigrations = RequireCatalogValue(instance.MajorMigrations, nameof(instance.MajorMigrations));
+            instance.PreviewManifestDigest = OptionalPreviewManifestDigest(
+                instance.PreviewManifestDigest, nameof(instance.PreviewManifestDigest));
+            if (instance.PreviewManifestDigest is not null && instance.RequestedVersion is null)
+                throw new InvalidOperationException("Preview manifest consent requires an explicit requested version.");
             instance.TopologyId = RequireCatalogValue(instance.TopologyId, nameof(instance.TopologyId));
             instance.FeaturePresetId = OptionalCatalogValue(instance.FeaturePresetId, nameof(instance.FeaturePresetId));
             ValidateFeatureOverrides(instance.FeatureOverridesJson);
@@ -898,6 +902,10 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             revision.PatchUpdates = RequireCatalogValue(revision.PatchUpdates, nameof(revision.PatchUpdates));
             revision.MinorUpdates = RequireCatalogValue(revision.MinorUpdates, nameof(revision.MinorUpdates));
             revision.MajorMigrations = RequireCatalogValue(revision.MajorMigrations, nameof(revision.MajorMigrations));
+            revision.PreviewManifestDigest = OptionalPreviewManifestDigest(
+                revision.PreviewManifestDigest, nameof(revision.PreviewManifestDigest));
+            if (revision.PreviewManifestDigest is not null && revision.RequestedVersion is null)
+                throw new InvalidOperationException("Preview manifest consent requires an explicit requested version.");
             revision.TopologyId = RequireCatalogValue(revision.TopologyId, nameof(revision.TopologyId));
             revision.FeaturePresetId = OptionalCatalogValue(revision.FeaturePresetId, nameof(revision.FeaturePresetId));
             ValidateFeatureOverrides(revision.FeatureOverridesJson);
@@ -1388,6 +1396,18 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             normalized[7..].Any(ch => !Uri.IsHexDigit(ch)))
             throw new InvalidOperationException($"{name} must be a SHA-256 digest.");
         return "sha256:" + normalized[7..].ToLowerInvariant();
+    }
+
+    private static string? OptionalPreviewManifestDigest(string? value, string name)
+    {
+        try
+        {
+            return ElsaInstanceValue.OptionalPreviewManifestDigest(value, name);
+        }
+        catch (ArgumentException)
+        {
+            throw new InvalidOperationException($"{name} must be a canonical lowercase SHA-256 digest.");
+        }
     }
 
     private static string RequireSha256Digest(string? value, string name) =>

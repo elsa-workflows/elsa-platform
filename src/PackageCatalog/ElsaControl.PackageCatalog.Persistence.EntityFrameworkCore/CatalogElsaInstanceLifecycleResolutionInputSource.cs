@@ -65,23 +65,31 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSource(
         if (!_authorityOptions.TryGetOrigin(out var planAuthority))
             return null;
 
+        var previewConsentDigest = instance.ReleaseIntent.PreviewManifestDigest;
         var candidates = await releaseCatalog.QueryAsync(new GovernedReleaseCatalogQuery(
             DistributionId: instance.ReleaseIntent.DistributionId,
             ReleaseLine: instance.ReleaseIntent.ReleaseLine,
             ReleaseVersion: instance.ReleaseIntent.RequestedVersion,
             Channel: instance.ReleaseIntent.Channel,
-            CatalogLifecycle: "supported",
+            CatalogLifecycle: previewConsentDigest is null ? "supported" : null,
             RegistryClass: "paid",
             TopologyId: instance.ApplicationIntent.TopologyId), cancellationToken);
 
-        // An omitted patch is intentionally fail-closed until the catalog has one
-        // unambiguous admitted row for this topology. Choosing by display order
-        // would make a restart resolve a different immutable release.
-        if (candidates.Count != 1)
+        // A null consent remains Supported-only. Explicit Preview consent widens
+        // the query only to the two eligible catalog lifecycles; ambiguity is
+        // rejected before comparing the requested digest so one row cannot be
+        // selected from an otherwise conflicting admission set.
+        var eligibleCandidates = candidates
+            .Where(entry => IsEligibleCatalogLifecycle(entry.CatalogLifecycle, previewConsentDigest is not null))
+            .Take(2)
+            .ToArray();
+        if (eligibleCandidates.Length != 1)
             return null;
 
-        var entry = candidates[0];
-        if (!Matches(instance, entry) || !TryBuildManifest(entry, out var admission))
+        var entry = eligibleCandidates[0];
+        if (!Matches(instance, entry) ||
+            previewConsentDigest is not null && !string.Equals(entry.ManifestDigest, previewConsentDigest, StringComparison.OrdinalIgnoreCase) ||
+            !TryBuildManifest(entry, out var admission))
             return null;
 
         var target = await FindDeploymentTargetAsync(instance, operation, cancellationToken);
@@ -161,8 +169,11 @@ public sealed class CatalogElsaInstanceLifecycleResolutionInputSource(
         (instance.ReleaseIntent.RequestedVersion is null ||
         string.Equals(entry.Distribution.ReleaseVersion, instance.ReleaseIntent.RequestedVersion, StringComparison.OrdinalIgnoreCase)) &&
         string.Equals(entry.Distribution.Channel, instance.ReleaseIntent.Channel, StringComparison.OrdinalIgnoreCase) &&
-        string.Equals(entry.Topology.Id, instance.ApplicationIntent.TopologyId, StringComparison.OrdinalIgnoreCase) &&
-        !string.IsNullOrWhiteSpace(entry.CatalogLifecycle);
+        string.Equals(entry.Topology.Id, instance.ApplicationIntent.TopologyId, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsEligibleCatalogLifecycle(string lifecycle, bool allowPreview) =>
+        string.Equals(lifecycle, "supported", StringComparison.OrdinalIgnoreCase) ||
+        allowPreview && string.Equals(lifecycle, "preview", StringComparison.OrdinalIgnoreCase);
 
     private static bool TryBuildManifest(
         GovernedReleaseCatalogEntry entry,

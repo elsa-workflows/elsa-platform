@@ -79,6 +79,39 @@ public sealed class ElsaInstanceContractTests
     }
 
     [Fact]
+    public void Null_preview_consent_preserves_the_legacy_canonical_release_bytes()
+    {
+        var intent = InstanceIntent(releaseLine: "3.8", requestedVersion: "3.8.7");
+
+        const string legacyJson = "{\"application\":{\"configurationShapeRevisionId\":null,\"featureOverrides\":{},\"featurePresetId\":\"starter\",\"packagePolicy\":\"valence-approved\",\"topologyId\":\"combined\"},\"desiredLifecycle\":\"Running\",\"placement\":{\"capacityProfile\":\"standard-small\",\"domainOutcome\":\"managed\",\"isolationProfile\":\"dedicated\",\"networkOutcome\":\"public\",\"regionCode\":\"westeurope\",\"targetMode\":\"managed\"},\"release\":{\"channel\":\"stable\",\"distributionId\":\"valence-runtime\",\"majorMigrations\":\"explicit-migration\",\"minorUpdates\":\"explicit-approval\",\"patchUpdates\":\"automatic-within-minor\",\"releaseLine\":\"3.8\",\"requestedVersion\":\"3.8.7\"}}";
+        Assert.Equal(legacyJson, intent.ComputeCanonicalJson());
+        Assert.Equal("fa0972faa780088c54b4774d529f76ab213e625dc2a67f3c35548f1a889804f2", intent.ComputeCanonicalHash());
+        Assert.DoesNotContain("previewManifestDigest", intent.ComputeCanonicalJson(), StringComparison.Ordinal);
+        Assert.Equal(intent.ComputeCanonicalHash(), (intent with
+        {
+            Release = new ElsaReleaseIntent("valence-runtime", "3.8", "3.8.7")
+        }).ComputeCanonicalHash());
+    }
+
+    [Fact]
+    public void Preview_consent_is_strict_and_participates_in_the_intent_revision_hash()
+    {
+        const string digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        var withoutConsent = InstanceIntent(releaseLine: "3.8", requestedVersion: "3.8.7");
+        var withConsent = withoutConsent with
+        {
+            Release = new ElsaReleaseIntent("valence-runtime", "3.8", "3.8.7", previewManifestDigest: digest)
+        };
+
+        Assert.Equal(digest, withConsent.Release.PreviewManifestDigest);
+        Assert.Contains("\"previewManifestDigest\":\"" + digest + "\"", withConsent.ComputeCanonicalJson(), StringComparison.Ordinal);
+        Assert.NotEqual(withoutConsent.ComputeCanonicalHash(), withConsent.ComputeCanonicalHash());
+        Assert.Throws<ArgumentException>(() => new ElsaReleaseIntent("valence-runtime", "3.8", previewManifestDigest: digest));
+        Assert.Throws<ArgumentException>(() => new ElsaReleaseIntent("valence-runtime", "3.8", "3.8.7", previewManifestDigest: digest.ToUpperInvariant()));
+        Assert.Throws<ArgumentException>(() => new ElsaReleaseIntent("valence-runtime", "3.8", "3.8.7", previewManifestDigest: "sha256:short"));
+    }
+
+    [Fact]
     public void Feature_overrides_are_typed_and_canonical_hash_preserves_type()
     {
         var boolean = InstanceIntent(application: new ElsaApplicationIntent(

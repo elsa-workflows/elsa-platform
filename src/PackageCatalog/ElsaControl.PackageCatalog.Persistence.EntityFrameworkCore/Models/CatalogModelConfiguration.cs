@@ -1033,6 +1033,7 @@ internal sealed class ElsaInstanceConfiguration : IEntityTypeConfiguration<ElsaI
         builder.Property(x => x.PatchUpdates).HasMaxLength(128).IsRequired();
         builder.Property(x => x.MinorUpdates).HasMaxLength(128).IsRequired();
         builder.Property(x => x.MajorMigrations).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.PreviewManifestDigest).HasMaxLength(71);
         builder.Property(x => x.TopologyId).HasMaxLength(128).IsRequired();
         builder.Property(x => x.FeaturePresetId).HasMaxLength(128);
         builder.Property(x => x.FeatureOverridesJson).HasMaxLength(32768).IsRequired();
@@ -1191,6 +1192,7 @@ internal sealed class ElsaInstanceIntentRevisionConfiguration : IEntityTypeConfi
         builder.Property(x => x.PatchUpdates).HasMaxLength(128).IsRequired();
         builder.Property(x => x.MinorUpdates).HasMaxLength(128).IsRequired();
         builder.Property(x => x.MajorMigrations).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.PreviewManifestDigest).HasMaxLength(71);
         builder.Property(x => x.TopologyId).HasMaxLength(128).IsRequired();
         builder.Property(x => x.FeaturePresetId).HasMaxLength(128);
         builder.Property(x => x.FeatureOverridesJson).HasMaxLength(32768).IsRequired();

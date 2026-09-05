@@ -66,6 +66,7 @@ internal sealed class ElsaInstanceEntity
     public string PatchUpdates { get; set; } = "";
     public string MinorUpdates { get; set; } = "";
     public string MajorMigrations { get; set; } = "";
+    public string? PreviewManifestDigest { get; set; }
 
     public string TopologyId { get; set; } = "";
     public string? FeaturePresetId { get; set; }
@@ -138,6 +139,7 @@ internal sealed class ElsaInstanceIntentRevisionEntity
     public string PatchUpdates { get; set; } = "";
     public string MinorUpdates { get; set; } = "";
     public string MajorMigrations { get; set; } = "";
+    public string? PreviewManifestDigest { get; set; }
 
     public string TopologyId { get; set; } = "";
     public string? FeaturePresetId { get; set; }

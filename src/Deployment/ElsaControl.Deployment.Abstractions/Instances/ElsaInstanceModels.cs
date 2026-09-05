@@ -56,7 +56,8 @@ public sealed record ElsaReleaseIntent
         string channel = "stable",
         string patchUpdates = "automatic-within-minor",
         string minorUpdates = "explicit-approval",
-        string majorMigrations = "explicit-migration")
+        string majorMigrations = "explicit-migration",
+        string? previewManifestDigest = null)
     {
         DistributionId = ElsaInstanceValue.Catalog(distributionId, nameof(distributionId));
         ReleaseLine = ElsaInstanceValue.Catalog(releaseLine, nameof(releaseLine));
@@ -68,6 +69,9 @@ public sealed record ElsaReleaseIntent
         PatchUpdates = ElsaInstanceValue.Catalog(patchUpdates, nameof(patchUpdates));
         MinorUpdates = ElsaInstanceValue.Catalog(minorUpdates, nameof(minorUpdates));
         MajorMigrations = ElsaInstanceValue.Catalog(majorMigrations, nameof(majorMigrations));
+        PreviewManifestDigest = ElsaInstanceValue.OptionalPreviewManifestDigest(previewManifestDigest, nameof(previewManifestDigest));
+        if (PreviewManifestDigest is not null && RequestedVersion is null)
+            throw new ArgumentException("A preview manifest digest requires an explicit requested version.", nameof(previewManifestDigest));
     }
 
     public string DistributionId { get; }
@@ -83,6 +87,12 @@ public sealed record ElsaReleaseIntent
     public string MinorUpdates { get; }
 
     public string MajorMigrations { get; }
+
+    /// <summary>
+    /// Explicit per-intent consent for a governed Preview release. A null value
+    /// retains the normal Supported-only catalog policy.
+    /// </summary>
+    public string? PreviewManifestDigest { get; }
 
     public ElsaReleaseSelection Selection => new(DistributionId, ReleaseLine, RequestedVersion, Channel);
 }
@@ -372,16 +382,7 @@ public sealed record ElsaInstanceIntent
                 ["regionCode"] = Placement.RegionCode,
                 ["targetMode"] = Placement.TargetMode
             },
-            ["release"] = new SortedDictionary<string, object?>(StringComparer.Ordinal)
-            {
-                ["channel"] = Release.Channel,
-                ["distributionId"] = Release.DistributionId,
-                ["majorMigrations"] = Release.MajorMigrations,
-                ["minorUpdates"] = Release.MinorUpdates,
-                ["patchUpdates"] = Release.PatchUpdates,
-                ["releaseLine"] = Release.ReleaseLine,
-                ["requestedVersion"] = Release.RequestedVersion
-            }
+            ["release"] = ReleaseCanonicalValues()
         };
 
         return JsonSerializer.Serialize(canonical, CanonicalJsonOptions);
@@ -394,6 +395,23 @@ public sealed record ElsaInstanceIntent
     }
 
     public string ComputeIntentHash() => ComputeCanonicalHash();
+
+    private SortedDictionary<string, object?> ReleaseCanonicalValues()
+    {
+        var values = new SortedDictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["channel"] = Release.Channel,
+            ["distributionId"] = Release.DistributionId,
+            ["majorMigrations"] = Release.MajorMigrations,
+            ["minorUpdates"] = Release.MinorUpdates,
+            ["patchUpdates"] = Release.PatchUpdates,
+            ["releaseLine"] = Release.ReleaseLine,
+            ["requestedVersion"] = Release.RequestedVersion
+        };
+        if (Release.PreviewManifestDigest is not null)
+            values["previewManifestDigest"] = Release.PreviewManifestDigest;
+        return values;
+    }
 
     private static readonly JsonSerializerOptions CanonicalJsonOptions = new()
     {
@@ -826,6 +844,17 @@ public static class ElsaInstanceValue
         if (value is not null && value.Any(char.IsControl))
             throw new ArgumentException("Value cannot contain control characters.", nameof(value));
         return string.IsNullOrWhiteSpace(value) ? null : Catalog(value, nameof(value));
+    }
+
+    public static string? OptionalPreviewManifestDigest(string? value, string parameterName)
+    {
+        if (value is null)
+            return null;
+        if (value.Length != 71 ||
+            !value.StartsWith("sha256:", StringComparison.Ordinal) ||
+            value[7..].Any(x => !((x >= '0' && x <= '9') || (x >= 'a' && x <= 'f'))))
+            throw new ArgumentException("A canonical lowercase SHA-256 digest is required.", parameterName);
+        return value;
     }
 
     public static TEnum RequireEnum<TEnum>(TEnum value, string parameterName)
