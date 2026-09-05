@@ -10,6 +10,32 @@ namespace ElsaControl.Deployment.Azure;
 
 public static class AzureProviderOperationValidation
 {
+    /// <summary>
+    /// Binds a delete's canonical key (including bounded retry lineage) to its lifecycle
+    /// operation. Unattributable long-chain hashed keys require explicit recovery.
+    /// </summary>
+    public static bool IsLifecycleDeleteIdempotencyKey(string? key, Guid lifecycleOperationId)
+    {
+        var root = AzureElsaInstanceProvider.IdempotencyKey(lifecycleOperationId) + ":delete";
+        if (lifecycleOperationId == Guid.Empty || key is null || key.Length > 512 ||
+            !key.StartsWith(root, StringComparison.Ordinal))
+            return false;
+        var remaining = key.AsSpan(root.Length);
+        for (var retries = 0; !remaining.IsEmpty; retries++)
+        {
+            const string separator = ":retry:";
+            if (retries >= 31 || remaining.Length < separator.Length + 32 ||
+                !remaining.StartsWith(separator, StringComparison.Ordinal))
+                return false;
+            var id = remaining.Slice(separator.Length, 32);
+            if (!Guid.TryParseExact(id, "N", out var operationId) || operationId == Guid.Empty ||
+                !id.SequenceEqual(operationId.ToString("N")))
+                return false;
+            remaining = remaining[(separator.Length + 32)..];
+        }
+        return true;
+    }
+
     public static void ValidateCheckpoint(AzureProviderCheckpoint checkpoint)
     {
         if (checkpoint is null) throw new ArgumentNullException(nameof(checkpoint));

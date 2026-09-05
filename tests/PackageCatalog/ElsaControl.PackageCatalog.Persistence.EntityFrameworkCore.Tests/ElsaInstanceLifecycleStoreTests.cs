@@ -1079,6 +1079,108 @@ public sealed class ElsaInstanceLifecycleStoreTests
     }
 
     [Fact]
+    public async Task In_progress_provider_cleanup_is_deferred_then_same_delete_completes_on_next_poll()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var (workspace, accepted) = await QueueManagedLifecycleRunAsync(db, "Deferred deletion workspace");
+        await CompleteManagedRunAsync(db, accepted.Operation.Id, accepted.Instance.Id);
+        var current = await CreateStore(db).GetInstanceAsync(workspace.Id, accepted.Instance.Id);
+        var deletion = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now.AddMinutes(2)))
+            .DeleteAsync(await CreateConfirmedDeleteRequestAsync(
+                db, workspace.Id, accepted.Instance.Id, current!.Version, "deferred-delete", Now.AddMinutes(2)));
+        var pending = new ElsaInstanceCleanupObservation(
+            ElsaInstanceCleanupObservationKind.InProgress, deletion.Operation.Id,
+            deletion.Operation.AttemptNumber, "deletion.provider-cleanup-pending");
+        var confirmed = new ElsaInstanceCleanupObservation(
+            ElsaInstanceCleanupObservationKind.ConfirmedAbsent, deletion.Operation.Id,
+            deletion.Operation.AttemptNumber, "deletion.provider-confirmed-absent");
+
+        var first = await new ElsaInstanceDeletionWorker(
+                new EfCoreElsaInstanceLifecycleStore(db, EmptyResolutionInputSource.Instance,
+                    new FixedTimeProvider(Now.AddMinutes(3))), new QueueCleanupPort(pending),
+                new FixedTimeProvider(Now.AddMinutes(3)))
+            .ProcessAvailableAsync("deletion-worker");
+
+        Assert.Empty(first.Results);
+        var deferredOperation = await db.ElsaInstanceOperations.AsNoTracking()
+            .SingleAsync(x => x.Id == deletion.Operation.Id);
+        Assert.Equal(ElsaInstanceOperationState.Accepted, deferredOperation.State);
+        Assert.Equal("deletion.provider-cleanup-pending", deferredOperation.DeletionDiagnosticCode);
+        Assert.Equal(Now.AddMinutes(4), deferredOperation.LeaseExpiresAt);
+
+        var second = await new ElsaInstanceDeletionWorker(
+                new EfCoreElsaInstanceLifecycleStore(db, EmptyResolutionInputSource.Instance,
+                    new FixedTimeProvider(Now.AddMinutes(4))), new QueueCleanupPort(confirmed),
+                new FixedTimeProvider(Now.AddMinutes(4)))
+            .ProcessAvailableAsync("deletion-worker");
+
+        Assert.Single(second.Results);
+        Assert.Equal(ElsaInstanceLifecycleWorkerOutcome.Deleted, second.Results[0].Outcome);
+        Assert.Equal(ElsaInstanceOperationState.Succeeded,
+            (await db.ElsaInstanceOperations.AsNoTracking().SingleAsync(x => x.Id == deletion.Operation.Id)).State);
+        Assert.Equal(ElsaObservedLifecycle.Deleted,
+            (await db.ElsaInstances.AsNoTracking().SingleAsync(x => x.Id == accepted.Instance.Id)).ObservedLifecycle);
+    }
+
+    [Fact]
+    public async Task Stale_or_foreign_deletion_lease_cannot_defer_provider_cleanup()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var (workspace, accepted) = await QueueManagedLifecycleRunAsync(db, "Stale deferred deletion workspace");
+        await CompleteManagedRunAsync(db, accepted.Operation.Id, accepted.Instance.Id);
+        var current = await CreateStore(db).GetInstanceAsync(workspace.Id, accepted.Instance.Id);
+        var deletion = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now.AddMinutes(2)))
+            .DeleteAsync(await CreateConfirmedDeleteRequestAsync(
+                db, workspace.Id, accepted.Instance.Id, current!.Version, "stale-deferred-delete", Now.AddMinutes(2)));
+        var store = new EfCoreElsaInstanceLifecycleStore(db, EmptyResolutionInputSource.Instance,
+            new FixedTimeProvider(Now.AddMinutes(3)));
+        var item = await store.TryClaimNextDeletionAsync("worker-one", Now.AddMinutes(3));
+        Assert.NotNull(item);
+
+        Assert.False(await store.DeferDeletionAsync(item! with { LeaseToken = new string('c', 64) },
+            "worker-one", Now.AddMinutes(3), "deletion.provider-cleanup-pending"));
+        Assert.False(await store.DeferDeletionAsync(item, "worker-two", Now.AddMinutes(3),
+            "deletion.provider-cleanup-pending"));
+        Assert.False(await store.DeferDeletionAsync(item with
+        {
+            Outbox = item.Outbox with { RequestHash = new string('d', 64) }
+        }, "worker-one", Now.AddMinutes(3), "deletion.provider-cleanup-pending"));
+        Assert.False(await store.DeferDeletionAsync(item with
+        {
+            Outbox = item.Outbox with { Id = Guid.NewGuid() }
+        }, "worker-one", Now.AddMinutes(3), "deletion.provider-cleanup-pending"));
+        Assert.False(await store.DeferDeletionAsync(item with
+        {
+            Operation = ElsaInstanceOperation.Create(item.Operation.InstanceId,
+                ElsaInstanceOperationAction.Delete, item.Operation.IdempotencyScope,
+                item.Operation.IdempotencyKey, new string('e', 64), item.Operation.ExpectedVersion,
+                item.Operation.Id, item.Operation.AcceptedAt)
+        }, "worker-one", Now.AddMinutes(3), "deletion.provider-cleanup-pending"));
+        Assert.True(await store.DeferDeletionAsync(item, "worker-one", Now.AddMinutes(3),
+            "deletion.provider-cleanup-pending"));
+
+        var reclaimed = await store.TryClaimNextDeletionAsync("worker-two", Now.AddMinutes(4));
+        Assert.NotNull(reclaimed);
+        var instanceEntity = await db.ElsaInstances.SingleAsync(x => x.Id == accepted.Instance.Id);
+        instanceEntity.Version++;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        Assert.False(await store.DeferDeletionAsync(reclaimed!, "worker-two", Now.AddMinutes(4),
+            "deletion.provider-cleanup-pending"));
+        Assert.False(await store.DeferDeletionAsync(item, "worker-one", Now.AddMinutes(4),
+            "deletion.provider-cleanup-pending"));
+        var operation = await db.ElsaInstanceOperations.AsNoTracking().SingleAsync(x => x.Id == deletion.Operation.Id);
+        Assert.Equal(ElsaInstanceOperationState.Accepted, operation.State);
+        Assert.Equal("worker-two", operation.WorkerId);
+    }
+
+    [Fact]
     public async Task Ambiguous_provider_cleanup_remains_recovery_required_and_never_tombstones()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

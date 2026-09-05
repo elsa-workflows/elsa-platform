@@ -341,3 +341,18 @@ configuration, keys, tokens, logs, exception messages, or provider payloads.
 well-formed. The lifecycle provider reads the persisted plan in-process; this
 proof does not dereference that URI and therefore does not establish an
 externally reachable plan endpoint, public API acceptance, or ingress behavior.
+
+### Asynchronous delete completion
+
+A correlated provider Delete in Accepted, Queued or Running is normal cleanup in
+progress, not an operator recovery event. The lifecycle worker retains its deletion
+reservation and defers the next observation for one minute. Confirmed absence may
+tombstone the instance only when the provider evidence belongs to the same lifecycle
+Delete, assignment, workspace, organization, target and provider scope.
+
+Provider RecoveryRequired, failed/unavailable observations and correlation failures
+remain on the explicit recovery path; the ordinary worker does not replay them.
+Delete idempotency lineage accepts the exact lifecycle root and canonical retry-ID
+segments. Very long legacy retry chains that collapse into an unattributable hashed
+key require explicit operator recovery, even if provider cleanup succeeded. Do not
+force lifecycle completion merely because resource absence is visible in Azure.

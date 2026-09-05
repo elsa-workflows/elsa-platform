@@ -35,6 +35,7 @@ public sealed class InMemoryElsaInstanceLifecycleStore(
     : IElsaInstanceLifecycleStore, IElsaInstanceLifecycleWorkerStore, IElsaInstanceProviderSubmissionStore, IElsaInstanceProviderPendingOperationStore, IElsaInstanceProviderReconciliationStore, IElsaInstanceDeletionStore
 {
     private static readonly TimeSpan WorkerLeaseDuration = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan DeletionDeferralDelay = TimeSpan.FromMinutes(1);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly IElsaInstanceDeleteConfirmationAuthority? _deleteConfirmationAuthority = deleteConfirmationAuthority;
     private readonly object _gate = new();
@@ -877,6 +878,49 @@ public sealed class InMemoryElsaInstanceLifecycleStore(
                 return Task.FromResult(false);
 
             _claims[item.Operation.Id] = claim with { ExpiresAt = now.ToUniversalTime().Add(WorkerLeaseDuration) };
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task<bool> DeferDeletionAsync(ElsaInstanceDeletionWorkItem item, string workerId, DateTimeOffset now,
+        string diagnosticCode, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(item);
+        item.Validate();
+        var observation = new ElsaInstanceCleanupObservation(
+            ElsaInstanceCleanupObservationKind.InProgress, item.Operation.Id,
+            item.Operation.AttemptNumber, diagnosticCode);
+        observation.Validate();
+        if (string.IsNullOrWhiteSpace(workerId))
+            throw new ArgumentException("Deletion worker identity is required.", nameof(workerId));
+
+        lock (_gate)
+        {
+            if (!_instances.TryGetValue(item.Instance.Id, out var instance) ||
+                instance.WorkspaceId != item.Instance.WorkspaceId || instance.Version != item.Instance.Version ||
+                !_operations.TryGetValue(item.Operation.Id, out var operation) ||
+                operation.InstanceId != item.Instance.Id || operation.Action != ElsaInstanceOperationAction.Delete ||
+                operation.State is not (ElsaInstanceOperationState.Accepted or ElsaInstanceOperationState.Running) ||
+                operation.AttemptNumber != item.Operation.AttemptNumber ||
+                !string.Equals(operation.RequestHash, item.Operation.RequestHash, StringComparison.Ordinal) ||
+                !_outbox.TryGetValue(item.Outbox.Id, out var outbox) ||
+                outbox.WorkspaceId != item.Instance.WorkspaceId || outbox.InstanceId != item.Instance.Id ||
+                outbox.OperationId != item.Operation.Id || outbox.Action != ElsaInstanceOperationAction.Delete ||
+                !string.Equals(outbox.RequestHash, operation.RequestHash, StringComparison.Ordinal) ||
+                item.Outbox.WorkspaceId != item.Instance.WorkspaceId || item.Outbox.InstanceId != item.Instance.Id ||
+                item.Outbox.OperationId != item.Operation.Id || item.Outbox.Action != ElsaInstanceOperationAction.Delete ||
+                !string.Equals(item.Outbox.RequestHash, item.Operation.RequestHash, StringComparison.Ordinal) ||
+                !_claims.TryGetValue(item.Operation.Id, out var claim) ||
+                !string.Equals(claim.WorkerId, workerId.Trim(), StringComparison.Ordinal) ||
+                !string.Equals(claim.Token, item.LeaseToken, StringComparison.Ordinal) ||
+                claim.Version != item.LeaseVersion || claim.ExpiresAt <= now.ToUniversalTime())
+                return Task.FromResult(false);
+
+            _claims[item.Operation.Id] = claim with
+            {
+                ExpiresAt = now.ToUniversalTime().Add(DeletionDeferralDelay)
+            };
             return Task.FromResult(true);
         }
     }

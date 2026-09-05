@@ -251,6 +251,8 @@ public sealed class AzureElsaInstanceProvider(
                 observed.OrganizationId != assignment.OrganizationId ||
                 observed.ProviderAssignmentId != assignment.Id ||
                 observed.Action != AzureProviderOperationAction.Delete ||
+                observed.LifecycleAction != ElsaInstanceOperationAction.Delete ||
+                !AzureProviderOperationValidation.IsLifecycleDeleteIdempotencyKey(observed.IdempotencyKey, request.OperationId) ||
                 !string.Equals(observed.TargetKey, WorkloadName(request.InstanceId), StringComparison.OrdinalIgnoreCase) ||
                 !string.Equals(observed.ProviderScopeFingerprint, NormalizeScope(_options.ProviderScopeFingerprint), StringComparison.Ordinal))
                 return CleanupUnknown(request, "deletion.provider-correlation-invalid", ElsaInstanceCleanupObservationKind.Ambiguous);
@@ -263,7 +265,11 @@ public sealed class AzureElsaInstanceProvider(
                     request.AttemptNumber, "deletion.provider-confirmed-absent")
                 : CleanupUnknown(request, observed.Status is AzureProviderOperationStatus.Failed or AzureProviderOperationStatus.Cancelled
                     ? "deletion.provider-cleanup-failed"
-                    : "deletion.provider-cleanup-pending");
+                    : "deletion.provider-cleanup-pending",
+                    assignment.State != AzureProviderAssignmentState.Deleted &&
+                    observed.Status is AzureProviderOperationStatus.Accepted or AzureProviderOperationStatus.Queued or AzureProviderOperationStatus.Running
+                        ? ElsaInstanceCleanupObservationKind.InProgress
+                        : ElsaInstanceCleanupObservationKind.Unknown);
         }
     }
 

@@ -9,6 +9,7 @@ public sealed partial class ProductionAzureLifecycleProofTests
 {
     [Theory]
     [InlineData(AzureProviderOperationStatus.Accepted, false)]
+    [InlineData(AzureProviderOperationStatus.Queued, false)]
     [InlineData(AzureProviderOperationStatus.Running, false)]
     [InlineData(AzureProviderOperationStatus.Succeeded, false)]
     [InlineData(AzureProviderOperationStatus.Failed, true)]
@@ -64,10 +65,11 @@ public sealed partial class ProductionAzureLifecycleProofTests
 
     [Theory]
     [InlineData(AzureProviderOperationStatus.Accepted, false)]
+    [InlineData(AzureProviderOperationStatus.Queued, false)]
     [InlineData(AzureProviderOperationStatus.Running, false)]
-    [InlineData(AzureProviderOperationStatus.Succeeded, false)]
+    [InlineData(AzureProviderOperationStatus.Succeeded, true)]
     [InlineData(AzureProviderOperationStatus.RecoveryRequired, true)]
-    public void Asynchronous_delete_uses_the_same_correlated_provider_gate(
+    public void Recovery_required_delete_fails_fast_after_correlated_provider_completion(
         AzureProviderOperationStatus status, bool failed)
     {
         var (assignment, operation, lifecycleId) = ProviderObservationFixture();
@@ -75,6 +77,7 @@ public sealed partial class ProductionAzureLifecycleProofTests
         {
             Action = AzureProviderOperationAction.Delete,
             LifecycleAction = ElsaInstanceOperationAction.Delete,
+            IdempotencyKey = operation.IdempotencyKey + ":delete",
             Status = status
         };
         Assert.Equal(failed, HasFailedProviderObservation(
@@ -90,8 +93,9 @@ public sealed partial class ProductionAzureLifecycleProofTests
         AzureProviderOperationAction expectedProviderAction,
         CancellationToken cancellationToken)
     {
-        // RecoveryRequired is also the normal accepted asynchronous hand-off. Only the
-        // correlated provider's status can distinguish pending work from real uncertainty.
+        // Create/reconcile currently use RecoveryRequired during accepted hand-off.
+        // Delete uses durable deferral instead; a recovery-required delete cannot finish
+        // automatically even when its provider eventually confirms cleanup.
         var waitingDelete = lifecycleOperation.State == ElsaInstanceOperationState.WaitingForPriorOperation &&
             expectedProviderAction == AzureProviderOperationAction.Delete;
         if (lifecycleOperation.State != ElsaInstanceOperationState.RecoveryRequired && !waitingDelete)
@@ -174,13 +178,18 @@ public sealed partial class ProductionAzureLifecycleProofTests
             return true;
         // An assignment may still point to the previous operation during hand-off. It cannot
         // establish either success or failure for the current lifecycle operation.
-        if (!string.Equals(operation.IdempotencyKey,
-                $"elsa-instance-operation:{lifecycleOperationId:D}", StringComparison.Ordinal))
+        var correlated = expectedProviderAction == AzureProviderOperationAction.Delete
+            ? AzureProviderOperationValidation.IsLifecycleDeleteIdempotencyKey(operation.IdempotencyKey, lifecycleOperationId)
+            : string.Equals(operation.IdempotencyKey,
+                $"elsa-instance-operation:{lifecycleOperationId:D}", StringComparison.Ordinal);
+        if (!correlated)
             return false;
         if (operation.Action != expectedProviderAction || operation.LifecycleAction != lifecycleAction)
             return true;
-        return operation.Status is not (AzureProviderOperationStatus.Accepted or
-            AzureProviderOperationStatus.Running or AzureProviderOperationStatus.Succeeded);
+        return expectedProviderAction == AzureProviderOperationAction.Delete &&
+               operation.Status == AzureProviderOperationStatus.Succeeded ||
+               operation.Status is not (AzureProviderOperationStatus.Accepted or AzureProviderOperationStatus.Queued or
+                   AzureProviderOperationStatus.Running or AzureProviderOperationStatus.Succeeded);
     }
 
     private static bool IsProviderBoundToAssignment(
