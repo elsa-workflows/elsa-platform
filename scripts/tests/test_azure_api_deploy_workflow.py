@@ -49,6 +49,7 @@ class AzureApiDeployWorkflowTests(unittest.TestCase):
         self.assertIn("actions/upload-artifact@v4", self.source)
         self.assertIn("Verify candidate image in ACR", self.source)
         self.assertIn('"::error::The validated candidate image is not present in the configured registry; refusing promotion."', self.source)
+        self.assertIn('command -v jq >/dev/null 2>&1', self.source)
         self.assertIn("candidate_descriptor_directory=\"$RUNNER_TEMP/elsa-control-api-candidate\"", self.source)
         self.assertIn('"$RUNNER_TEMP/elsa-control-api-candidate/candidate.json"', self.source)
         self.assertIn("capture_succeeded=false", self.source)

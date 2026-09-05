@@ -236,6 +236,10 @@ jobs:
         run: |
           set -euo pipefail
 
+          command -v jq >/dev/null 2>&1 || {
+            echo "::error::JSON tooling is unavailable; refusing to emit a candidate descriptor."
+            exit 1
+          }
           if [[ ! "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::The build source identity has an unexpected format; refusing to publish a candidate."
             exit 1
