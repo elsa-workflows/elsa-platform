@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Azure.Identity;
 using Azure.Security.KeyVault.Secrets;
@@ -15,10 +16,26 @@ public static class AzureManagedSecretReferences
 {
     public const string DatabaseConnectionStringName = "database:connectionstring";
     public const string SqlConnection = "secret://azure-managed/sql-connection";
+    public const string IdentitySigningKeyName = "identity:signingkey";
+    public const string IdentitySigningKey = "secret://azure-managed/identity-signing-key";
+    public const string AdminPasswordName = "admin:password";
+    public const string AdminPassword = "secret://azure-managed/admin-password";
 
     public static bool IsSqlConnection(string? name, string? reference) =>
         string.Equals(name, DatabaseConnectionStringName, StringComparison.Ordinal) &&
         string.Equals(reference, SqlConnection, StringComparison.Ordinal);
+
+    public static bool IsProviderOwned(string? name, string? reference) =>
+        IsSqlConnection(name, reference) ||
+        (string.Equals(name, IdentitySigningKeyName, StringComparison.Ordinal) &&
+         string.Equals(reference, IdentitySigningKey, StringComparison.Ordinal)) ||
+        (string.Equals(name, AdminPasswordName, StringComparison.Ordinal) &&
+         string.Equals(reference, AdminPassword, StringComparison.Ordinal));
+
+    public static bool IsProviderOwnedReference(string? reference) =>
+        string.Equals(reference, SqlConnection, StringComparison.Ordinal) ||
+        string.Equals(reference, IdentitySigningKey, StringComparison.Ordinal) ||
+        string.Equals(reference, AdminPassword, StringComparison.Ordinal);
 }
 
 public sealed record AzureSecretResolutionRequest(
@@ -46,8 +63,8 @@ public sealed record AzureSecretResolutionRequest(
             throw new ArgumentException("The secret name is unsafe.", nameof(Name));
         if (!AzureProviderOperationValidation.IsSafeSecretReference(Reference))
             throw new ArgumentException("The secret reference is unsafe.", nameof(Reference));
-        if (Reference.Equals(AzureManagedSecretReferences.SqlConnection, StringComparison.Ordinal) &&
-            !Name.Equals(AzureManagedSecretReferences.DatabaseConnectionStringName, StringComparison.Ordinal))
+        if (AzureManagedSecretReferences.IsProviderOwnedReference(Reference) &&
+            !AzureManagedSecretReferences.IsProviderOwned(Name, Reference))
             throw new ArgumentException("The provider-owned secret reference is not valid for this name.", nameof(Reference));
         if (Resources is not null)
             AzureProviderOperationValidation.ValidateReferences(Resources);
@@ -337,17 +354,17 @@ public sealed class ManagedIdentityAzureSecretResolver : IAzureSecretResolver
         if (!Guid.TryParseExact(request.ProviderAssignmentId, "D", out var assignmentId))
             throw new ArgumentException("The Key Vault secret locator is unsafe.", nameof(request));
 
-        var providerOwnedSqlConnection = AzureManagedSecretReferences.IsSqlConnection(request.Name, request.Reference);
+        var providerOwned = AzureManagedSecretReferences.IsProviderOwned(request.Name, request.Reference);
         AzureKeyVaultSecretLocator? locator = null;
-        if (!providerOwnedSqlConnection && !AzureKeyVaultSecretLocator.TryParsePlanReference(request.Reference, out locator))
+        if (!providerOwned && !AzureKeyVaultSecretLocator.TryParsePlanReference(request.Reference, out locator))
             throw new ArgumentException("The Key Vault secret locator is unsafe.", nameof(request));
 
         var authorization = await _authorizationStore.GetAsync(request.WorkspaceId, assignmentId, cancellationToken);
         if (!IsAuthorized(request, assignmentId, locator, authorization, _timeProvider.GetUtcNow()))
             throw new InvalidOperationException("The requested Azure secret is not authorized.");
 
-        if (providerOwnedSqlConnection)
-            return MaterializeSqlConnection(authorization!.Assignment);
+        if (providerOwned)
+            return MaterializeProviderOwnedSecret(request.Name, authorization!.Assignment);
 
         return await _reader.GetAsync(locator!.VaultUri, locator.Name, locator.Version, cancellationToken);
     }
@@ -393,6 +410,9 @@ public sealed class ManagedIdentityAzureSecretResolver : IAzureSecretResolver
 
         if (providerOwnedSqlConnection)
             return HasAuthorizedSqlResources(assignment);
+
+        if (AzureManagedSecretReferences.IsProviderOwned(request.Name, request.Reference))
+            return true;
 
         return locator is not null &&
             AzureProviderOperationValidation.IsSecretReferenceBoundToKey(request.Name, request.Reference);
@@ -445,6 +465,37 @@ public sealed class ManagedIdentityAzureSecretResolver : IAzureSecretResolver
         var resources = assignment.Resources;
         var value = $"Server=tcp:{resources.SqlServerFqdn},1433;Initial Catalog=Elsa;Encrypt=True;Authentication=\"Active Directory Managed Identity\";User Id={resources.WorkloadIdentityClientId};TrustServerCertificate=False;Connection Timeout=30;";
         return new AzureSecretLease(value);
+    }
+
+    private static AzureSecretLease MaterializeProviderOwnedSecret(
+        string name,
+        AzureProviderResourceAssignment assignment)
+    {
+        if (AzureManagedSecretReferences.IsSqlConnection(name, AzureManagedSecretReferences.SqlConnection))
+            return MaterializeSqlConnection(assignment);
+
+        if (!string.Equals(name, AzureManagedSecretReferences.IdentitySigningKeyName, StringComparison.Ordinal) &&
+            !string.Equals(name, AzureManagedSecretReferences.AdminPasswordName, StringComparison.Ordinal))
+            throw new InvalidOperationException("The provider-owned secret slot is not supported.");
+
+        Span<byte> entropy = stackalloc byte[48];
+        Span<char> secret = stackalloc char[68];
+        RandomNumberGenerator.Fill(entropy);
+        secret[0] = 'E';
+        secret[1] = 'a';
+        secret[2] = '1';
+        secret[3] = '!';
+        try
+        {
+            if (!Convert.TryToBase64Chars(entropy, secret[4..], out var charsWritten))
+                throw new InvalidOperationException("The provider-owned secret could not be generated.");
+            return new AzureSecretLease(secret[..(charsWritten + 4)]);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(entropy);
+            secret.Clear();
+        }
     }
 
     private static bool IsSafeWorkloadName(string value) =>

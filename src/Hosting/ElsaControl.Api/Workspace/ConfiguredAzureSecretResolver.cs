@@ -32,7 +32,9 @@ internal sealed class ConfiguredAzureSecretResolver : IAzureSecretResolver
         return new ConfiguredAzureSecretResolver(values);
     }
 
-    public static IReadOnlyDictionary<string, string> ReadNamedReferences(IConfiguration configuration)
+    public static IReadOnlyDictionary<string, string> ReadNamedReferences(
+        IConfiguration configuration,
+        bool requireProviderOwnedCredentials = false)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         var references = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -42,7 +44,18 @@ internal sealed class ConfiguredAzureSecretResolver : IAzureSecretResolver
             var name = child["Name"]?.Trim();
             var reference = child["Reference"]?.Trim();
             var normalizedReference = reference;
-            if (!AzureManagedSecretReferences.IsSqlConnection(name, reference))
+            if (AzureManagedSecretReferences.IsProviderOwned(name, reference))
+            {
+                normalizedReference = reference;
+            }
+            else if (AzureManagedSecretReferences.IsProviderOwnedReference(reference) ||
+                     requireProviderOwnedCredentials &&
+                     (string.Equals(name, AzureManagedSecretReferences.IdentitySigningKeyName, StringComparison.Ordinal) ||
+                      string.Equals(name, AzureManagedSecretReferences.AdminPasswordName, StringComparison.Ordinal)))
+            {
+                normalizedReference = null;
+            }
+            else
             {
                 if (!AzureKeyVaultSecretLocator.TryParse(reference, out var locator))
                     normalizedReference = null;

@@ -287,15 +287,30 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             cancellationToken.ThrowIfCancellationRequested();
             var existing = await ExecuteAzAsync(command,
                 ["keyvault", "secret", "list", "--subscription", _scope.SubscriptionId, "--vault-name", vaultName,
-                    "--query", $"[?name=='{secretName}'] | length(@)", "--output", "tsv", "--only-show-errors"],
-                ParseIntegerAsync,
+                    "--query", $"[?name=='{secretName}'] | [].{{managedBy:tags.\"managed-by\",assignmentId:tags.\"provider-assignment\",instanceId:tags.\"instance\",secretSlot:tags.\"secret-slot\",generation:tags.\"generation\"}}",
+                    "--output", "json", "--only-show-errors"],
+                ParseSecretSeedMetadataCollectionAsync,
                 cancellationToken);
             if (!existing.Succeeded || existing.Value is null)
                 return ProcessFailure(command, AzureProviderOperationPhase.FoundationSubmitted, existing, command.Resources, mutation: false);
-            if (existing.Value.Value == 1)
+            var existingSecrets = existing.Value.Value;
+            if (existingSecrets.Count == 1)
+            {
+                if (IsGeneratedProviderOwnedSecret(key, reference))
+                {
+                    if (!IsOwnedSecretMetadata(command, secretName, existingSecrets[0]))
+                        return Failed(command, AzureProviderOperationPhase.FoundationSubmitted, "azure.secrets.metadata-invalid", "The provider-owned secret metadata is missing or invalid.");
+                }
                 continue;
-            if (existing.Value.Value != 0)
+            }
+            if (existingSecrets.Count != 0)
                 return Failed(command, AzureProviderOperationPhase.FoundationSubmitted, "azure.secrets.inventory-invalid", "The secret inventory is ambiguous.");
+            if (command.IsResume && IsGeneratedProviderOwnedSecret(key, reference))
+                return Uncertain(
+                    command,
+                    AzureProviderOperationPhase.FoundationSubmitted,
+                    "azure.secrets.recovery-required",
+                    "A provider-owned secret is absent after an interrupted seed and requires explicit recovery.");
 
             AzureSecretLease lease;
             try
@@ -334,9 +349,18 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                 try
                 {
                     EnsureMutationAuthority(command);
+                    var seedArguments = new List<string>
+                    {
+                        "keyvault", "secret", "set", "--subscription", _scope.SubscriptionId, "--vault-name", vaultName,
+                        "--name", secretName, "--file", file, "--output", "none", "--only-show-errors"
+                    };
+                    if (IsGeneratedProviderOwnedSecret(key, reference))
+                    {
+                        seedArguments.Add("--tags");
+                        seedArguments.AddRange(OwnedSecretMetadataArguments(command, secretName));
+                    }
                     var seeded = await ExecuteAzAsync<AzureCommandNoOutput>(command,
-                        ["keyvault", "secret", "set", "--subscription", _scope.SubscriptionId, "--vault-name", vaultName,
-                            "--name", secretName, "--file", file, "--output", "none", "--only-show-errors"],
+                        seedArguments,
                         static _ => AzureCommandNoOutput.Instance,
                         cancellationToken);
                     if (!seeded.Succeeded)
@@ -1639,8 +1663,34 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     private static SafeValue<IReadOnlyList<TrafficEntry>> ParseTrafficAsync(ReadOnlyMemory<char> output) => new(ParseJson<List<TrafficEntry>>(output).Value);
     private static SafeValue<RevisionState> ParseRevisionStateAsync(ReadOnlyMemory<char> output) => ParseJson<RevisionState>(output);
     private static SafeValue<IReadOnlyList<string>> ParseStringArrayAsync(ReadOnlyMemory<char> output) => new(ParseJson<List<string>>(output).Value);
+    private static SafeValue<IReadOnlyList<AzureSecretSeedMetadata?>> ParseSecretSeedMetadataCollectionAsync(ReadOnlyMemory<char> output) =>
+        new(ParseJson<List<AzureSecretSeedMetadata?>>(output).Value);
     private static SafeValue<int> ParseIntegerAsync(ReadOnlyMemory<char> output) =>
         int.TryParse(output.ToString().Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? new SafeValue<int>(value) : throw new FormatException();
+
+    private static bool IsGeneratedProviderOwnedSecret(string key, string reference) =>
+        AzureManagedSecretReferences.IsProviderOwned(key, reference) &&
+        !AzureManagedSecretReferences.IsSqlConnection(key, reference);
+
+    private static string[] OwnedSecretMetadataArguments(AzureProviderRunnerCommand command, string secretName) =>
+    [
+        $"managed-by={ManagedByTag}",
+        $"provider-assignment={command.Context.ProviderAssignmentId}",
+        $"instance={command.Context.InstanceId:D}",
+        $"secret-slot={secretName}",
+        "generation=provider-v1"
+    ];
+
+    private static bool IsOwnedSecretMetadata(
+        AzureProviderRunnerCommand command,
+        string secretName,
+        AzureSecretSeedMetadata? metadata) =>
+        metadata is not null &&
+        string.Equals(metadata.ManagedBy, ManagedByTag, StringComparison.Ordinal) &&
+        string.Equals(metadata.ProviderAssignment, command.Context.ProviderAssignmentId, StringComparison.Ordinal) &&
+        string.Equals(metadata.Instance, command.Context.InstanceId.ToString("D"), StringComparison.Ordinal) &&
+        string.Equals(metadata.SecretSlot, secretName, StringComparison.Ordinal) &&
+        string.Equals(metadata.Generation, "provider-v1", StringComparison.Ordinal);
 
     private static async Task<(string Directory, string File)> WriteTransientSecretFileAsync(AzureSecretLease lease, CancellationToken cancellationToken)
     {
@@ -1754,6 +1804,14 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     private sealed class AdminRecord { public string? Login { get; set; } public string? Sid { get; set; } }
     private sealed class TrafficEntry { public string? RevisionName { get; set; } public int Weight { get; set; } }
     private sealed class RevisionState { public bool Active { get; set; } public string? Health { get; set; } }
+    private sealed class AzureSecretSeedMetadata
+    {
+        public string? ManagedBy { get; set; }
+        [JsonPropertyName("assignmentId")] public string? ProviderAssignment { get; set; }
+        [JsonPropertyName("instanceId")] public string? Instance { get; set; }
+        public string? SecretSlot { get; set; }
+        public string? Generation { get; set; }
+    }
     private sealed class SafeValue<T>(T value) : AzureCommandSafeOutput
     {
         public T Value { get; } = value;

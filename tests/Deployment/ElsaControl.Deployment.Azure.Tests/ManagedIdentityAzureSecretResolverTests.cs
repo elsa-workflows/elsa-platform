@@ -151,6 +151,49 @@ public sealed class ManagedIdentityAzureSecretResolverTests
     }
 
     [Theory]
+    [InlineData("identity:signingkey", AzureManagedSecretReferences.IdentitySigningKey)]
+    [InlineData("admin:password", AzureManagedSecretReferences.AdminPassword)]
+    public async Task Generates_distinct_provider_owned_secret_material_without_key_vault(
+        string name,
+        string reference)
+    {
+        var reader = new FakeReader();
+        var instanceA = InstanceId;
+        var instanceB = Guid.Parse("88888888-8888-8888-8888-888888888888");
+        var resolverA = new ManagedIdentityAzureSecretResolver(
+            new FakeAuthorizationStore(ProviderOwnedAuthorization(instanceA)), reader);
+        var resolverB = new ManagedIdentityAzureSecretResolver(
+            new FakeAuthorizationStore(ProviderOwnedAuthorization(instanceB)), reader);
+
+        await using var leaseA = await resolverA.ResolveAsync(RequestFor(instanceA, name, reference));
+        await using var leaseB = await resolverB.ResolveAsync(RequestFor(instanceB, name, reference));
+
+        Assert.False(leaseA.Value.Span.SequenceEqual(leaseB.Value.Span));
+        Assert.True(leaseA.Value.Length >= 64);
+        Assert.True(leaseB.Value.Length >= 64);
+        Assert.Equal(0, reader.Calls);
+    }
+
+    [Theory]
+    [InlineData("identity:signingkey", AzureManagedSecretReferences.AdminPassword)]
+    [InlineData("admin:password", AzureManagedSecretReferences.IdentitySigningKey)]
+    [InlineData("IDENTITY:SIGNINGKEY", AzureManagedSecretReferences.IdentitySigningKey)]
+    [InlineData("identity:signingkey", "secret://azure-managed/Identity-signing-key")]
+    public async Task Rejects_provider_owned_secret_reference_for_a_non_exact_slot(
+        string name,
+        string reference)
+    {
+        var reader = new FakeReader();
+        var resolver = new ManagedIdentityAzureSecretResolver(
+            new FakeAuthorizationStore(ProviderOwnedAuthorization()), reader);
+
+        await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await resolver.ResolveAsync(RequestFor(InstanceId, name, reference)));
+
+        Assert.Equal(0, reader.Calls);
+    }
+
+    [Theory]
     [InlineData("identity:signingkey", ManagedSqlReference)]
     [InlineData("database:connectionstring", "secret://azure-managed/other")]
     [InlineData("database:connectionstring", "secret://vault/sql-connection")]
@@ -319,6 +362,25 @@ public sealed class ManagedIdentityAzureSecretResolverTests
         }
     };
 
+    private static AzureSecretAuthorization ProviderOwnedAuthorization(Guid? instanceId = null) => Authorization() with
+    {
+        Assignment = Authorization().Assignment with
+        {
+            InstanceId = instanceId ?? InstanceId,
+            Resources = SqlResources()
+        },
+        Operation = Operation() with
+        {
+            InstanceId = instanceId ?? InstanceId,
+            SecretReferences = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [AzureManagedSecretReferences.DatabaseConnectionStringName] = ManagedSqlReference,
+                ["identity:signingkey"] = AzureManagedSecretReferences.IdentitySigningKey,
+                ["admin:password"] = AzureManagedSecretReferences.AdminPassword
+            }
+        }
+    };
+
     private static AzureProviderResourceReferences SqlResources() => new(
         ResourceGroupName: "workload-rg",
         WorkloadIdentityResourceId: "/subscriptions/66666666-6666-6666-6666-666666666666/resourceGroups/workload-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/workload-identity",
@@ -333,6 +395,14 @@ public sealed class ManagedIdentityAzureSecretResolverTests
         AssignmentId.ToString("D"),
         "database:connectionstring",
         SecretReference);
+
+    private static AzureSecretResolutionRequest RequestFor(Guid instanceId, string name, string reference) => new(
+        WorkspaceId,
+        OrganizationId,
+        instanceId,
+        AssignmentId.ToString("D"),
+        name,
+        reference);
 
     private static AzureSecretAuthorization Authorization() => new(
         new AzureProviderResourceAssignment(

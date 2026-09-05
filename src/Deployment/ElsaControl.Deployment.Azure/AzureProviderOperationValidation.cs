@@ -608,9 +608,9 @@ public static class AzureProviderOperationValidation
         if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(reference))
             return false;
 
-        if (AzureManagedSecretReferences.IsSqlConnection(key, reference))
+        if (AzureManagedSecretReferences.IsProviderOwned(key, reference))
             return true;
-        if (string.Equals(reference, AzureManagedSecretReferences.SqlConnection, StringComparison.Ordinal))
+        if (AzureManagedSecretReferences.IsProviderOwnedReference(reference))
             return false;
 
         if (!AzureKeyVaultSecretLocator.TryParsePlanReference(reference, out var locator))
