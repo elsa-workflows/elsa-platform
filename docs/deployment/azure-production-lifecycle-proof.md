@@ -9,15 +9,25 @@ does not use `ProofHost`, a fake provider, a fake health probe, or a fake secret
 ## Invocation
 
 Run this from an Azure-hosted test process with the candidate API/CLI image and a user-assigned
-managed identity attached:
+managed identity attached. Before starting the testhost, stage the approved normal production
+settings plus harness settings as `appsettings.Production.json` directly inside the absolute API
+content root. The early environment and staged filename are part of the fail-closed packaging
+contract; a differently named configuration file is rejected even if its contents are equivalent.
+For the Linux proof package, invoke its reviewed wrapper rather than calling the testhost directly:
 
 ```sh
-export ELSA_CONTROL_LIVE_AZURE_LIFECYCLE_PROOF=1
-export ELSA_CONTROL_LIVE_AZURE_LIFECYCLE_PROOF_CONFIG=/run/elsa-control/live-proof.json
-dotnet test tests/Hosting/ElsaControl.Api.Tests/ElsaControl.Api.Tests.csproj \
-  --no-restore \
-  --filter 'FullyQualifiedName~ProductionAzureLifecycleProofTests.Production_composition_applies_reconciles_reloads_and_deletes_one_instance'
+/bin/bash /run/elsa-control/run-proof.sh
 ```
+
+The packaged wrapper sets `ASPNETCORE_ENVIRONMENT=Production`, unsets conflicting
+`DOTNET_ENVIRONMENT`, sets the opt-in gate, and pins the API content root and staged configuration
+path before starting the testhost. It supplies a transient test API key and the validated outbound
+SQL-bootstrap IP required by the enabled runner, applies the overall timeout, and enforces the
+result-capture and evidence-retention gates below. The ninth package uses
+`/src/src/Hosting/ElsaControl.Api` as its content root and the SDK's VSTest entrypoint against
+`/run/elsa-control/tests/api/ElsaControl.Api.Tests.dll`. These are package inputs, not paths to infer
+from a developer checkout. A direct testhost invocation without the wrapper's inputs and result
+gates is a diagnostic run, not an accepted lifecycle proof.
 
 When the gate is absent, xUnit reports an explicit skipped test; it never silently passes.
 `ELSA_CONTROL_LIVE_AZURE_LIFECYCLE_PROOF_CONFIG` is required once the gate is enabled. The
@@ -38,6 +48,10 @@ The normal production configuration must also provide `ControlPlane:Origin` as a
 `Database:Provider=Sqlite`, and an isolated absolute `ConnectionStrings:Catalog` SQLite path whose
 filename contains `live-proof`. The path must not exist before the run (the harness also rejects
 SQLite WAL/SHM sidecars), so an accidental rerun cannot attach to an existing catalog or instance.
+For example, `elsa265-ninth-live-proof.db` satisfies the filename guard, while
+`elsa265-ninth-proof.db` does not. Exercise the actual input guard offline against the packaged
+configuration before granting temporary Azure execution permissions; merely compiling the proof
+does not validate its deployment-specific inputs.
 It also requires
 `DataProtection:KeysPath` on durable storage, all lifecycle and
 provider workers enabled, the v1 instance-provider scope, pinned CLI/sqlcmd/curl/template paths,
@@ -111,6 +125,22 @@ If resolution fails before an assignment exists, successful local deletion is re
 local-only cleanup. It cannot satisfy the overall proof, which requires provider-scoped cleanup.
 
 This proof covers provider apply/reconcile/reload/delete ownership and correlation. It does not
-claim release-manifest producer admission or public customer authentication, because the composed
-production verifier is intentionally fail-closed and the fixture starts from an already admitted
-catalog projection.
+claim release-manifest producer admission or public customer authentication: the fixture starts
+from an already admitted catalog projection and does not exercise the administrator admission
+endpoint. Production signature verification is a separate explicitly configured adapter and
+remains fail-closed by default.
+
+## External result capture
+
+A wrapper must require one passing result for the exact live test name, not just a zero testhost
+exit code; an empty filter selection or skipped test can otherwise appear successful. Retain only
+fixed outcome fields from a bounded result parser, and do not upload raw test output or TRX files.
+Overall success also requires the isolated catalog and the product's success evidence with
+`cleanupSucceeded=true` and `cleanupScope=provider`.
+
+Input validation runs before the application and may fail before any catalog or product evidence
+file exists. Always retain a separate value-free runner-result record for that case. A successful
+upload command over an empty source set is not evidence that a catalog or result was retained.
+Unset transient authentication credentials before evidence upload. Record temporary role IDs and
+resource targets before execution, and independently verify their removal after bounded evidence
+retention; emergency cleanup is never a product lifecycle pass.
