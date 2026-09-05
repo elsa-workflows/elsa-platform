@@ -642,6 +642,33 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.Contains("ActiveDirectoryManagedIdentity", bootstrap);
         Assert.Equal(_fixture.Options.AzureCliClientId, bootstrap[Array.IndexOf(bootstrap, "-U") + 1]);
         Assert.DoesNotContain("ActiveDirectoryDefault", bootstrap);
+        Assert.Contains("-b", bootstrap);
+    }
+
+    [Fact]
+    public async Task Sql_bootstrap_does_not_complete_when_sqlcmd_reports_a_batch_error()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("-?"), "Microsoft sqlcmd --authentication-method ActiveDirectoryDefault");
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("create"));
+        // Model go-sqlcmd's batch behavior: a SQL error exits nonzero only when -b is present.
+        process.SqlBatchError(args => args.Contains("--authentication-method"));
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("delete"));
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), "[]");
+
+        var resources = _fixture.FoundationResources with
+        {
+            RegistryResourceId = _fixture.RegistryId,
+            AcrPullDeploymentId = _fixture.RegistryDeploymentId,
+            AcrPullRoleAssignmentId = _fixture.RegistryRoleAssignmentId
+        };
+        var result = await _fixture.Runner(process).RunAsync(_fixture.Command(AzureProviderRunnerStep.SqlBootstrap, resources));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
+        Assert.Equal("azure.sql.bootstrap-uncertain", result.Code);
+        var bootstrap = Assert.Single(process.Calls, arguments => arguments.Contains("-i"));
+        Assert.Contains("-b", bootstrap);
+        Assert.Contains(process.Calls, arguments => arguments.Contains("firewall-rule") && arguments.Contains("delete"));
     }
 
     [Fact]
@@ -1188,6 +1215,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
 
         public void Success(Func<string[], bool> matcher, string output = "", Action? after = null) => _responses.Enqueue(new(matcher, AzureCommandProcessStatus.Succeeded, output, after));
         public void Failure(Func<string[], bool> matcher, string output = "") => _responses.Enqueue(new(matcher, AzureCommandProcessStatus.Failed, output, null));
+        public void SqlBatchError(Func<string[], bool> matcher) => _responses.Enqueue(new(matcher, AzureCommandProcessStatus.Succeeded, "", null, SimulateSqlBatchError: true));
         public void Status(Func<string[], bool> matcher, AzureCommandProcessStatus status, AzureCommandProcessFailureKind failureKind) =>
             _responses.Enqueue(new(matcher, status, string.Empty, null, failureKind));
 
@@ -1198,9 +1226,12 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
             Calls.Add(args);
             var response = _responses.Count > 0 ? _responses.Dequeue() : throw new InvalidOperationException("Unexpected Azure command.");
             Assert.True(response.Matcher(args), $"Unexpected command: {string.Join(' ', args)}");
-            if (response.Status != AzureCommandProcessStatus.Succeeded)
-                return Task.FromResult(new AzureCommandProcessResult<T>(response.Status, response.FailureKind, 1, null, "test.command.failed", "The test command failed."));
-            var result = new AzureCommandProcessResult<T>(response.Status, AzureCommandProcessFailureKind.None, 0, outputProjector(response.Output.AsMemory()), "test.command.succeeded", "The test command completed.");
+            var status = response.SimulateSqlBatchError
+                ? args.Contains("-b") ? AzureCommandProcessStatus.Failed : AzureCommandProcessStatus.Succeeded
+                : response.Status;
+            if (status != AzureCommandProcessStatus.Succeeded)
+                return Task.FromResult(new AzureCommandProcessResult<T>(status, response.FailureKind, 1, null, "test.command.failed", "The test command failed."));
+            var result = new AzureCommandProcessResult<T>(status, AzureCommandProcessFailureKind.None, 0, outputProjector(response.Output.AsMemory()), "test.command.succeeded", "The test command completed.");
             response.After?.Invoke();
             return Task.FromResult(result);
         }
@@ -1210,7 +1241,8 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
             AzureCommandProcessStatus Status,
             string Output,
             Action? After,
-            AzureCommandProcessFailureKind FailureKind = AzureCommandProcessFailureKind.NonZeroExitCode);
+            AzureCommandProcessFailureKind FailureKind = AzureCommandProcessFailureKind.NonZeroExitCode,
+            bool SimulateSqlBatchError = false);
     }
 
     private sealed class RecordingSecretResolver(string value) : IAzureSecretResolver

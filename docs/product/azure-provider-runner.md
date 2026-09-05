@@ -26,6 +26,14 @@ This host setting does not admit packages, infer versions, or replace release
 signature verification. The standalone disposable-proof template keeps its
 separate feed contract.
 
+SQL bootstrap invokes the pinned `sqlcmd` with `-b` in both production and
+disposable-proof modes. SQL batch errors must produce a nonzero process result;
+printed SQL output is never interpreted as success or retained as diagnostics.
+An unconfirmed bootstrap remains uncertain. After confirmed firewall creation,
+the temporary rule must still be deleted and verified absent when SQL execution
+fails. An uncertain firewall-create result remains recovery-owned; it does not
+establish that the rule is absent.
+
 The worker receives only admitted immutable plan identities and governed secret
 references. Secret aliases are configured under
 `Deployment:AzureProvider:Secrets:<index>:Name` and `Reference`. The

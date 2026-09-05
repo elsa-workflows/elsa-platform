@@ -392,7 +392,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                 EnsureMutationAuthority(command);
                 var bootstrap = await ExecuteSqlCmdAsync<AzureCommandNoOutput>(command,
                     ["-S", $"tcp:{command.Resources.SqlServerFqdn},1433", "-d", "Elsa", ..SqlAuthenticationArguments(),
-                        "-i", scriptPath],
+                        "-b", "-i", scriptPath],
                     static _ => AzureCommandNoOutput.Instance,
                     cancellationToken);
                 if (bootstrap.Succeeded)
