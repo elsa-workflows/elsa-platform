@@ -202,6 +202,37 @@ esac
         self.assertIn("schema is invalid", result.stderr)
         self.assertFalse(self.output.exists())
 
+    def test_missing_json_validator_fails_with_a_safe_diagnostic(self) -> None:
+        for command in ("bash", "mktemp", "wc", "rm"):
+            target = Path("/bin") / command
+            if not target.exists():
+                target = Path("/usr/bin") / command
+            (self.bin / command).symlink_to(target)
+        environment = {
+            "PATH": str(self.bin),
+            "FAKE_RUN_JSON": json.dumps({}),
+        }
+        result = subprocess.run(
+            [
+                str(HELPER),
+                str(self.descriptor),
+                "123",
+                DIGEST,
+                IMAGE_REPOSITORY,
+                SOURCE_REPOSITORY,
+                str(self.output),
+            ],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("JSON validator is unavailable", result.stderr)
+        self.assertFalse(self.output.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

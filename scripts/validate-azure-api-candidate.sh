@@ -31,6 +31,7 @@ fi
 [[ "$expected_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "candidate digest is invalid"
 [[ -n "$expected_image_repository" && -n "$expected_github_repository" ]] || fail "candidate repository configuration is incomplete"
 [[ -n "$output_file" && ! -L "$output_file" ]] || fail "candidate output path is invalid"
+command -v jq >/dev/null 2>&1 || fail "JSON validator is unavailable"
 
 jq -e '
   type == "object" and
