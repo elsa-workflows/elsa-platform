@@ -90,6 +90,8 @@ public sealed record ElsaInstanceProviderRecoveryEnvelope(
             InstanceId == Guid.Empty || LifecycleOperationId == Guid.Empty ||
             ObservedLifecycleAttemptNumber < 1 || ObservedInstanceVersion < 1 ||
             AcceptedLifecycleAttemptNumber < 2 || AcceptedInstanceVersion < 1 ||
+            (long)AcceptedLifecycleAttemptNumber != (long)ObservedLifecycleAttemptNumber + 1 ||
+            AcceptedInstanceVersion <= ObservedInstanceVersion ||
             !canonicalIdempotency || RequestHash is null || RequestHash.Length != 64 ||
             RequestHash.AsSpan().ContainsAnyExcept("0123456789abcdef") ||
             !ElsaInstanceProviderRecoveryObservationReference.TryParse(

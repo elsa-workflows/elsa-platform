@@ -71,6 +71,35 @@ public sealed class ElsaInstanceProviderRecoveryObservationReferenceTests
         Assert.Equal("instances/operations", ElsaInstanceIdempotencyScope.Normalize(" instances/operations "));
     }
 
+    [Theory]
+    [InlineData(2, 2, 4, 5)]
+    [InlineData(3, 2, 4, 5)]
+    [InlineData(1, 3, 4, 5)]
+    [InlineData(int.MaxValue, 2, 4, 5)]
+    [InlineData(1, 2, 4, 4)]
+    [InlineData(1, 2, 4, 3)]
+    public void Recovery_envelope_rejects_contradictory_acceptance_versions(
+        int observedAttempt, int acceptedAttempt, int observedVersion, int acceptedVersion)
+    {
+        var envelope = CreateEnvelope() with
+        {
+            ObservedLifecycleAttemptNumber = observedAttempt,
+            AcceptedLifecycleAttemptNumber = acceptedAttempt,
+            ObservedInstanceVersion = observedVersion,
+            AcceptedInstanceVersion = acceptedVersion
+        };
+
+        Assert.Throws<InvalidOperationException>(envelope.Validate);
+    }
+
+    [Fact]
+    public void Recovery_envelope_allows_intervening_reconciliation_version_increment()
+    {
+        var envelope = CreateEnvelope() with { AcceptedInstanceVersion = 6 };
+
+        envelope.Validate();
+    }
+
     [Fact]
     public void Recovery_result_uses_a_fixed_summary_and_safe_code()
     {
