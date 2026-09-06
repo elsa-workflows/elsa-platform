@@ -182,6 +182,79 @@ public sealed class AzureElsaInstanceProviderTests
             Assert.Null(observation.CurrentDeploymentReference);
     }
 
+    [Theory]
+    [InlineData(AzureProviderOperationStatus.Running)]
+    [InlineData(AzureProviderOperationStatus.Succeeded)]
+    public async Task Recovery_replay_missing_accepted_proof_cannot_project_postclaim_status(
+        AzureProviderOperationStatus status)
+    {
+        var fixture = await CreateRecoveryFixtureAsync(status);
+
+        var result = await fixture.Provider.RecoverAsync(fixture.Request);
+
+        Assert.NotEqual(ElsaInstanceProviderRecoveryOutcome.InProgress, result.Outcome);
+        Assert.NotEqual(ElsaInstanceProviderRecoveryOutcome.Succeeded, result.Outcome);
+        Assert.Equal(1, fixture.ObservationStore.ReplayCalls);
+        Assert.Equal(0, fixture.ObservationStore.StrictCalls);
+        Assert.Equal(0, fixture.Observer.Calls);
+        Assert.Equal(0, fixture.OperationStore.ClaimRecoveryCalls);
+    }
+
+    [Theory]
+    [InlineData(AzureProviderOperationStatus.Running)]
+    [InlineData(AzureProviderOperationStatus.Succeeded)]
+    public async Task Recovery_replay_wrong_accepted_proof_cannot_project_postclaim_status(
+        AzureProviderOperationStatus status)
+    {
+        var fixture = await CreateRecoveryFixtureAsync(status, includeReplayObservation: true, wrongReplayObservation: true);
+
+        var result = await fixture.Provider.RecoverAsync(fixture.Request);
+
+        Assert.NotEqual(ElsaInstanceProviderRecoveryOutcome.InProgress, result.Outcome);
+        Assert.NotEqual(ElsaInstanceProviderRecoveryOutcome.Succeeded, result.Outcome);
+        Assert.Equal(1, fixture.ObservationStore.ReplayCalls);
+        Assert.Equal(0, fixture.ObservationStore.StrictCalls);
+        Assert.Equal(0, fixture.Observer.Calls);
+        Assert.Equal(0, fixture.OperationStore.ClaimRecoveryCalls);
+    }
+
+    [Theory]
+    [InlineData(AzureProviderOperationStatus.Running, ElsaInstanceProviderRecoveryOutcome.InProgress, "azure.operation.in-progress")]
+    [InlineData(AzureProviderOperationStatus.Succeeded, ElsaInstanceProviderRecoveryOutcome.Succeeded, "azure.operation.no-op")]
+    public async Task Recovery_replay_valid_successor_projects_without_remote_observation(
+        AzureProviderOperationStatus status,
+        ElsaInstanceProviderRecoveryOutcome expectedOutcome,
+        string expectedCode)
+    {
+        var fixture = await CreateRecoveryFixtureAsync(status, includeReplayObservation: true);
+
+        var result = await fixture.Provider.RecoverAsync(fixture.Request);
+
+        Assert.Equal(expectedOutcome, result.Outcome);
+        Assert.Equal(expectedCode, result.Code);
+        Assert.Equal(1, fixture.ObservationStore.ReplayCalls);
+        Assert.Equal(0, fixture.ObservationStore.StrictCalls);
+        Assert.Equal(0, fixture.Observer.Calls);
+        Assert.Equal(0, fixture.OperationStore.ClaimRecoveryCalls);
+    }
+
+    [Fact]
+    public async Task Recovery_required_uses_strict_ledger_validation_not_postclaim_replay()
+    {
+        var fixture = await CreateRecoveryFixtureAsync(
+            AzureProviderOperationStatus.RecoveryRequired,
+            includeStrictObservation: true);
+
+        var result = await fixture.Provider.RecoverAsync(fixture.Request);
+
+        Assert.Equal(ElsaInstanceProviderRecoveryOutcome.RecoveryRequired, result.Outcome);
+        Assert.Equal("azure.recovery.unavailable", result.Code);
+        Assert.Equal(0, fixture.ObservationStore.ReplayCalls);
+        Assert.Equal(1, fixture.ObservationStore.StrictCalls);
+        Assert.Equal(0, fixture.Observer.Calls);
+        Assert.Equal(0, fixture.OperationStore.ClaimRecoveryCalls);
+    }
+
     [Fact]
     public async Task Missing_provider_operation_is_unknown_and_does_not_claim_health()
     {
@@ -517,6 +590,141 @@ public sealed class AzureElsaInstanceProviderTests
             ResourceGroupNamePrefix = "rg-elsa"
         };
 
+    private static async Task<RecoveryFixture> CreateRecoveryFixtureAsync(
+        AzureProviderOperationStatus status,
+        bool includeReplayObservation = false,
+        bool wrongReplayObservation = false,
+        bool includeStrictObservation = false)
+    {
+        var workspaceId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var operationId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        var assignmentId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+        var plan = TranslateForInstance("5.0", "5.0.0");
+        var isPostClaim = status is AzureProviderOperationStatus.Running or AzureProviderOperationStatus.Succeeded;
+        var operation = CreateOperation(workspaceId, plan, operationId) with
+        {
+            Status = status,
+            Phase = AzureProviderOperationPhase.FoundationSubmitted,
+            AttemptNumber = isPostClaim ? 2 : 1,
+            Version = isPostClaim ? 2 : 1,
+            OrganizationId = TestOrganizationId,
+            InstanceId = TestInstanceId,
+            LifecycleAction = ElsaInstanceOperationAction.Reconcile,
+            ProviderAssignmentId = assignmentId,
+            AttemptedStep = AzureProviderRunnerStep.Foundation
+        };
+        var operationRequest = AzureProviderOperationService.CreateOperationRequest(operation);
+        operation = operation with
+        {
+            RequestHash = AzureProviderOperationValidation.ComputeRequestHash(operationRequest),
+            OperationIdentity = AzureProviderOperationValidation.ComputeOperationIdentity(operationRequest)
+        };
+
+        var preClaimOperation = operation with
+        {
+            Status = AzureProviderOperationStatus.RecoveryRequired,
+            AttemptNumber = 1,
+            Version = 1
+        };
+        var observation = CreateProviderRecoveryObservation(preClaimOperation);
+        var replayObservation = includeReplayObservation
+            ? wrongReplayObservation
+                ? observation with { ProviderOperationId = Guid.Parse("77777777-7777-7777-7777-777777777777") }
+                : observation
+            : null;
+        var strictObservation = includeStrictObservation ? observation : null;
+        var observationStore = new CapturingRecoveryObservationStore(strictObservation, replayObservation);
+        var operationStore = new CapturingOperationStore(operation);
+        var observer = new CountingRecoveryObserver();
+        var assignmentStore = new InMemoryAssignmentStore
+        {
+            AssignmentId = assignmentId,
+            State = AzureProviderAssignmentState.Active,
+            LastOperationId = operationId
+        };
+        var options = EnabledOptions();
+        await assignmentStore.CreateOrGetAsync(new(
+            workspaceId, TestOrganizationId, TestInstanceId,
+            options.ProviderScopeFingerprint!, options.SubscriptionId,
+            options.ResourceGroupNamePrefix, operation.TargetKey, operation.Location,
+            options.ResourceGroupNamingVersion), DateTimeOffset.UtcNow);
+        var provider = new AzureElsaInstanceProvider(
+            new CapturingOperationService(operation),
+            operationStore,
+            assignmentStore,
+            options: EnabledOptions(),
+            recoveryObserver: observer,
+            recoveryObservationStore: observationStore);
+        var submission = CreateSubmission(workspaceId, TestInstanceId, operationId, plan) with
+        {
+            AttemptNumber = 2,
+            PlacementAssignmentId = assignmentId.ToString("D")
+        };
+        var recordId = Guid.Parse("88888888-8888-8888-8888-888888888888");
+        var observationDigest = observation.ComputeRecordDigest(recordId);
+        var envelope = new ElsaInstanceProviderRecoveryEnvelope(
+            Guid.Parse("99999999-9999-9999-9999-999999999999"),
+            TestOrganizationId,
+            workspaceId,
+            TestInstanceId,
+            operationId,
+            1,
+            1,
+            2,
+            2,
+            $"instance/{TestInstanceId:D}/operations",
+            "recovery-key",
+            new string('c', 64),
+            ElsaInstanceProviderRecoveryObservationReference.Create(recordId, observationDigest),
+            observationDigest);
+        return new(
+            provider,
+            new(submission, envelope),
+            observationStore,
+            operationStore,
+            observer);
+    }
+
+    private static AzureProviderRecoveryObservationRecord CreateProviderRecoveryObservation(
+        AzureProviderOperation operation)
+    {
+        var uri = $"https://control.example.test/api/workspaces/{operation.WorkspaceId:D}/instances/{TestInstanceId:D}/resolved-plans/plan-1";
+        return new(
+            operation.OrganizationId!.Value,
+            operation.WorkspaceId,
+            operation.InstanceId!.Value,
+            operation.Id,
+            operation.LifecycleAction!.Value,
+            1,
+            1,
+            operation.Id,
+            operation.OperationIdentity,
+            operation.RequestHash,
+            operation.AttemptNumber,
+            operation.Version,
+            operation.CheckpointSequence,
+            operation.ProviderAssignmentId!.Value,
+            operation.TargetKey,
+            operation.ProviderScopeFingerprint,
+            "plan-1",
+            1,
+            uri,
+            "sha256:" + new string('d', 64),
+            operation.PlanFingerprint,
+            operation.TemplateFingerprint,
+            AzureProviderRunnerStep.Foundation,
+            AzureProviderOperationPhase.FoundationObserved,
+            AzureProviderHealth.Unknown,
+            new string('e', 64),
+            new string('f', 64),
+            DateTimeOffset.Parse("2026-09-06T08:00:00Z"));
+    }
+
+    private static AzureWorkloadPlan TranslateForInstance(string releaseLine, string version) =>
+        AzureWorkloadPlanTranslator.Translate(
+            AzureWorkloadPlanTranslatorTests.CreatePlan(releaseLine, version),
+            new(AzureElsaInstanceProvider.WorkloadName(TestInstanceId), "westeurope")).Plan!;
+
     private static AzureWorkloadPlan Translate(string releaseLine, string version) =>
         AzureWorkloadPlanTranslator.Translate(
             AzureWorkloadPlanTranslatorTests.CreatePlan(releaseLine, version),
@@ -587,6 +795,72 @@ public sealed class AzureElsaInstanceProviderTests
             ProviderScopeFingerprint: new string('a', 64),
             ProviderAssignmentId: operationId);
 
+    private sealed record RecoveryFixture(
+        AzureElsaInstanceProvider Provider,
+        ElsaInstanceProviderRecoveryRequest Request,
+        CapturingRecoveryObservationStore ObservationStore,
+        CapturingOperationStore OperationStore,
+        CountingRecoveryObserver Observer);
+
+    private sealed class CapturingRecoveryObservationStore(
+        AzureProviderRecoveryObservationRecord? strictObservation,
+        AzureProviderRecoveryObservationRecord? replayObservation) : IAzureProviderRecoveryObservationStore
+    {
+        public int StrictCalls { get; private set; }
+        public int ReplayCalls { get; private set; }
+
+        public Task<AzureProviderRecoveryObservationReceipt> CreateOrGetAsync(
+            AzureProviderRecoveryObservationRecord observation,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<AzureProviderRecoveryObservationRecord?> GetAndValidateRecordedAsync(
+            Guid organizationId,
+            Guid workspaceId,
+            Guid instanceId,
+            Guid lifecycleOperationId,
+            int observedLifecycleAttemptNumber,
+            string reference,
+            string digest,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<AzureProviderRecoveryObservationRecord?>(null);
+
+        public Task<AzureProviderRecoveryObservationRecord?> GetAndValidateForAcceptedRecoveryAsync(
+            AzureProviderRecoveryObservationBinding binding,
+            CancellationToken cancellationToken = default)
+        {
+            StrictCalls++;
+            return Task.FromResult(strictObservation);
+        }
+
+        public Task<AzureProviderRecoveryObservationRecord?> GetAndValidateForAcceptedRecoveryReplayAsync(
+            AzureProviderRecoveryObservationBinding binding,
+            CancellationToken cancellationToken = default)
+        {
+            ReplayCalls++;
+            return Task.FromResult(replayObservation);
+        }
+    }
+
+    private sealed class CountingRecoveryObserver : IAzureProviderRecoveryObserver
+    {
+        public int Calls { get; private set; }
+
+        public Task<AzureProviderRecoveryObservation> ObserveAsync(
+            AzureProviderRecoveryRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult(new AzureProviderRecoveryObservation(
+                AzureProviderRecoveryObservationKind.Unknown,
+                null,
+                new(),
+                AzureProviderHealth.Unknown,
+                null,
+                "provider.recovery.unknown",
+                "The retained provider state remains uncertain."));
+        }
+    }
+
     private sealed class CapturingOperationService(AzureProviderOperation? operation) : IAzureProviderOperationService, IAzureProviderOperationReplayService
     {
         public List<AzureProviderOperationSubmission> Submissions { get; } = [];
@@ -641,6 +915,8 @@ public sealed class AzureElsaInstanceProviderTests
 
     private sealed class CapturingOperationStore(AzureProviderOperation? operation = null, AzureProviderOperation? completedDelete = null) : IAzureProviderOperationStore
     {
+        public int ClaimRecoveryCalls { get; private set; }
+
         public Task<AzureProviderOperation> CreateOrGetAsync(AzureProviderOperationRequest request, DateTimeOffset now, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public async Task<AzureProviderOperationCreateResult> CreateOrGetWithResultAsync(AzureProviderOperationRequest request, DateTimeOffset now, CancellationToken cancellationToken = default) =>
             new(await CreateOrGetAsync(request, now, cancellationToken), Replayed: false);
@@ -651,7 +927,11 @@ public sealed class AzureElsaInstanceProviderTests
         public Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, string? providerScopeFingerprint, CancellationToken cancellationToken = default) => Task.FromResult(operation);
         public Task<AzureProviderOperation?> MarkUnrestorableAsync(Guid workspaceId, Guid operationId, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) => Task.FromResult<AzureProviderOperation?>(null);
         public Task<AzureProviderOperation?> ClaimAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) => Task.FromResult<AzureProviderOperation?>(null);
-        public Task<AzureProviderOperation?> ClaimRecoveryAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) => Task.FromResult<AzureProviderOperation?>(null);
+        public Task<AzureProviderOperation?> ClaimRecoveryAsync(Guid workspaceId, Guid operationId, string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
+        {
+            ClaimRecoveryCalls++;
+            return Task.FromResult<AzureProviderOperation?>(null);
+        }
         public Task<AzureProviderOperation?> HeartbeatAsync(Guid workspaceId, Guid operationId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) => Task.FromResult<AzureProviderOperation?>(null);
         public Task<AzureProviderOperation?> CheckpointAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderCheckpoint checkpoint, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) => Task.FromResult<AzureProviderOperation?>(null);
         public Task<AzureProviderOperation?> FinalizeAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderOperationStatus status, string code, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) => Task.FromResult<AzureProviderOperation?>(null);
@@ -662,6 +942,7 @@ public sealed class AzureElsaInstanceProviderTests
     private sealed class InMemoryAssignmentStore : IAzureProviderResourceAssignmentStore
     {
         private AzureProviderResourceAssignment? _assignment;
+        public Guid AssignmentId { get; init; } = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
         public AzureProviderAssignmentState State { get; init; } = AzureProviderAssignmentState.Reserved;
         public Guid? LastOperationId { get; init; }
         public AzureProviderResourceReferences Resources { get; init; } = new();
@@ -672,7 +953,7 @@ public sealed class AzureElsaInstanceProviderTests
             CancellationToken cancellationToken = default)
         {
             _assignment ??= new(
-                Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
+                AssignmentId,
                 request.WorkspaceId,
                 request.OrganizationId,
                 request.InstanceId,
