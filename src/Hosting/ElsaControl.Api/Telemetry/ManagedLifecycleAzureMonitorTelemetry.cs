@@ -31,6 +31,8 @@ public static class ManagedLifecycleAzureMonitorTelemetryExtensions
             return builder;
 
         options.Validate();
+        if (builder.Services.Any(descriptor => descriptor.ServiceType == typeof(ManagedLifecycleAzureMonitorTelemetryLifetime)))
+            throw new InvalidOperationException("Managed lifecycle Azure Monitor telemetry is already registered.");
         builder.Services.AddSingleton(options);
         builder.Services.AddSingleton<ManagedLifecycleAzureMonitorTelemetrySinkFactory>();
         builder.Services.AddSingleton<ManagedLifecycleAzureMonitorTelemetryLifetime>();
@@ -256,7 +258,7 @@ internal sealed class ManagedLifecycleAzureMonitorTelemetrySinkFactory
                     ManagedLifecycleAzureMonitorTelemetryOptions.ExportIntervalMilliseconds,
                     ManagedLifecycleAzureMonitorTelemetryOptions.ExportTimeoutMilliseconds)
                 {
-                    TemporalityPreference = MetricReaderTemporalityPreference.Cumulative
+                    TemporalityPreference = MetricReaderTemporalityPreference.Delta
                 })
                 .Build();
             tracerProvider = Sdk.CreateTracerProviderBuilder()

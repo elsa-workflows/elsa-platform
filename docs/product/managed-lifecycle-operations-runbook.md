@@ -378,6 +378,16 @@ drain budget rather than starting separate flush and shutdown grace periods.
 These are cooperative SDK deadlines, not a promise that the entire host can stop
 within five seconds under every failure. An expired export is missing evidence,
 not a successful observation; offline replay is disabled.
+Metrics use delta temporality, matching the Azure Monitor exporter contract:
+each interval contains new counts rather than replaying the cumulative total.
+
+The API owns one Azure Monitor sink for the process lifetime. Do not register a
+second Azure Monitor exporter against the same connection string or hot-replace
+the sink: the pinned SDK caches the first transmitter and its credential/options.
+Apply changes through an API restart/promotion. Existing ServiceDefaults OTLP
+export is preserved; when `OTEL_EXPORTER_OTLP_ENDPOINT` is configured, managed
+lifecycle signals reach that explicitly configured destination as well as this
+Azure Monitor sink. Review both destinations during operational acceptance.
 
 Treat exporter startup, actual signal ingestion, private operator dashboard access,
 and the fresh five-minute observation window as separate gates. An anonymous

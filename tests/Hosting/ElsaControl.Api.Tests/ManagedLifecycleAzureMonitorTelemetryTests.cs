@@ -128,6 +128,23 @@ public sealed class ManagedLifecycleAzureMonitorTelemetryTests : IDisposable
     }
 
     [Fact]
+    public void Duplicate_sink_registration_is_rejected_before_building_a_second_provider()
+    {
+        var builder = CreateBuilder(new Dictionary<string, string?>
+        {
+            [ManagedLifecycleAzureMonitorTelemetryOptions.EnabledConfigurationKey] = "true",
+            [ManagedLifecycleAzureMonitorTelemetryOptions.ConnectionStringConfigurationKey] = ValidConnectionString,
+            [ManagedLifecycleAzureMonitorTelemetryOptions.ManagedIdentityClientIdConfigurationKey] = "00000000-0000-0000-0000-000000000002"
+        });
+        builder.AddManagedLifecycleAzureMonitorTelemetry();
+
+        var exception = Assert.Throws<InvalidOperationException>(() => builder.AddManagedLifecycleAzureMonitorTelemetry());
+
+        Assert.Equal("Managed lifecycle Azure Monitor telemetry is already registered.", exception.Message);
+        Assert.Single(builder.Services, descriptor => descriptor.ServiceType == typeof(ManagedLifecycleAzureMonitorTelemetryLifetime));
+    }
+
+    [Fact]
     public void Hostile_ingestion_locator_is_rejected_without_echoing_the_locator()
     {
         var hostileLocator = "https://operator:secret@evil.example.test/ingest?token=do-not-log#fragment";
@@ -302,6 +319,37 @@ public sealed class ManagedLifecycleAzureMonitorTelemetryTests : IDisposable
         await flush.WaitAsync(TimeSpan.FromSeconds(5));
 
         Assert.Equal(1, handler.Requests);
+    }
+
+    [Fact]
+    public void Repeated_exports_send_only_new_operation_counts()
+    {
+        var options = new ManagedLifecycleAzureMonitorTelemetryOptions
+        {
+            Enabled = true,
+            ConnectionString = ValidConnectionString.Replace(
+                "00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000007"),
+            ManagedIdentityClientId = "00000000-0000-0000-0000-000000000002"
+        };
+        using var handler = new RecordingIngestionHandler();
+        using var client = new HttpClient(handler);
+        using var sink = new ManagedLifecycleAzureMonitorTelemetrySinkFactory()
+            .Create(options, new RecordingCredential(), new HttpClientTransport(client));
+        using var meter = new Meter(ManagedLifecycleTelemetry.MeterName);
+        var counter = meter.CreateCounter<long>(ManagedLifecycleTelemetry.CompletionCounterName);
+
+        counter.Add(3);
+        Assert.True(sink.ForceFlush());
+        counter.Add(2);
+        Assert.True(sink.ForceFlush());
+
+        var values = handler.Payloads.SelectMany(ReadEnvelopeItems)
+            .Where(item => item.GetProperty("data").GetProperty("baseType").GetString() == "MetricData")
+            .SelectMany(item => item.GetProperty("data").GetProperty("baseData").GetProperty("metrics").EnumerateArray())
+            .Where(point => point.GetProperty("name").GetString() == ManagedLifecycleTelemetry.CompletionCounterName)
+            .Select(point => point.GetProperty("value").GetDouble())
+            .ToArray();
+        Assert.Equal(new double[] { 3, 2 }, values);
     }
 
     [Fact]
