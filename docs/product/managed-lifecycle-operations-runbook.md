@@ -375,6 +375,8 @@ these are validated but excluded from the connection string given to the exporte
 Token acquisition and ingestion each have a separate ten-second cancellation
 budget, with ingestion retries disabled. Provider shutdown shares a five-second
 drain budget rather than starting separate flush and shutdown grace periods.
+Host cancellation suppresses any subsequent drain wait; an already-running
+synchronous SDK shutdown call cannot be interrupted through this API.
 These are cooperative SDK deadlines, not a promise that the entire host can stop
 within five seconds under every failure. An expired export is missing evidence,
 not a successful observation; offline replay is disabled.

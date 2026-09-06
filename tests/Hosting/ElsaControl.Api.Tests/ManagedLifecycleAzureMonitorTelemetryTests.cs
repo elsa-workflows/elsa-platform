@@ -56,6 +56,23 @@ public sealed class ManagedLifecycleAzureMonitorTelemetryTests : IDisposable
         Assert.False(sink.ForceFlush());
     }
 
+    [Fact]
+    public void Cancelled_shutdown_does_not_start_a_drain_budget()
+    {
+        var processor = new RecordingShutdownProcessor();
+        var provider = Sdk.CreateTracerProviderBuilder().AddProcessor(processor).Build();
+        using var sink = new ManagedLifecycleAzureMonitorTelemetrySink(null, provider);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        sink.Shutdown(cancellation.Token);
+
+        Assert.Equal(1, processor.ShutdownCount);
+        Assert.Equal(0, processor.ShutdownTimeout);
+        Assert.Equal(0, processor.FlushCount);
+        Assert.False(sink.ForceFlush());
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("false")]

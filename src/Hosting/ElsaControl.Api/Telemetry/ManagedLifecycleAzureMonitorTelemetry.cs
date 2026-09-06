@@ -327,21 +327,16 @@ internal sealed class ManagedLifecycleAzureMonitorTelemetryLifetime(
     ManagedLifecycleAzureMonitorTelemetrySinkFactory sinkFactory) : IHostedService, IDisposable
 {
     private readonly ManagedLifecycleAzureMonitorTelemetrySink _sink = sinkFactory.Create(options);
-    private int _disposed;
 
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        Dispose();
+        _sink.Shutdown(cancellationToken);
         return Task.CompletedTask;
     }
 
-    public void Dispose()
-    {
-        if (Interlocked.Exchange(ref _disposed, 1) == 0)
-            _sink.Dispose();
-    }
+    public void Dispose() => _sink.Dispose();
 }
 
 internal sealed class ManagedLifecycleAzureMonitorTelemetrySink : IDisposable
@@ -370,7 +365,9 @@ internal sealed class ManagedLifecycleAzureMonitorTelemetrySink : IDisposable
         return traceFlushed && meterFlushed;
     }
 
-    public void Dispose()
+    public void Dispose() => Shutdown(CancellationToken.None);
+
+    internal void Shutdown(CancellationToken cancellationToken)
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
@@ -379,8 +376,10 @@ internal sealed class ManagedLifecycleAzureMonitorTelemetrySink : IDisposable
                        (long)(ManagedLifecycleAzureMonitorTelemetryOptions.FlushTimeoutMilliseconds / 1000.0 * Stopwatch.Frequency);
         // Shutdown is one-shot. Dispose then releases resources without starting
         // another provider grace period after a separate ForceFlush budget.
-        _tracerProvider?.Shutdown(RemainingMilliseconds(deadline));
-        _meterProvider?.Shutdown(RemainingMilliseconds(deadline));
+        // A cancelled host must not start another drain wait. The SDK's synchronous
+        // calls cannot be interrupted, so recheck cancellation between providers.
+        _tracerProvider?.Shutdown(cancellationToken.IsCancellationRequested ? 0 : RemainingMilliseconds(deadline));
+        _meterProvider?.Shutdown(cancellationToken.IsCancellationRequested ? 0 : RemainingMilliseconds(deadline));
         _tracerProvider?.Dispose();
         _meterProvider?.Dispose();
     }
