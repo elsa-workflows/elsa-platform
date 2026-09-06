@@ -118,21 +118,38 @@ public sealed class AzureProviderExecutor
             return Result(operation, AzureProviderExecutionOutcome.RecoveryRequired, observation.Code, observation.Message);
 
         var observedStep = observation.CompletedStep!.Value;
-        if (observedStep is not (AzureProviderRunnerStep.Foundation or AzureProviderRunnerStep.AcrPull))
+        // The legacy combined SQL step, and later workload steps, are intentionally not
+        // recoverable from a single observation. They do not provide a safe precondition for
+        // this executor's staged SQL recovery handoff.
+        if (observedStep is not (AzureProviderRunnerStep.Foundation or AzureProviderRunnerStep.AcrPull or
+            AzureProviderRunnerStep.SqlFirewallCreate or AzureProviderRunnerStep.SqlBootstrapScript or
+            AzureProviderRunnerStep.SqlFirewallCleanup))
             return RecoveryInsufficient(operation);
-        if ((operation.AttemptedStep is { } attemptedStep && attemptedStep != observedStep) ||
-            (operation.AttemptedStep is null && observedStep != AzureProviderRunnerStep.Foundation))
+        AzureProviderOperationPhase observedPhase;
+        try
+        {
+            observedPhase = AzureProviderRecoveryObservationSupport.RecoveryPhase(observedStep);
+        }
+        catch (ArgumentException)
+        {
             return RecoveryInsufficient(operation);
-        var observedPhase = RecoveryPhase(observedStep);
+        }
 
         // These are eligibility checks, not post-claim defenses. No provider attempt, version,
         // lease or checkpoint may change when the retained evidence cannot cover the current
         // uncertain step.
-        if (AzureProviderOperationPhaseOrdering.Compare(observedPhase, operation.Phase) < 0 ||
+        if (!AzureProviderRecoveryObservationSupport.IsCompatibleBoundary(
+                operation.AttemptedStep, operation.Phase, observedStep, observedPhase) ||
             observedStep == AzureProviderRunnerStep.Foundation &&
             !AzureProviderRecoveryObservationSupport.IsFoundationOnlyEligible(operation) ||
             observedStep == AzureProviderRunnerStep.AcrPull &&
-            !AzureProviderRecoveryObservationSupport.IsAcrPullEligible(operation))
+            !AzureProviderRecoveryObservationSupport.IsAcrPullEligible(operation) ||
+            observedStep == AzureProviderRunnerStep.SqlFirewallCreate &&
+            !AzureProviderRecoveryObservationSupport.IsSqlFirewallCreateEligible(operation) ||
+            observedStep == AzureProviderRunnerStep.SqlBootstrapScript &&
+            !AzureProviderRecoveryObservationSupport.IsSqlBootstrapScriptEligible(operation) ||
+            observedStep == AzureProviderRunnerStep.SqlFirewallCleanup &&
+            !AzureProviderRecoveryObservationSupport.IsSqlFirewallCleanupEligible(operation))
             return RecoveryInsufficient(operation);
 
         var now = _timeProvider.GetUtcNow();
@@ -959,19 +976,33 @@ public sealed class AzureProviderExecutor
                     : [
                         (AzureProviderRunnerStep.AcrPull, AzureProviderOperationPhase.FoundationSubmitted),
                         (AzureProviderRunnerStep.SeedSecrets, AzureProviderOperationPhase.FoundationSubmitted),
-                        (AzureProviderRunnerStep.SqlBootstrap, AzureProviderOperationPhase.FoundationReady)
+                        (AzureProviderRunnerStep.SqlFirewallCreate, AzureProviderOperationPhase.SqlFirewallReady),
+                        (AzureProviderRunnerStep.SqlBootstrapScript, AzureProviderOperationPhase.SqlBootstrapReady),
+                        (AzureProviderRunnerStep.SqlFirewallCleanup, AzureProviderOperationPhase.FoundationReady)
                     ],
             AzureProviderOperationPhase.FoundationObserved => [
                 (AzureProviderRunnerStep.AcrPull, AzureProviderOperationPhase.AcrPullObserved),
                 (AzureProviderRunnerStep.SeedSecrets, AzureProviderOperationPhase.SeedSecretsObserved),
-                (AzureProviderRunnerStep.SqlBootstrap, AzureProviderOperationPhase.FoundationReady)
+                (AzureProviderRunnerStep.SqlFirewallCreate, AzureProviderOperationPhase.SqlFirewallReady),
+                (AzureProviderRunnerStep.SqlBootstrapScript, AzureProviderOperationPhase.SqlBootstrapReady),
+                (AzureProviderRunnerStep.SqlFirewallCleanup, AzureProviderOperationPhase.FoundationReady)
             ],
             AzureProviderOperationPhase.AcrPullObserved => [
                 (AzureProviderRunnerStep.SeedSecrets, AzureProviderOperationPhase.SeedSecretsObserved),
-                (AzureProviderRunnerStep.SqlBootstrap, AzureProviderOperationPhase.FoundationReady)
+                (AzureProviderRunnerStep.SqlFirewallCreate, AzureProviderOperationPhase.SqlFirewallReady),
+                (AzureProviderRunnerStep.SqlBootstrapScript, AzureProviderOperationPhase.SqlBootstrapReady),
+                (AzureProviderRunnerStep.SqlFirewallCleanup, AzureProviderOperationPhase.FoundationReady)
             ],
             AzureProviderOperationPhase.SeedSecretsObserved =>
-                [(AzureProviderRunnerStep.SqlBootstrap, AzureProviderOperationPhase.FoundationReady)],
+                [
+                    (AzureProviderRunnerStep.SqlFirewallCreate, AzureProviderOperationPhase.SqlFirewallReady),
+                    (AzureProviderRunnerStep.SqlBootstrapScript, AzureProviderOperationPhase.SqlBootstrapReady),
+                    (AzureProviderRunnerStep.SqlFirewallCleanup, AzureProviderOperationPhase.FoundationReady)
+                ],
+            AzureProviderOperationPhase.SqlFirewallReady =>
+                [(AzureProviderRunnerStep.SqlBootstrapScript, AzureProviderOperationPhase.SqlBootstrapReady)],
+            AzureProviderOperationPhase.SqlBootstrapReady =>
+                [(AzureProviderRunnerStep.SqlFirewallCleanup, AzureProviderOperationPhase.FoundationReady)],
             AzureProviderOperationPhase.FoundationReady or AzureProviderOperationPhase.WorkloadSubmitted =>
                 [(AzureProviderRunnerStep.Workload, AzureProviderOperationPhase.WorkloadReady)],
             AzureProviderOperationPhase.WorkloadReady =>
@@ -980,19 +1011,6 @@ public sealed class AzureProviderExecutor
                 [(AzureProviderRunnerStep.Promotion, AzureProviderOperationPhase.TrafficPromoted)],
             AzureProviderOperationPhase.TrafficPromoted => [],
             _ => throw new InvalidOperationException("The reconcile operation has an invalid lifecycle phase.")
-        };
-
-    private static AzureProviderOperationPhase RecoveryPhase(AzureProviderRunnerStep step) =>
-        step switch
-        {
-            AzureProviderRunnerStep.Foundation => AzureProviderOperationPhase.FoundationObserved,
-            AzureProviderRunnerStep.AcrPull => AzureProviderOperationPhase.AcrPullObserved,
-            AzureProviderRunnerStep.SeedSecrets => AzureProviderOperationPhase.SeedSecretsObserved,
-            AzureProviderRunnerStep.SqlBootstrap => AzureProviderOperationPhase.FoundationReady,
-            AzureProviderRunnerStep.Workload => AzureProviderOperationPhase.WorkloadReady,
-            AzureProviderRunnerStep.Health => AzureProviderOperationPhase.HealthVerified,
-            AzureProviderRunnerStep.Promotion => AzureProviderOperationPhase.TrafficPromoted,
-            _ => throw new ArgumentException("The observed recovery step cannot be resumed.", nameof(step))
         };
 
     private static AzureProviderExecutionResult RecoveryInsufficient(AzureProviderOperation operation) =>
@@ -1055,7 +1073,9 @@ public sealed class AzureProviderExecutor
         {
             AzureProviderRunnerStep.Foundation => foundationComplete,
             AzureProviderRunnerStep.AcrPull => foundationComplete && registryComplete,
-            AzureProviderRunnerStep.SeedSecrets or AzureProviderRunnerStep.SqlBootstrap => foundationComplete && registryComplete,
+            AzureProviderRunnerStep.SeedSecrets or AzureProviderRunnerStep.SqlBootstrap or
+                AzureProviderRunnerStep.SqlFirewallCreate or AzureProviderRunnerStep.SqlBootstrapScript or
+                AzureProviderRunnerStep.SqlFirewallCleanup => foundationComplete && registryComplete,
             AzureProviderRunnerStep.Workload or AzureProviderRunnerStep.Health or AzureProviderRunnerStep.Promotion =>
                 foundationComplete && registryComplete && workloadComplete,
             AzureProviderRunnerStep.RestoreStableTraffic =>
@@ -1099,6 +1119,9 @@ public sealed class AzureProviderExecutor
             AzureProviderRunnerStep.AcrPull => "registry access",
             AzureProviderRunnerStep.SeedSecrets => "credential reference seeding",
             AzureProviderRunnerStep.SqlBootstrap => "database bootstrap",
+            AzureProviderRunnerStep.SqlFirewallCreate => "SQL firewall creation",
+            AzureProviderRunnerStep.SqlBootstrapScript => "SQL bootstrap script",
+            AzureProviderRunnerStep.SqlFirewallCleanup => "SQL firewall cleanup",
             AzureProviderRunnerStep.Workload => "workload",
             AzureProviderRunnerStep.Health => "health verification",
             AzureProviderRunnerStep.Promotion => "traffic promotion",

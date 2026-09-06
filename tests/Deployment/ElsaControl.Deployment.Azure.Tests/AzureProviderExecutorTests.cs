@@ -28,7 +28,9 @@ public sealed class AzureProviderExecutorTests
                 AzureProviderRunnerStep.Foundation,
                 AzureProviderRunnerStep.AcrPull,
                 AzureProviderRunnerStep.SeedSecrets,
-                AzureProviderRunnerStep.SqlBootstrap,
+                AzureProviderRunnerStep.SqlFirewallCreate,
+                AzureProviderRunnerStep.SqlBootstrapScript,
+                AzureProviderRunnerStep.SqlFirewallCleanup,
                 AzureProviderRunnerStep.Workload,
                 AzureProviderRunnerStep.Health,
                 AzureProviderRunnerStep.Promotion
@@ -81,7 +83,7 @@ public sealed class AzureProviderExecutorTests
         Assert.Equal(AzureProviderExecutionOutcome.Succeeded, resumed.Outcome);
         Assert.Equal(AzureProviderOperationStatus.Succeeded, resumed.Operation.Status);
         Assert.Equal(held.Operation.Id, resumed.Operation.Id);
-        Assert.Equal(7, runner.Steps.Count);
+        Assert.Equal(9, runner.Steps.Count);
     }
 
     [Fact]
@@ -193,7 +195,7 @@ public sealed class AzureProviderExecutorTests
 
         Assert.Equal(AzureProviderExecutionOutcome.Succeeded, result.Outcome);
         Assert.Equal(AzureProviderOperationStatus.Succeeded, result.Operation.Status);
-        Assert.Equal(7, runner.Steps.Count);
+        Assert.Equal(9, runner.Steps.Count);
     }
 
     [Theory]
@@ -231,7 +233,7 @@ public sealed class AzureProviderExecutorTests
         Assert.Equal(AzureProviderExecutionOutcome.Succeeded, first.Outcome);
         Assert.Equal(AzureProviderExecutionOutcome.NoOp, second.Outcome);
         Assert.Equal(first.Operation.Id, second.Operation.Id);
-        Assert.Equal(7, runner.Steps.Count);
+        Assert.Equal(9, runner.Steps.Count);
     }
 
     [Theory]
@@ -299,7 +301,7 @@ public sealed class AzureProviderExecutorTests
         Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, interrupted.Operation.Status);
         Assert.Equal(AzureProviderExecutionOutcome.Succeeded, resumed.Outcome);
         Assert.Equal(AzureProviderOperationStatus.Succeeded, resumed.Operation.Status);
-        Assert.Equal(8, runner.Steps.Count);
+        Assert.Equal(10, runner.Steps.Count);
         Assert.Equal(AzureProviderRunnerStep.Foundation, runner.Steps[1]);
     }
 
@@ -334,7 +336,9 @@ public sealed class AzureProviderExecutorTests
         Assert.DoesNotContain(AzureProviderRunnerStep.Foundation, runner.Steps.Skip(1));
         Assert.Contains(AzureProviderRunnerStep.AcrPull, runner.Steps);
         Assert.Contains(AzureProviderRunnerStep.SeedSecrets, runner.Steps);
-        Assert.Contains(AzureProviderRunnerStep.SqlBootstrap, runner.Steps);
+        Assert.Contains(AzureProviderRunnerStep.SqlFirewallCreate, runner.Steps);
+        Assert.Contains(AzureProviderRunnerStep.SqlBootstrapScript, runner.Steps);
+        Assert.Contains(AzureProviderRunnerStep.SqlFirewallCleanup, runner.Steps);
         Assert.Contains(AzureProviderRunnerStep.Health, runner.Steps);
         Assert.Contains(AzureProviderRunnerStep.Promotion, runner.Steps);
     }
@@ -421,6 +425,78 @@ public sealed class AzureProviderExecutorTests
     }
 
     [Fact]
+    public async Task Sql_bootstrap_script_observation_only_resumes_pending_firewall_cleanup()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner
+        {
+            FoundationOutcome = AzureProviderRunnerOutcome.Uncertain,
+            FoundationResourcesOverride = FoundationResources()
+        };
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+        var plan = CreatePlan();
+        var interrupted = await executor.ApplyAsync(CreateRequest(), plan);
+        var pendingCleanup = interrupted.Operation with
+        {
+            Resources = SqlResourcesForRecovery(),
+            AttemptedStep = AzureProviderRunnerStep.SqlFirewallCleanup,
+            Phase = AzureProviderOperationPhase.SqlBootstrapReady
+        };
+        store.Replace(pendingCleanup);
+        var observed = new AzureProviderRecoveryObservation(
+            AzureProviderRecoveryObservationKind.Confirmed,
+            AzureProviderRunnerStep.SqlBootstrapScript,
+            SqlResourcesForRecovery(),
+            AzureProviderHealth.Unknown,
+            null,
+            "azure.recovery.sql-bootstrap-observed",
+            "The retained SQL bootstrap postcondition was observed.");
+
+        var resumed = await executor.RecoverAsync(pendingCleanup, plan, observed);
+
+        Assert.Equal(AzureProviderExecutionOutcome.Succeeded, resumed.Outcome);
+        Assert.Equal(AzureProviderRunnerStep.SqlFirewallCleanup, runner.Steps[0]);
+        Assert.DoesNotContain(AzureProviderRunnerStep.SqlBootstrapScript, runner.Steps);
+        Assert.DoesNotContain(AzureProviderRunnerStep.SqlFirewallCreate, runner.Steps);
+    }
+
+    [Theory]
+    [InlineData(AzureProviderRunnerStep.SeedSecrets, AzureProviderOperationPhase.SeedSecretsObserved)]
+    [InlineData(AzureProviderRunnerStep.Workload, AzureProviderOperationPhase.WorkloadReady)]
+    [InlineData(AzureProviderRunnerStep.Health, AzureProviderOperationPhase.HealthVerified)]
+    [InlineData(AzureProviderRunnerStep.Promotion, AzureProviderOperationPhase.TrafficPromoted)]
+    public async Task Recovery_rejects_observations_for_non_recoverable_later_steps_before_claim(
+        AzureProviderRunnerStep unsupportedStep,
+        AzureProviderOperationPhase observedPhase)
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner { FoundationOutcome = AzureProviderRunnerOutcome.Uncertain };
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+        var interrupted = await executor.ApplyAsync(CreateRequest(), CreatePlan());
+        var operation = interrupted.Operation with
+        {
+            AttemptedStep = unsupportedStep,
+            Phase = observedPhase,
+            Resources = CompleteResourcesForRecovery()
+        };
+        store.Replace(operation);
+        var observation = new AzureProviderRecoveryObservation(
+            AzureProviderRecoveryObservationKind.Confirmed,
+            unsupportedStep,
+            CompleteResourcesForRecovery(),
+            AzureProviderHealth.Unknown,
+            null,
+            "azure.recovery.unsupported-step",
+            "The retained provider checkpoint is not recoverable by this boundary.");
+
+        var result = await executor.RecoverAsync(operation, CreatePlan(), observation);
+
+        Assert.Equal(AzureProviderExecutionOutcome.RecoveryRequired, result.Outcome);
+        Assert.Equal(0, store.RecoveryClaimCount);
+        Assert.Single(runner.Steps);
+    }
+
+    [Fact]
     public async Task Foundation_observation_is_rejected_before_claim_when_a_later_handle_is_retained()
     {
         var store = new FakeOperationStore();
@@ -498,7 +574,9 @@ public sealed class AzureProviderExecutorTests
                 AzureProviderRunnerStep.Foundation,
                 AzureProviderRunnerStep.AcrPull,
                 AzureProviderRunnerStep.SeedSecrets,
-                AzureProviderRunnerStep.SqlBootstrap,
+                AzureProviderRunnerStep.SqlFirewallCreate,
+                AzureProviderRunnerStep.SqlBootstrapScript,
+                AzureProviderRunnerStep.SqlFirewallCleanup,
                 AzureProviderRunnerStep.Workload,
                 AzureProviderRunnerStep.Health,
                 AzureProviderRunnerStep.Promotion,
@@ -1149,6 +1227,13 @@ public sealed class AzureProviderExecutorTests
         AcrPullRoleAssignmentId = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/registry/providers/Microsoft.Authorization/roleAssignments/44444444-4444-4444-4444-444444444444"
     };
 
+    private static AzureProviderResourceReferences SqlResourcesForRecovery() => FoundationResources() with
+    {
+        RegistryResourceId = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/registry",
+        AcrPullDeploymentId = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry-rg/providers/Microsoft.Resources/deployments/acr-pull",
+        AcrPullRoleAssignmentId = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/registry/providers/Microsoft.Authorization/roleAssignments/44444444-4444-4444-4444-444444444444"
+    };
+
     private sealed class StaticTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
@@ -1270,11 +1355,7 @@ public sealed class AzureProviderExecutorTests
             if (command.Step == FailureStep)
                 return new(
                     AzureProviderRunnerOutcome.Failed,
-                    command.Step is AzureProviderRunnerStep.Foundation or AzureProviderRunnerStep.AcrPull or AzureProviderRunnerStep.SeedSecrets
-                        ? AzureProviderOperationPhase.FoundationSubmitted
-                        : command.Step == AzureProviderRunnerStep.SqlBootstrap
-                            ? AzureProviderOperationPhase.FoundationReady
-                            : AzureProviderOperationPhase.WorkloadReady,
+                    RunnerPhase(command.Step),
                     CompleteResources(),
                     AzureProviderHealth.Unknown,
                     null,
@@ -1284,15 +1365,7 @@ public sealed class AzureProviderExecutorTests
             if (command.Step == IncompleteNoOpStep)
                 return Result(
                     AzureProviderRunnerOutcome.NoOp,
-                    command.Step switch
-                    {
-                        AzureProviderRunnerStep.Foundation or AzureProviderRunnerStep.AcrPull or AzureProviderRunnerStep.SeedSecrets => AzureProviderOperationPhase.FoundationSubmitted,
-                        AzureProviderRunnerStep.SqlBootstrap => AzureProviderOperationPhase.FoundationReady,
-                        AzureProviderRunnerStep.Workload => AzureProviderOperationPhase.WorkloadReady,
-                        AzureProviderRunnerStep.Health => AzureProviderOperationPhase.HealthVerified,
-                        AzureProviderRunnerStep.Promotion => AzureProviderOperationPhase.TrafficPromoted,
-                        _ => throw new InvalidOperationException()
-                    },
+                    RunnerPhase(command.Step),
                     new AzureProviderResourceReferences());
             if (command.Step == AzureProviderRunnerStep.Promotion)
                 return Result(PromotionOutcome, AzureProviderOperationPhase.TrafficPromoted);
@@ -1307,12 +1380,22 @@ public sealed class AzureProviderExecutorTests
                 return Result(FoundationOutcome, AzureProviderOperationPhase.FoundationSubmitted, FoundationResourcesOverride);
             return Result(
                 AzureProviderRunnerOutcome.Completed,
-                command.Step is AzureProviderRunnerStep.Foundation or AzureProviderRunnerStep.AcrPull or AzureProviderRunnerStep.SeedSecrets
-                    ? AzureProviderOperationPhase.FoundationSubmitted
-                    : command.Step == AzureProviderRunnerStep.SqlBootstrap
-                        ? AzureProviderOperationPhase.FoundationReady
-                        : AzureProviderOperationPhase.WorkloadReady);
+                RunnerPhase(command.Step));
         }
+
+        private static AzureProviderOperationPhase RunnerPhase(AzureProviderRunnerStep step) => step switch
+        {
+            AzureProviderRunnerStep.Foundation or AzureProviderRunnerStep.AcrPull or AzureProviderRunnerStep.SeedSecrets =>
+                AzureProviderOperationPhase.FoundationSubmitted,
+            AzureProviderRunnerStep.SqlBootstrap or AzureProviderRunnerStep.SqlFirewallCleanup =>
+                AzureProviderOperationPhase.FoundationReady,
+            AzureProviderRunnerStep.SqlFirewallCreate => AzureProviderOperationPhase.SqlFirewallReady,
+            AzureProviderRunnerStep.SqlBootstrapScript => AzureProviderOperationPhase.SqlBootstrapReady,
+            AzureProviderRunnerStep.Workload => AzureProviderOperationPhase.WorkloadReady,
+            AzureProviderRunnerStep.Health => AzureProviderOperationPhase.HealthVerified,
+            AzureProviderRunnerStep.Promotion => AzureProviderOperationPhase.TrafficPromoted,
+            _ => throw new InvalidOperationException()
+        };
 
         private AzureProviderRunnerResult Result(
             AzureProviderRunnerOutcome outcome,
