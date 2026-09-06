@@ -188,6 +188,20 @@ public sealed record AzureProviderRecoveryRequest(
              !string.Equals(assignment.WorkloadName, Operation.TargetKey, StringComparison.OrdinalIgnoreCase) ||
              !string.Equals(assignment.ProviderScopeFingerprint, Operation.ProviderScopeFingerprint, StringComparison.Ordinal)))
             throw new InvalidOperationException("The Azure recovery assignment is not bound to its retained operation.");
+        try
+        {
+            // Fingerprint equality alone is not sufficient at this adapter seam. Validate every
+            // retained provider-plan field against the durable operation before a concrete
+            // observer is allowed to issue even a read-only Azure command.
+            AzureProviderExecutor.ValidateExecutionRequest(
+                new AzureProviderExecutionRequest(
+                    AzureProviderOperationService.CreateOperationRequest(Operation),
+                    Plan));
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            throw new InvalidOperationException("The Azure recovery operation is not bound to its retained plan.");
+        }
         AzureProviderOperationValidation.ValidateReferences(Operation.Resources);
     }
 }

@@ -377,6 +377,8 @@ builder.Services.AddScoped<IAzureProviderOperationStore>(services =>
     services.GetRequiredService<AzureProviderOperationStore>());
 builder.Services.AddScoped<IAzureProviderResourceAssignmentStore>(services =>
     services.GetRequiredService<AzureProviderOperationStore>());
+builder.Services.AddScoped<IAzureProviderRecoveryObservationStore>(services =>
+    services.GetRequiredService<AzureProviderOperationStore>());
 builder.Services.AddScoped<AzureProviderExecutor>();
 builder.Services.AddScoped<IAzureProviderOperationService, AzureProviderOperationService>();
 builder.Services.AddScoped<AzureProviderOperationWorker>();

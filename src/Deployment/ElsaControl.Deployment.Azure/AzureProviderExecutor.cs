@@ -90,6 +90,100 @@ public sealed class AzureProviderExecutor
         return ExecuteCoreAsync(request with { Plan = CopySafePlan(request.Plan) }, cancellationToken);
     }
 
+    /// <summary>
+    /// Resumes an explicitly accepted recovery after a provider-owned, read-only observation.
+    /// The observation checkpoints one completed step only; the normal executor still owns all
+    /// later steps and their SQL, workload, health and traffic gates.
+    /// </summary>
+    public async Task<AzureProviderExecutionResult> RecoverAsync(
+        AzureProviderOperation operation,
+        AzureWorkloadPlan plan,
+        AzureProviderRecoveryObservation observation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(observation);
+        var recovery = new AzureProviderRecoveryRequest(operation, CopySafePlan(plan));
+        recovery.Validate();
+        observation.Validate();
+
+        if (operation.Status == AzureProviderOperationStatus.Succeeded)
+            return Result(operation, AzureProviderExecutionOutcome.NoOp, "azure.operation.no-op", "The Azure workload already matches the retained plan.");
+        if (operation.Status == AzureProviderOperationStatus.Running)
+            return Result(operation, AzureProviderExecutionOutcome.InProgress, "azure.operation.in-progress", "The Azure operation is already owned by another worker.");
+        if (operation.Status != AzureProviderOperationStatus.RecoveryRequired)
+            return ResultForObservedState(operation, "azure.operation.recovery-invalid", "The Azure operation is not awaiting explicit recovery.");
+        if (observation.Kind != AzureProviderRecoveryObservationKind.Confirmed)
+            return Result(operation, AzureProviderExecutionOutcome.RecoveryRequired, observation.Code, observation.Message);
+
+        var observedStep = observation.CompletedStep!.Value;
+        if (observedStep is not (AzureProviderRunnerStep.Foundation or AzureProviderRunnerStep.AcrPull))
+            return RecoveryInsufficient(operation);
+        if ((operation.AttemptedStep is { } attemptedStep && attemptedStep != observedStep) ||
+            (operation.AttemptedStep is null && observedStep != AzureProviderRunnerStep.Foundation))
+            return RecoveryInsufficient(operation);
+        var observedPhase = RecoveryPhase(observedStep);
+
+        // These are eligibility checks, not post-claim defenses. No provider attempt, version,
+        // lease or checkpoint may change when the retained evidence cannot cover the current
+        // uncertain step.
+        if (AzureProviderOperationPhaseOrdering.Compare(observedPhase, operation.Phase) < 0 ||
+            observedStep == AzureProviderRunnerStep.Foundation &&
+            !AzureProviderRecoveryObservationSupport.IsFoundationOnlyEligible(operation) ||
+            observedStep == AzureProviderRunnerStep.AcrPull &&
+            !AzureProviderRecoveryObservationSupport.IsAcrPullEligible(operation))
+            return RecoveryInsufficient(operation);
+
+        var now = _timeProvider.GetUtcNow();
+        var leaseToken = Guid.NewGuid().ToString("N");
+        var claimed = await _store.ClaimRecoveryAsync(
+            operation.WorkspaceId,
+            operation.Id,
+            _workerId,
+            leaseToken,
+            _leaseDuration,
+            now,
+            operation.Version,
+            cancellationToken);
+        if (claimed is null)
+        {
+            var latest = await _store.GetAsync(operation.WorkspaceId, operation.Id, cancellationToken) ?? operation;
+            return ResultForObservedState(latest, "azure.operation.claim-lost", "The Azure operation is owned by another worker or changed concurrently.");
+        }
+
+        AzureProviderOperation? checkpointed;
+        try
+        {
+            checkpointed = await CheckpointAsync(
+                claimed,
+                leaseToken,
+                new AzureProviderCheckpoint(
+                    observedPhase,
+                    observation.Code,
+                    observation.Message,
+                    observation.Resources,
+                    observation.Endpoint ?? claimed.Endpoint,
+                    observation.Health == AzureProviderHealth.Unknown ? claimed.Health : observation.Health,
+                    [],
+                    AttemptedStep: null),
+                CancellationToken.None);
+        }
+        catch (Exception exception) when (exception is OperationCanceledException or InvalidOperationException)
+        {
+            // A claimed recovery can still fail its durable assignment/phase invariant, or be
+            // cancelled, while the store reloads current state. Use the claimed snapshot and its
+            // expected-version CAS to convert this value-free uncertain checkpoint to recovery.
+            // FinalizeResultAsync retains that CAS; if the store itself fails, that exception must
+            // escape rather than being reported as a fabricated persisted recovery result.
+            return await MarkRecoveryAsync(claimed, leaseToken, "azure.recovery.checkpoint-uncertain", "The observed Azure recovery step could not be durably checkpointed.");
+        }
+        if (checkpointed is null)
+            return await GetConcurrentResultAsync(claimed);
+
+        return await ExecuteClaimedAsync(plan, checkpointed, leaseToken, cancellationToken);
+    }
+
     private async Task<AzureProviderExecutionResult> ExecuteCoreAsync(
         AzureProviderExecutionRequest request,
         CancellationToken cancellationToken)
@@ -129,6 +223,15 @@ public sealed class AzureProviderExecutor
                 "The Azure operation is owned by another worker or changed concurrently.");
         }
 
+        return await ExecuteClaimedAsync(request.Plan, claimed, leaseToken, cancellationToken);
+    }
+
+    private async Task<AzureProviderExecutionResult> ExecuteClaimedAsync(
+        AzureWorkloadPlan plan,
+        AzureProviderOperation claimed,
+        string leaseToken,
+        CancellationToken cancellationToken)
+    {
         AzureProviderResourceAssignment? assignment;
         try
         {
@@ -168,10 +271,10 @@ public sealed class AzureProviderExecutor
                     claimed = claimed with { Resources = latestReconcile.Resources };
             }
 
-            return await ExecuteDeleteAsync(request.Plan, claimed, assignment, leaseToken, cancellationToken);
+            return await ExecuteDeleteAsync(plan, claimed, assignment, leaseToken, cancellationToken);
         }
 
-        return await ExecuteReconcileAsync(request.Plan, claimed, assignment, leaseToken, cancellationToken);
+        return await ExecuteReconcileAsync(plan, claimed, assignment, leaseToken, cancellationToken);
     }
 
     private async Task<AzureProviderExecutionResult> ExecuteReconcileAsync(
@@ -214,6 +317,11 @@ public sealed class AzureProviderExecutor
                 if (entitlementResult is not null)
                     return entitlementResult;
 
+                var attempted = await MarkAttemptedStepAsync(operation, leaseToken, step);
+                if (attempted is null)
+                    return await GetConcurrentResultAsync(operation);
+                operation = attempted;
+
                 var command = new AzureProviderRunnerCommand(
                     step,
                     plan,
@@ -229,7 +337,12 @@ public sealed class AzureProviderExecutor
                     var run = await RunRunnerAsync(command, operation, leaseToken, cancellationToken);
                     runnerResult = run.Result;
                     operation = run.Operation;
-                    ValidateRunnerResult(runnerResult, step, phase, requiresHealthyEndpoint: step == AzureProviderRunnerStep.Promotion);
+                    // Runner postconditions keep their existing step contract. The
+                    // executor may persist a finer recovery checkpoint independently.
+                    var runnerPhase = step is AzureProviderRunnerStep.AcrPull or AzureProviderRunnerStep.SeedSecrets
+                        ? AzureProviderOperationPhase.FoundationSubmitted
+                        : phase;
+                    ValidateRunnerResult(runnerResult, step, runnerPhase, requiresHealthyEndpoint: step == AzureProviderRunnerStep.Promotion);
                 }
                 catch (RunnerExecutionException exception) when (exception.Cause is OperationCanceledException || cancellationToken.IsCancellationRequested)
                 {
@@ -263,7 +376,8 @@ public sealed class AzureProviderExecutor
                         leaseToken,
                         runnerResult,
                         CancellationToken.None,
-                        preserveStableTrafficRevision: step == AzureProviderRunnerStep.Promotion);
+                        preserveStableTrafficRevision: step == AzureProviderRunnerStep.Promotion,
+                        attemptedStep: step);
                     if (failureOperation is null)
                         return await GetConcurrentResultAsync(operation);
                     operation = failureOperation;
@@ -282,7 +396,7 @@ public sealed class AzureProviderExecutor
                 if (step == AzureProviderRunnerStep.Health &&
                     (runnerResult.Health == AzureProviderHealth.Unknown || string.IsNullOrWhiteSpace(runnerResult.Endpoint)))
                 {
-                    var incomplete = await PersistRunnerReferencesAsync(operation, leaseToken, runnerResult, CancellationToken.None);
+                    var incomplete = await PersistRunnerReferencesAsync(operation, leaseToken, runnerResult, CancellationToken.None, attemptedStep: step);
                     if (incomplete is null)
                         return await GetConcurrentResultAsync(operation);
                     return await FinalizeResultAsync(
@@ -441,7 +555,8 @@ public sealed class AzureProviderExecutor
                     operation.Resources,
                     null,
                     AzureProviderHealth.Unknown,
-                    []),
+                    [],
+                    AttemptedStep: AzureProviderRunnerStep.Cleanup),
                 CancellationToken.None);
             if (submitted is null)
                 return await GetConcurrentResultAsync(operation);
@@ -455,6 +570,11 @@ public sealed class AzureProviderExecutor
             return await FinalizeResultAsync(operation, leaseToken, AzureProviderOperationStatus.Succeeded, "azure.cleanup.succeeded", "Exact owned-resource cleanup was verified.");
         if (operation.Phase != AzureProviderOperationPhase.CleanupSubmitted)
             return await FinalizeResultAsync(operation, leaseToken, AzureProviderOperationStatus.Failed, "azure.cleanup.phase.invalid", "The delete operation has an invalid cleanup phase.");
+
+        var attempted = await MarkAttemptedStepAsync(operation, leaseToken, AzureProviderRunnerStep.Cleanup);
+        if (attempted is null)
+            return await GetConcurrentResultAsync(operation);
+        operation = attempted;
 
         AzureProviderRunnerResult runnerResult;
         try
@@ -500,7 +620,7 @@ public sealed class AzureProviderExecutor
 
         if (runnerResult.Outcome is AzureProviderRunnerOutcome.Failed or AzureProviderRunnerOutcome.Uncertain)
         {
-            var failureOperation = await PersistRunnerReferencesAsync(operation, leaseToken, runnerResult, CancellationToken.None);
+            var failureOperation = await PersistRunnerReferencesAsync(operation, leaseToken, runnerResult, CancellationToken.None, attemptedStep: AzureProviderRunnerStep.Cleanup);
             if (failureOperation is null)
                 return await GetConcurrentResultAsync(operation);
             operation = failureOperation;
@@ -574,6 +694,11 @@ public sealed class AzureProviderExecutor
                     ? "Candidate promotion was uncertain and no previously verified stable traffic revision was available."
                     : "Candidate promotion failed and no previously verified stable traffic revision was available to restore.");
         }
+
+        var attempted = await MarkAttemptedStepAsync(operation, leaseToken, AzureProviderRunnerStep.RestoreStableTraffic);
+        if (attempted is null)
+            return await GetConcurrentResultAsync(operation);
+        operation = attempted;
 
         var rollbackCommand = new AzureProviderRunnerCommand(
             AzureProviderRunnerStep.RestoreStableTraffic,
@@ -654,12 +779,36 @@ public sealed class AzureProviderExecutor
             cancellationToken);
     }
 
+    private async Task<AzureProviderOperation?> MarkAttemptedStepAsync(
+        AzureProviderOperation operation,
+        string leaseToken,
+        AzureProviderRunnerStep step)
+    {
+        if (operation.AttemptedStep == step)
+            return operation;
+
+        return await CheckpointAsync(
+            operation,
+            leaseToken,
+            new AzureProviderCheckpoint(
+                operation.Phase,
+                "azure.step.attempted",
+                "The Azure lifecycle step was marked before its remote call.",
+                operation.Resources,
+                operation.Endpoint,
+                operation.Health,
+                [],
+                AttemptedStep: step),
+            CancellationToken.None);
+    }
+
     private async Task<AzureProviderOperation?> PersistRunnerReferencesAsync(
         AzureProviderOperation operation,
         string leaseToken,
         AzureProviderRunnerResult runnerResult,
         CancellationToken cancellationToken,
-        bool preserveStableTrafficRevision = false)
+        bool preserveStableTrafficRevision = false,
+        AzureProviderRunnerStep? attemptedStep = null)
     {
         // A failed or uncertain provider result can still contain the only durable handles to
         // resources created before the result was produced. Keep the current phase monotonic and
@@ -682,7 +831,8 @@ public sealed class AzureProviderExecutor
                 resources,
                 endpoint,
                 health,
-                SafeDiagnostics(runnerResult.Diagnostics)),
+                SafeDiagnostics(runnerResult.Diagnostics),
+                AttemptedStep: attemptedStep ?? operation.AttemptedStep),
             cancellationToken);
     }
 
@@ -811,6 +961,17 @@ public sealed class AzureProviderExecutor
                         (AzureProviderRunnerStep.SeedSecrets, AzureProviderOperationPhase.FoundationSubmitted),
                         (AzureProviderRunnerStep.SqlBootstrap, AzureProviderOperationPhase.FoundationReady)
                     ],
+            AzureProviderOperationPhase.FoundationObserved => [
+                (AzureProviderRunnerStep.AcrPull, AzureProviderOperationPhase.AcrPullObserved),
+                (AzureProviderRunnerStep.SeedSecrets, AzureProviderOperationPhase.SeedSecretsObserved),
+                (AzureProviderRunnerStep.SqlBootstrap, AzureProviderOperationPhase.FoundationReady)
+            ],
+            AzureProviderOperationPhase.AcrPullObserved => [
+                (AzureProviderRunnerStep.SeedSecrets, AzureProviderOperationPhase.SeedSecretsObserved),
+                (AzureProviderRunnerStep.SqlBootstrap, AzureProviderOperationPhase.FoundationReady)
+            ],
+            AzureProviderOperationPhase.SeedSecretsObserved =>
+                [(AzureProviderRunnerStep.SqlBootstrap, AzureProviderOperationPhase.FoundationReady)],
             AzureProviderOperationPhase.FoundationReady or AzureProviderOperationPhase.WorkloadSubmitted =>
                 [(AzureProviderRunnerStep.Workload, AzureProviderOperationPhase.WorkloadReady)],
             AzureProviderOperationPhase.WorkloadReady =>
@@ -820,6 +981,24 @@ public sealed class AzureProviderExecutor
             AzureProviderOperationPhase.TrafficPromoted => [],
             _ => throw new InvalidOperationException("The reconcile operation has an invalid lifecycle phase.")
         };
+
+    private static AzureProviderOperationPhase RecoveryPhase(AzureProviderRunnerStep step) =>
+        step switch
+        {
+            AzureProviderRunnerStep.Foundation => AzureProviderOperationPhase.FoundationObserved,
+            AzureProviderRunnerStep.AcrPull => AzureProviderOperationPhase.AcrPullObserved,
+            AzureProviderRunnerStep.SeedSecrets => AzureProviderOperationPhase.SeedSecretsObserved,
+            AzureProviderRunnerStep.SqlBootstrap => AzureProviderOperationPhase.FoundationReady,
+            AzureProviderRunnerStep.Workload => AzureProviderOperationPhase.WorkloadReady,
+            AzureProviderRunnerStep.Health => AzureProviderOperationPhase.HealthVerified,
+            AzureProviderRunnerStep.Promotion => AzureProviderOperationPhase.TrafficPromoted,
+            _ => throw new ArgumentException("The observed recovery step cannot be resumed.", nameof(step))
+        };
+
+    private static AzureProviderExecutionResult RecoveryInsufficient(AzureProviderOperation operation) =>
+        Result(operation, AzureProviderExecutionOutcome.RecoveryRequired,
+            "azure.recovery.observation-insufficient",
+            "The retained Azure recovery observation cannot authorize the current lifecycle checkpoint.");
 
     private static void ValidateRunnerResult(
         AzureProviderRunnerResult result,

@@ -94,6 +94,42 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
         AzureProviderRecoveryObservationBinding binding,
         CancellationToken cancellationToken)
     {
+        var model = await LoadAcceptedRecoveryObservationAsync(binding, cancellationToken);
+        if (model is null)
+            return null;
+
+        await ValidateRecoveryObservationStoredIntegrityAsync(model, cancellationToken);
+        return model;
+    }
+
+    async Task<AzureProviderRecoveryObservationRecord?> IAzureProviderRecoveryObservationStore.GetAndValidateForAcceptedRecoveryReplayAsync(
+        AzureProviderRecoveryObservationBinding binding,
+        CancellationToken cancellationToken)
+    {
+        var model = await LoadAcceptedRecoveryObservationAsync(
+            binding, cancellationToken, allowRecoveryRequiredLifecycleState: true);
+        if (model is null)
+            return null;
+
+        var providerOperation = await LoadAndValidateRecoveryProviderOperationAsync(model, cancellationToken);
+        if (providerOperation.Status is not (AzureProviderOperationStatus.Running or AzureProviderOperationStatus.Succeeded) ||
+            model.ProviderAttemptNumber == int.MaxValue ||
+            providerOperation.AttemptNumber != model.ProviderAttemptNumber + 1 ||
+            providerOperation.Version <= model.ProviderVersion ||
+            providerOperation.CheckpointSequence < model.ProviderCheckpointSequence)
+            return null;
+
+        ValidateRecoveryObservationProviderRequest(providerOperation);
+        await ValidateRecoveryObservationAssignmentAsync(model, cancellationToken);
+        await ValidateRecoveryObservationPlanAuthorityAsync(model, cancellationToken);
+        return model;
+    }
+
+    private async Task<AzureProviderRecoveryObservationRecord?> LoadAcceptedRecoveryObservationAsync(
+        AzureProviderRecoveryObservationBinding binding,
+        CancellationToken cancellationToken,
+        bool allowRecoveryRequiredLifecycleState = false)
+    {
         ArgumentNullException.ThrowIfNull(binding);
         binding.Validate();
         if (!ElsaInstanceProviderRecoveryObservationReference.TryParse(
@@ -147,17 +183,18 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
                                        x.OrganizationId == binding.OrganizationId &&
                                        x.WorkspaceId == binding.WorkspaceId,
                 cancellationToken);
+        var lifecycleStateIsAccepted = lifecycleOperation?.State is ElsaInstanceOperationState.Queued or ElsaInstanceOperationState.Running ||
+            allowRecoveryRequiredLifecycleState && lifecycleOperation?.State == ElsaInstanceOperationState.RecoveryRequired;
         if (lifecycleOperation is null || instance is null ||
             lifecycleOperation.Action != model.LifecycleAction ||
             lifecycleOperation.AttemptNumber != binding.AcceptedLifecycleAttemptNumber ||
-            lifecycleOperation.State is not (ElsaInstanceOperationState.Queued or ElsaInstanceOperationState.Running) ||
+            !lifecycleStateIsAccepted ||
             !string.Equals(lifecycleOperation.RecoveryIdempotencyScope, binding.IdempotencyScope, StringComparison.Ordinal) ||
             !string.Equals(lifecycleOperation.RecoveryIdempotencyKey, binding.IdempotencyKey, StringComparison.Ordinal) ||
             !string.Equals(lifecycleOperation.RecoveryRequestHash, binding.RequestHash, StringComparison.Ordinal) ||
             instance.Version != binding.AcceptedInstanceVersion)
             return null;
 
-        await ValidateRecoveryObservationStoredIntegrityAsync(model, cancellationToken);
         return model;
     }
 

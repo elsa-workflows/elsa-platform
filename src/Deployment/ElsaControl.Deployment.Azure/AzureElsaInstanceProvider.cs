@@ -14,13 +14,20 @@ public sealed class AzureElsaInstanceProvider(
     IAzureProviderOperationStore operationStore,
     IAzureProviderResourceAssignmentStore assignmentStore,
     TimeProvider? timeProvider = null,
-    AzureElsaInstanceProviderOptions? options = null) :
+    AzureElsaInstanceProviderOptions? options = null,
+    AzureProviderExecutor? executor = null,
+    IAzureProviderRecoveryObserver? recoveryObserver = null,
+    IAzureProviderRecoveryObservationStore? recoveryObservationStore = null) :
     IElsaInstanceProviderSubmissionPort,
     IElsaInstanceProviderReconciliationPort,
-    IElsaInstanceProviderCleanupPort
+    IElsaInstanceProviderCleanupPort,
+    IElsaInstanceProviderRecoveryPort
 {
     private readonly AzureElsaInstanceProviderOptions _options = options ?? new();
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+    private readonly AzureProviderExecutor? _executor = executor;
+    private readonly IAzureProviderRecoveryObserver? _recoveryObserver = recoveryObserver;
+    private readonly IAzureProviderRecoveryObservationStore? _recoveryObservationStore = recoveryObservationStore;
 
     public async Task<ElsaInstanceProviderSubmissionResult> SubmitAsync(
         ElsaInstanceProviderSubmission request,
@@ -134,6 +141,10 @@ public sealed class AzureElsaInstanceProvider(
             !ElsaManagedEndpointOrigin.TryCreate(operation.Endpoint, out _))
             return EndpointInvalid(request);
 
+        var retryEvidence = operation.Status == AzureProviderOperationStatus.RecoveryRequired
+            ? await TryRecordRecoveryObservationAsync(request, operation, cancellationToken)
+            : null;
+
         return operation.Status switch
         {
             AzureProviderOperationStatus.Succeeded when operation.Health == AzureProviderHealth.Healthy =>
@@ -161,8 +172,303 @@ public sealed class AzureElsaInstanceProvider(
                     ElsaInstanceProviderHealthGate.Failed, request.OperationId, request.AttemptNumber,
                     correlation),
             _ => new(ElsaInstanceProviderObservationKind.Confirmed, ElsaObservedLifecycle.Provisioning,
-                ElsaInstanceProviderHealthGate.Unknown, request.OperationId, request.AttemptNumber, correlation)
+                ElsaInstanceProviderHealthGate.Unknown, request.OperationId, request.AttemptNumber, correlation,
+                retryEvidence)
         };
+    }
+
+    /// <summary>
+    /// Normal reconciliation is the producer for recovery proof. It observes the exact
+    /// retained provider operation before an explicit recovery request and records only one
+    /// typed, immutable postcondition. A failed observation remains unknown and cannot become
+    /// retry evidence.
+    /// </summary>
+    private async Task<ElsaInstanceProviderRetryEvidence?> TryRecordRecoveryObservationAsync(
+        ElsaInstanceProviderReconciliationRequest request,
+        AzureProviderOperation operation,
+        CancellationToken cancellationToken)
+    {
+        if (_recoveryObserver is null || _recoveryObservationStore is null ||
+            request.ResolvedPlanReference is null || request.InstanceVersion < 1 ||
+            operation.OrganizationId is not { } organizationId ||
+            operation.InstanceId != request.InstanceId ||
+            operation.LifecycleAction is not { } lifecycleAction ||
+            operation.ProviderAssignmentId is not { } assignmentId)
+            return null;
+
+        try
+        {
+            var assignment = await assignmentStore.GetAsync(request.WorkspaceId, assignmentId, cancellationToken);
+            if (assignment is null ||
+                assignment.Id != assignmentId ||
+                assignment.WorkspaceId != request.WorkspaceId ||
+                assignment.OrganizationId != organizationId ||
+                assignment.InstanceId != request.InstanceId ||
+                assignment.LastOperationId != operation.Id ||
+                !string.Equals(assignment.ProviderScopeFingerprint, NormalizeScope(_options.ProviderScopeFingerprint), StringComparison.Ordinal) ||
+                !string.Equals(assignment.WorkloadName, WorkloadName(request.InstanceId), StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            var retainedPlan = AzureProviderOperationService.TryRestorePlan(operation);
+            if (retainedPlan is null ||
+                !string.Equals(retainedPlan.Fingerprint, operation.PlanFingerprint, StringComparison.Ordinal))
+                return null;
+
+            var observed = await _recoveryObserver.ObserveAsync(
+                new AzureProviderRecoveryRequest(operation, retainedPlan, assignment), cancellationToken);
+            observed.Validate();
+            if (observed.Kind != AzureProviderRecoveryObservationKind.Confirmed || observed.CompletedStep is null)
+                return null;
+
+            var observedPhase = observed.CompletedStep.Value switch
+            {
+                AzureProviderRunnerStep.Foundation => AzureProviderOperationPhase.FoundationObserved,
+                AzureProviderRunnerStep.AcrPull => AzureProviderOperationPhase.AcrPullObserved,
+                AzureProviderRunnerStep.SeedSecrets => AzureProviderOperationPhase.SeedSecretsObserved,
+                AzureProviderRunnerStep.SqlBootstrap => AzureProviderOperationPhase.FoundationReady,
+                AzureProviderRunnerStep.Workload => AzureProviderOperationPhase.WorkloadReady,
+                AzureProviderRunnerStep.Health => AzureProviderOperationPhase.HealthVerified,
+                AzureProviderRunnerStep.Promotion => AzureProviderOperationPhase.TrafficPromoted,
+                _ => throw new InvalidOperationException("The observed recovery step cannot be persisted.")
+            };
+            var resourceFingerprint = AzureProviderRecoveryObservationRecord.ComputeResourceFingerprint(observed.Resources);
+            var record = new AzureProviderRecoveryObservationRecord(
+                organizationId,
+                request.WorkspaceId,
+                request.InstanceId,
+                request.OperationId,
+                lifecycleAction,
+                request.AttemptNumber,
+                request.InstanceVersion,
+                operation.Id,
+                operation.OperationIdentity,
+                operation.RequestHash,
+                operation.AttemptNumber,
+                operation.Version,
+                operation.CheckpointSequence,
+                assignment.Id,
+                operation.TargetKey,
+                operation.ProviderScopeFingerprint,
+                request.ResolvedPlanReference.PlanId,
+                request.ResolvedPlanReference.SchemaVersion,
+                request.ResolvedPlanReference.PlanUri,
+                request.ResolvedPlanReference.ContentHash,
+                operation.PlanFingerprint,
+                operation.TemplateFingerprint,
+                observed.CompletedStep.Value,
+                observedPhase,
+                observed.Health,
+                resourceFingerprint,
+                AzureProviderRecoveryObservationRecord.ComputePostconditionFingerprint(observed, resourceFingerprint),
+                _timeProvider.GetUtcNow());
+            var receipt = await _recoveryObservationStore.CreateOrGetAsync(record, cancellationToken);
+            return new ElsaInstanceProviderRetryEvidence(receipt.Reference, receipt.Digest);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    public async Task<ElsaInstanceProviderRecoveryResult> RecoverAsync(
+        ElsaInstanceProviderRecoveryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        request.Validate();
+        EnsureEnabled();
+
+        var submission = request.Submission;
+        if (submission.PlacementAssignmentId is not { } assignmentText ||
+            !Guid.TryParseExact(assignmentText, "D", out var assignmentId))
+            return RecoveryRejected("azure.recovery.assignment-invalid");
+
+        // This durable lookup happens before any Azure observation. Every tuple is checked
+        // against the lifecycle request so stale or cross-scope input cannot probe Azure.
+        var operation = await operationStore.GetLatestReconcileAsync(
+            submission.WorkspaceId,
+            WorkloadName(submission.InstanceId),
+            _options.ProviderScopeFingerprint,
+            cancellationToken);
+        if (operation is null)
+            return RecoveryRequired("azure.recovery.operation-unavailable");
+        if (operation.WorkspaceId != submission.WorkspaceId ||
+            !string.Equals(operation.TargetKey, WorkloadName(submission.InstanceId), StringComparison.OrdinalIgnoreCase) ||
+            operation.Action != AzureProviderOperationAction.Reconcile ||
+            !string.Equals(operation.IdempotencyKey, IdempotencyKey(submission.OperationId), StringComparison.Ordinal) ||
+            operation.OrganizationId != submission.OrganizationId ||
+            operation.InstanceId != submission.InstanceId ||
+            operation.LifecycleAction != submission.OperationAction ||
+            operation.ProviderAssignmentId != assignmentId ||
+            !string.Equals(operation.ProviderScopeFingerprint, NormalizeScope(_options.ProviderScopeFingerprint), StringComparison.Ordinal))
+            return RecoveryRejected("azure.recovery.identity-mismatch");
+
+        // Recovery never resolves the current catalog intent. It may only use the exact
+        // provider plan retained by this operation. Translate the already-resolved lifecycle
+        // plan into the retained Azure target and compare its governed fingerprint before any
+        // observation; otherwise a caller could pair a valid recovery envelope with a different
+        // plan while still selecting the same provider operation.
+        AzureWorkloadPlan? retainedPlan;
+        try
+        {
+            retainedPlan = AzureProviderOperationService.TryRestorePlan(operation);
+        }
+        catch (InvalidOperationException)
+        {
+            retainedPlan = null;
+        }
+        if (retainedPlan is null ||
+            !string.Equals(retainedPlan.Fingerprint, operation.PlanFingerprint, StringComparison.Ordinal))
+            return RecoveryRejected("azure.recovery.plan-unavailable");
+
+        var translatedRequestedPlan = AzureWorkloadPlanTranslator.Translate(
+            submission.Plan,
+            new AzureWorkloadTarget(operation.TargetKey, operation.Location));
+        if (!translatedRequestedPlan.IsAccepted ||
+            translatedRequestedPlan.Plan is null ||
+            !string.Equals(translatedRequestedPlan.Plan.Fingerprint, retainedPlan.Fingerprint, StringComparison.Ordinal))
+            return RecoveryRejected("azure.recovery.plan-mismatch");
+
+        // Post-claim replay is read-only, but still requires proof that this exact
+        // accepted lifecycle recovery authorized the current provider successor.
+        var isReplay = operation.Status is AzureProviderOperationStatus.Running or AzureProviderOperationStatus.Succeeded;
+        if (!isReplay && operation.Status != AzureProviderOperationStatus.RecoveryRequired)
+            return RecoveryRejected("azure.recovery.state-invalid");
+
+        if (_recoveryObservationStore is null)
+            return isReplay
+                ? RecoveryRejected("azure.recovery.observation-unavailable")
+                : RecoveryRequired("azure.recovery.observation-unavailable");
+
+        var envelope = request.Envelope;
+        AzureProviderRecoveryObservationRecord? recordedObservation;
+        try
+        {
+            var binding = new AzureProviderRecoveryObservationBinding(
+                    envelope.RecoveryRequestId,
+                    envelope.OrganizationId,
+                    envelope.WorkspaceId,
+                    envelope.InstanceId,
+                    envelope.LifecycleOperationId,
+                    envelope.ObservedLifecycleAttemptNumber,
+                    envelope.ObservedInstanceVersion,
+                    envelope.AcceptedLifecycleAttemptNumber,
+                    envelope.AcceptedInstanceVersion,
+                    envelope.IdempotencyScope,
+                    envelope.IdempotencyKey,
+                    envelope.RequestHash,
+                    envelope.ObservationReference,
+                    envelope.ObservationDigest);
+            recordedObservation = isReplay
+                ? await _recoveryObservationStore.GetAndValidateForAcceptedRecoveryReplayAsync(binding, cancellationToken)
+                : await _recoveryObservationStore.GetAndValidateForAcceptedRecoveryAsync(binding, cancellationToken);
+        }
+        catch (ArgumentException)
+        {
+            recordedObservation = null;
+        }
+        catch (InvalidOperationException)
+        {
+            recordedObservation = null;
+        }
+        if (recordedObservation is null ||
+            !IsRecordedObservationAuthoritative(recordedObservation, operation, assignmentId, submission, isReplay))
+            return isReplay
+                ? RecoveryRejected("azure.recovery.observation-invalid")
+                : RecoveryRequired("azure.recovery.observation-invalid");
+
+        var assignment = await assignmentStore.GetAsync(submission.WorkspaceId, assignmentId, cancellationToken);
+        if (assignment is null ||
+            assignment.Id != assignmentId ||
+            assignment.WorkspaceId != submission.WorkspaceId ||
+            assignment.OrganizationId != submission.OrganizationId ||
+            assignment.InstanceId != submission.InstanceId ||
+            assignment.LastOperationId != operation.Id ||
+            !string.Equals(assignment.ProviderScopeFingerprint, NormalizeScope(_options.ProviderScopeFingerprint), StringComparison.Ordinal) ||
+            !string.Equals(assignment.WorkloadName, WorkloadName(submission.InstanceId), StringComparison.OrdinalIgnoreCase))
+            return RecoveryRejected("azure.recovery.assignment-mismatch");
+        if (isReplay)
+            return operation.Status == AzureProviderOperationStatus.Succeeded
+                ? new(ElsaInstanceProviderRecoveryOutcome.Succeeded, "azure.operation.no-op")
+                : new(ElsaInstanceProviderRecoveryOutcome.InProgress, "azure.operation.in-progress");
+        if (_recoveryObserver is null || _executor is null)
+            return RecoveryRequired("azure.recovery.unavailable");
+
+        // Re-observe after the accepted ledger check and immediately before the recovery CAS.
+        // This is the only point at which provider state may authorize a claim.
+        AzureProviderRecoveryObservation observed;
+        try
+        {
+            observed = await _recoveryObserver.ObserveAsync(
+                new AzureProviderRecoveryRequest(operation, retainedPlan, assignment), cancellationToken);
+            observed.Validate();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return RecoveryRequired("azure.recovery.observation-failed");
+        }
+        if (observed.Kind != AzureProviderRecoveryObservationKind.Confirmed)
+            return RecoveryRequired(observed.Code);
+
+        var result = await _executor.RecoverAsync(operation, retainedPlan, observed, cancellationToken);
+        return result.Outcome switch
+        {
+            AzureProviderExecutionOutcome.Succeeded or AzureProviderExecutionOutcome.NoOp =>
+                new(ElsaInstanceProviderRecoveryOutcome.Succeeded, result.Code),
+            AzureProviderExecutionOutcome.InProgress =>
+                new(ElsaInstanceProviderRecoveryOutcome.InProgress, result.Code),
+            AzureProviderExecutionOutcome.Failed =>
+                new(ElsaInstanceProviderRecoveryOutcome.Failed, result.Code),
+            _ => new(ElsaInstanceProviderRecoveryOutcome.RecoveryRequired, result.Code)
+        };
+    }
+
+    private static ElsaInstanceProviderRecoveryResult RecoveryRequired(string code) =>
+        new(ElsaInstanceProviderRecoveryOutcome.RecoveryRequired, code);
+
+    private static ElsaInstanceProviderRecoveryResult RecoveryRejected(string code) =>
+        new(ElsaInstanceProviderRecoveryOutcome.Rejected, code);
+
+    private static bool IsRecordedObservationAuthoritative(
+        AzureProviderRecoveryObservationRecord observation,
+        AzureProviderOperation operation,
+        Guid assignmentId,
+        ElsaInstanceProviderSubmission submission,
+        bool isReplay)
+    {
+        // The provider tuple is the pre-Recover snapshot. The recovery ledger, validated by the
+        // observation store, owns the lifecycle attempt/version transition; these checks only
+        // ensure the record was produced for this exact retained provider operation and not a
+        // stale or cross-scope row.
+        return observation.OrganizationId == submission.OrganizationId &&
+               observation.WorkspaceId == submission.WorkspaceId &&
+               observation.InstanceId == submission.InstanceId &&
+               observation.LifecycleOperationId == submission.OperationId &&
+               observation.LifecycleAction == submission.OperationAction &&
+               observation.ProviderOperationId == operation.Id &&
+               string.Equals(observation.ProviderOperationIdentity, operation.OperationIdentity, StringComparison.Ordinal) &&
+               string.Equals(observation.ProviderRequestHash, operation.RequestHash, StringComparison.Ordinal) &&
+               (isReplay
+                   ? (long)observation.ProviderAttemptNumber + 1 == operation.AttemptNumber &&
+                     observation.ProviderVersion < operation.Version &&
+                     observation.ProviderCheckpointSequence <= operation.CheckpointSequence
+                   : observation.ProviderAttemptNumber == operation.AttemptNumber &&
+                     observation.ProviderVersion == operation.Version &&
+                     observation.ProviderCheckpointSequence == operation.CheckpointSequence) &&
+               observation.ProviderAssignmentId == assignmentId &&
+               string.Equals(observation.TargetKey, operation.TargetKey, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(observation.ProviderScopeFingerprint, operation.ProviderScopeFingerprint, StringComparison.Ordinal) &&
+               string.Equals(observation.ProviderPlanFingerprint, operation.PlanFingerprint, StringComparison.Ordinal) &&
+               string.Equals(observation.ProviderTemplateFingerprint, operation.TemplateFingerprint, StringComparison.Ordinal) &&
+               (isReplay || operation.AttemptedStep is null || operation.AttemptedStep == observation.CompletedStep);
     }
 
     public async Task<ElsaInstanceCleanupObservation> CleanupAsync(
