@@ -10,6 +10,7 @@ namespace ElsaControl.Deployment.Azure.Tests;
 public sealed class AzureBicepProviderRunnerTests : IDisposable
 {
     private const string OwnedGroupTags = "{\"managed-by\":\"elsa-control\",\"owner\":\"elsa-control\",\"workload-name\":\"proof\",\"sqlBootstrapObjectId\":\"11111111-1111-1111-1111-111111111111\"}";
+    private const string ExactSqlBootstrapFirewall = "[{\"name\":\"elsa-bootstrap\",\"startIpAddress\":\"203.0.113.10\",\"endIpAddress\":\"203.0.113.10\"}]";
     private readonly RunnerFixture _fixture = new();
 
     [Fact]
@@ -891,6 +892,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
             scriptPath = args[Array.IndexOf(args, "-i") + 1];
             return args.Contains("--authentication-method");
         });
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), ExactSqlBootstrapFirewall);
         process.Success(args => args.Contains("firewall-rule") && args.Contains("delete"));
         process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), "[]");
 
@@ -910,6 +912,83 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.Equal(_fixture.Options.AzureCliClientId, bootstrap[Array.IndexOf(bootstrap, "-U") + 1]);
         Assert.DoesNotContain("ActiveDirectoryDefault", bootstrap);
         Assert.Contains("-b", bootstrap);
+        var initialList = process.Calls.First(call => call.Contains("firewall-rule") && call.Contains("list"));
+        Assert.Contains(_fixture.Scope.SubscriptionId, initialList);
+        Assert.Contains(_fixture.Scope.ResourceGroupName, initialList);
+        Assert.Contains("proof-sql", initialList);
+    }
+
+    [Fact]
+    public async Task Sql_bootstrap_accepts_an_already_absent_temporary_firewall()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("-?"), "Microsoft sqlcmd --authentication-method ActiveDirectoryDefault");
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("create"));
+        process.Success(args => args.Contains("--authentication-method"));
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), "[]");
+
+        var resources = _fixture.FoundationResources with
+        {
+            RegistryResourceId = _fixture.RegistryId,
+            AcrPullDeploymentId = _fixture.RegistryDeploymentId,
+            AcrPullRoleAssignmentId = _fixture.RegistryRoleAssignmentId
+        };
+        var result = await _fixture.Runner(process).RunAsync(_fixture.Command(AzureProviderRunnerStep.SqlBootstrap, resources));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Completed, result.Outcome);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("firewall-rule") && call.Contains("delete"));
+    }
+
+    [Theory]
+    [InlineData("[{\"name\":\"elsa-bootstrap\",\"startIpAddress\":\"203.0.113.11\",\"endIpAddress\":\"203.0.113.10\"}]")]
+    [InlineData("[{\"name\":\"elsa-bootstrap\",\"startIpAddress\":\"203.0.113.10\",\"endIpAddress\":\"203.0.113.10\"},{\"name\":\"elsa-bootstrap\",\"startIpAddress\":\"203.0.113.10\",\"endIpAddress\":\"203.0.113.10\"}]")]
+    [InlineData("[{\"name\":\"elsa-bootstrap\"}]")]
+    [InlineData("[null]")]
+    [InlineData("[{\"name\":\"\",\"startIpAddress\":\"203.0.113.10\",\"endIpAddress\":\"203.0.113.10\"}]")]
+    [InlineData("[{\"name\":\"other\",\"startIpAddress\":\"invalid\",\"endIpAddress\":\"203.0.113.10\"}]")]
+    [InlineData("not-json")]
+    public async Task Sql_bootstrap_refuses_to_delete_when_firewall_ownership_is_not_proven(string firewallList)
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("-?"), "Microsoft sqlcmd --authentication-method ActiveDirectoryDefault");
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("create"));
+        process.Success(args => args.Contains("--authentication-method"));
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), firewallList);
+        // Cleanup retries a failed proof once, but must never issue a delete for an ambiguous rule.
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), firewallList);
+
+        var resources = _fixture.FoundationResources with
+        {
+            RegistryResourceId = _fixture.RegistryId,
+            AcrPullDeploymentId = _fixture.RegistryDeploymentId,
+            AcrPullRoleAssignmentId = _fixture.RegistryRoleAssignmentId
+        };
+        var result = await _fixture.Runner(process).RunAsync(_fixture.Command(AzureProviderRunnerStep.SqlBootstrap, resources));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("firewall-rule") && call.Contains("delete"));
+    }
+
+    [Fact]
+    public async Task Sql_bootstrap_refuses_to_delete_when_firewall_list_is_denied()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("-?"), "Microsoft sqlcmd --authentication-method ActiveDirectoryDefault");
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("create"));
+        process.Success(args => args.Contains("--authentication-method"));
+        process.Failure(args => args.Contains("firewall-rule") && args.Contains("list"));
+        process.Failure(args => args.Contains("firewall-rule") && args.Contains("list"));
+
+        var resources = _fixture.FoundationResources with
+        {
+            RegistryResourceId = _fixture.RegistryId,
+            AcrPullDeploymentId = _fixture.RegistryDeploymentId,
+            AcrPullRoleAssignmentId = _fixture.RegistryRoleAssignmentId
+        };
+        var result = await _fixture.Runner(process).RunAsync(_fixture.Command(AzureProviderRunnerStep.SqlBootstrap, resources));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("firewall-rule") && call.Contains("delete"));
     }
 
     [Fact]
@@ -918,7 +997,6 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         var process = new FakeCommandProcess();
         process.Success(args => args.Contains("-?"), "Microsoft sqlcmd --authentication-method ActiveDirectoryDefault");
         process.Failure(args => args.Contains("firewall-rule") && args.Contains("create"));
-        process.Success(args => args.Contains("firewall-rule") && args.Contains("delete"));
         process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), "[]");
 
         var resources = _fixture.FoundationResources with
@@ -932,8 +1010,8 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
         Assert.Equal("azure.step.uncertain", result.Code);
         Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("create"));
-        Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("delete"));
         Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("list"));
+        Assert.DoesNotContain(process.Calls, call => call.Contains("firewall-rule") && call.Contains("delete"));
         Assert.DoesNotContain(process.Calls, call => call.Contains("--authentication-method"));
     }
 
@@ -943,7 +1021,6 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         var process = new FakeCommandProcess();
         process.Success(args => args.Contains("-?"), "Microsoft sqlcmd --authentication-method ActiveDirectoryDefault");
         process.Failure(args => args.Contains("firewall-rule") && args.Contains("create"));
-        process.Success(args => args.Contains("firewall-rule") && args.Contains("delete"));
         process.Failure(args => args.Contains("firewall-rule") && args.Contains("list"));
 
         var resources = _fixture.FoundationResources with
@@ -957,8 +1034,8 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
         Assert.Equal("azure.runner.uncertain", result.Code);
         Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("create"));
-        Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("delete"));
         Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("list"));
+        Assert.DoesNotContain(process.Calls, call => call.Contains("firewall-rule") && call.Contains("delete"));
         Assert.DoesNotContain(process.Calls, call => call.Contains("--authentication-method"));
     }
 
@@ -976,7 +1053,6 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         var process = new FakeCommandProcess();
         process.Success(args => args.Contains("-?"), "Microsoft sqlcmd --authentication-method ActiveDirectoryDefault");
         process.Status(args => args.Contains("firewall-rule") && args.Contains("create"), status, failureKind);
-        process.Success(args => args.Contains("firewall-rule") && args.Contains("delete"));
         process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), "[]");
 
         var resources = _fixture.FoundationResources with
@@ -990,8 +1066,8 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
         Assert.Equal(expectedCode, result.Code);
         Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("create"));
-        Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("delete"));
         Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("list"));
+        Assert.DoesNotContain(process.Calls, call => call.Contains("firewall-rule") && call.Contains("delete"));
         Assert.DoesNotContain(process.Calls, call => call.Contains("--authentication-method"));
     }
 
@@ -1003,6 +1079,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         process.Success(args => args.Contains("firewall-rule") && args.Contains("create"));
         // Model go-sqlcmd's batch behavior: a SQL error exits nonzero only when -b is present.
         process.SqlBatchError(args => args.Contains("--authentication-method"));
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), ExactSqlBootstrapFirewall);
         process.Success(args => args.Contains("firewall-rule") && args.Contains("delete"));
         process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), "[]");
 
@@ -1031,6 +1108,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         process.Success(args => args.Contains("firewall-rule") && args.Contains("create"));
         process.Status(args => args.Contains("--authentication-method"), AzureCommandProcessStatus.TerminationUncertain,
             AzureCommandProcessFailureKind.TerminationUncertain);
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), ExactSqlBootstrapFirewall);
         process.Success(args => args.Contains("firewall-rule") && args.Contains("delete"));
         process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), "[]");
         var resources = fixture.FoundationResources with
@@ -1056,6 +1134,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         process.Success(args => args.Contains("firewall-rule") && args.Contains("create"));
         process.Status(args => args.Contains("--authentication-method"), AzureCommandProcessStatus.Failed,
             AzureCommandProcessFailureKind.TerminationUncertain);
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), ExactSqlBootstrapFirewall);
         process.Success(args => args.Contains("firewall-rule") && args.Contains("delete"));
         process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), "[]");
         var resources = fixture.FoundationResources with
@@ -1082,6 +1161,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
             var script = process.Calls.Last()[Array.IndexOf(process.Calls.Last(), "-i") + 1];
             File.WriteAllText(Path.Combine(Path.GetDirectoryName(script)!, "cleanup-blocker"), "block");
         });
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), ExactSqlBootstrapFirewall);
         process.Success(args => args.Contains("firewall-rule") && args.Contains("delete"));
         process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), "[]");
         var resources = _fixture.FoundationResources with

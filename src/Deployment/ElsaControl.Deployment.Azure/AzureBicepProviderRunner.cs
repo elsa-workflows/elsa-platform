@@ -1238,6 +1238,26 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner, IAzureProvi
     private async Task<bool> DeleteAndVerifyFirewallAsync(AzureProviderRunnerCommand command, string serverName, CancellationToken cancellationToken)
     {
         EnsureMutationAuthority(command);
+        var beforeDelete = await ExecuteAzAsync(command,
+            ["sql", "server", "firewall-rule", "list", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
+                "--server", serverName, "--output", "json", "--only-show-errors"],
+            ParseFirewallRulesAsync,
+            cancellationToken);
+        if (!beforeDelete.Succeeded || beforeDelete.Value is null)
+            return false;
+
+        var rules = beforeDelete.Value.Value;
+        if (!AreWellFormedFirewallRules(rules))
+            return false;
+
+        var ownedRules = rules.Where(rule => string.Equals(rule.Name, TemporaryFirewallRuleName, StringComparison.Ordinal)).ToArray();
+        if (ownedRules.Length == 0)
+            return true;
+        if (ownedRules.Length != 1 ||
+            !string.Equals(ownedRules[0].StartIpAddress, _options.SqlBootstrapIp, StringComparison.Ordinal) ||
+            !string.Equals(ownedRules[0].EndIpAddress, _options.SqlBootstrapIp, StringComparison.Ordinal))
+            return false;
+
         await ExecuteAzAsync<AzureCommandNoOutput>(command,
             ["sql", "server", "firewall-rule", "delete", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
                 "--server", serverName, "--name", TemporaryFirewallRuleName, "--output", "none", "--only-show-errors"],
@@ -1250,7 +1270,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner, IAzureProvi
                     "--server", serverName, "--output", "json", "--only-show-errors"],
                 ParseFirewallRulesAsync,
                 cancellationToken);
-            if (list.Succeeded && list.Value is not null && !list.Value.Value.Any(x => string.Equals(x.Name, TemporaryFirewallRuleName, StringComparison.Ordinal)))
+            if (list.Succeeded && list.Value is not null && AreWellFormedFirewallRules(list.Value.Value) &&
+                !list.Value.Value.Any(x => string.Equals(x.Name, TemporaryFirewallRuleName, StringComparison.Ordinal)))
                 return true;
             if (attempt + 1 < _options.ObservationAttempts)
                 await Task.Delay(_options.ObservationDelay, cancellationToken);
@@ -1971,6 +1992,12 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner, IAzureProvi
         new(ParseJson<List<AzureSecretSeedMetadata?>>(output).Value);
     private static SafeValue<int> ParseIntegerAsync(ReadOnlyMemory<char> output) =>
         int.TryParse(output.ToString().Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? new SafeValue<int>(value) : throw new FormatException();
+    private static bool AreWellFormedFirewallRules(IReadOnlyList<FirewallRule> rules) =>
+        rules.All(rule => rule is not null && !string.IsNullOrWhiteSpace(rule.Name) &&
+            System.Net.IPAddress.TryParse(rule.StartIpAddress, out var start) &&
+            start.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
+            System.Net.IPAddress.TryParse(rule.EndIpAddress, out var end) &&
+            end.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
 
     private static bool IsGeneratedProviderOwnedSecret(string key, string reference) =>
         AzureManagedSecretReferences.IsProviderOwned(key, reference) &&
@@ -2093,7 +2120,12 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner, IAzureProvi
         public string? Type { get; set; }
     }
 
-    private sealed class FirewallRule { public string? Name { get; set; } }
+    private sealed class FirewallRule
+    {
+        public string? Name { get; set; }
+        public string? StartIpAddress { get; set; }
+        public string? EndIpAddress { get; set; }
+    }
     private sealed class DeploymentRecord { public string? Name { get; set; } }
     private sealed class DeletedVault
     {
