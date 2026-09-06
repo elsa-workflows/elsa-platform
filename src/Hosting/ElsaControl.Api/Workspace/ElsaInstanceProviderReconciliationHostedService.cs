@@ -94,6 +94,12 @@ public sealed class ElsaInstanceProviderReconciliationHostedService(
         IElsaInstanceEntitlementHoldStore? entitlementHoldStore,
         CancellationToken stoppingToken)
     {
+        if (operation.HandoffInvalid)
+        {
+            logger.LogWarning("Managed Elsa provider hand-off metadata is invalid for pending operation {OperationId}.", operation.OperationId);
+            return;
+        }
+
         if (operation.Submission is { } pendingSubmission)
         {
             try
@@ -102,11 +108,15 @@ public sealed class ElsaInstanceProviderReconciliationHostedService(
                     pendingSubmission.OperationId != operation.OperationId ||
                     pendingSubmission.OperationAction == ElsaInstanceOperationAction.Delete ||
                     pendingSubmission.Plan is null || pendingSubmission.DeploymentTarget is null)
+                {
+                    logger.LogWarning("Managed Elsa provider submission is invalid for pending operation {OperationId}.", operation.OperationId);
                     return;
+                }
                 pendingSubmission.Validate();
             }
             catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
             {
+                logger.LogWarning("Managed Elsa provider submission is invalid for pending operation {OperationId}.", operation.OperationId);
                 return;
             }
         }

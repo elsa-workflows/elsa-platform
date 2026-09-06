@@ -12,6 +12,7 @@ using ElsaControl.RuntimeBuilder.Abstractions.ReleaseManifests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using CatalogWorkspace = ElsaControl.PackageCatalog.Core.Accounts.Workspace;
@@ -22,6 +23,64 @@ public sealed class ElsaInstanceProviderReconciliationHostedServiceTests
 {
     private static readonly Guid WorkspaceId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid OperationId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Invalid_pending_submission_emits_a_safe_warning_without_dispatch(bool mismatchedIdentity)
+    {
+        var provider = new RecordingSubmissionPort();
+        var reconciler = new RecordingReconciliationService();
+        var submission = RecoverySubmission() with
+        {
+            OperationId = mismatchedIdentity ? Guid.NewGuid() : OperationId,
+            AttemptNumber = mismatchedIdentity ? 1 : 0,
+            Location = "sensitive-input-must-not-be-logged"
+        };
+        await using var services = CreateServices(provider, reconciler,
+            [new ElsaInstanceProviderPendingOperation(WorkspaceId, OperationId, submission)]);
+        var logger = new RecordingLogger();
+
+        await CreateHostedService(services, logger: logger).ProcessPendingAsync(CancellationToken.None);
+
+        var warning = Assert.Single(logger.Messages);
+        Assert.Equal(LogLevel.Warning, warning.Level);
+        Assert.Equal($"Managed Elsa provider submission is invalid for pending operation {OperationId}.", warning.Message);
+        Assert.Null(warning.Exception);
+        Assert.Equal(0, provider.Calls);
+        Assert.Equal(0, reconciler.Calls);
+    }
+
+    private sealed class RecordingLogger : ILogger<ElsaInstanceProviderReconciliationHostedService>
+    {
+        public List<(LogLevel Level, string Message, Exception? Exception)> Messages { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => Messages.Add((logLevel, formatter(state, exception), exception));
+    }
+
+    [Fact]
+    public async Task Corrupt_stored_handoff_does_not_downgrade_to_ordinary_reconciliation()
+    {
+        var provider = new RecordingSubmissionPort();
+        var recoveryProvider = new RecordingRecoveryPort();
+        var reconciler = new RecordingReconciliationService();
+        await using var services = CreateServices(provider, reconciler,
+            [new ElsaInstanceProviderPendingOperation(WorkspaceId, OperationId) { HandoffInvalid = true }],
+            recoveryProvider);
+        var logger = new RecordingLogger();
+
+        await CreateHostedService(services, logger: logger).ProcessPendingAsync(CancellationToken.None);
+
+        var warning = Assert.Single(logger.Messages);
+        Assert.Equal(LogLevel.Warning, warning.Level);
+        Assert.Equal($"Managed Elsa provider hand-off metadata is invalid for pending operation {OperationId}.", warning.Message);
+        Assert.Null(warning.Exception);
+        Assert.Equal(0, provider.Calls);
+        Assert.Equal(0, recoveryProvider.Calls);
+        Assert.Equal(0, reconciler.Calls);
+    }
 
     [Fact]
     public async Task Normal_replay_preserves_the_returned_assignment_binding()
@@ -714,11 +773,12 @@ public sealed class ElsaInstanceProviderReconciliationHostedServiceTests
 
     private static ElsaInstanceProviderReconciliationHostedService CreateHostedService(
         ServiceProvider services,
-        bool enabled = true) =>
+        bool enabled = true,
+        ILogger<ElsaInstanceProviderReconciliationHostedService>? logger = null) =>
         new(
             services.GetRequiredService<IServiceScopeFactory>(),
             Options.Create(new ElsaInstanceLifecycleWorkerOptions { Enabled = enabled }),
-            NullLogger<ElsaInstanceProviderReconciliationHostedService>.Instance);
+            logger ?? NullLogger<ElsaInstanceProviderReconciliationHostedService>.Instance);
 
     private static ElsaInstanceProviderSubmission RecoverySubmission(
         ElsaControl.Deployment.Abstractions.Instances.ElsaInstanceOperationAction action =
