@@ -220,17 +220,10 @@ public sealed class AzureElsaInstanceProvider(
             if (observed.Kind != AzureProviderRecoveryObservationKind.Confirmed || observed.CompletedStep is null)
                 return null;
 
-            var observedPhase = observed.CompletedStep.Value switch
-            {
-                AzureProviderRunnerStep.Foundation => AzureProviderOperationPhase.FoundationObserved,
-                AzureProviderRunnerStep.AcrPull => AzureProviderOperationPhase.AcrPullObserved,
-                AzureProviderRunnerStep.SeedSecrets => AzureProviderOperationPhase.SeedSecretsObserved,
-                AzureProviderRunnerStep.SqlBootstrap => AzureProviderOperationPhase.FoundationReady,
-                AzureProviderRunnerStep.Workload => AzureProviderOperationPhase.WorkloadReady,
-                AzureProviderRunnerStep.Health => AzureProviderOperationPhase.HealthVerified,
-                AzureProviderRunnerStep.Promotion => AzureProviderOperationPhase.TrafficPromoted,
-                _ => throw new InvalidOperationException("The observed recovery step cannot be persisted.")
-            };
+            var observedPhase = AzureProviderRecoveryObservationSupport.RecoveryPhase(observed.CompletedStep.Value);
+            if (!AzureProviderRecoveryObservationSupport.IsCompatibleBoundary(
+                    operation.AttemptedStep, operation.Phase, observed.CompletedStep.Value, observedPhase))
+                return null;
             var resourceFingerprint = AzureProviderRecoveryObservationRecord.ComputeResourceFingerprint(observed.Resources);
             var record = new AzureProviderRecoveryObservationRecord(
                 organizationId,
@@ -468,7 +461,8 @@ public sealed class AzureElsaInstanceProvider(
                string.Equals(observation.ProviderScopeFingerprint, operation.ProviderScopeFingerprint, StringComparison.Ordinal) &&
                string.Equals(observation.ProviderPlanFingerprint, operation.PlanFingerprint, StringComparison.Ordinal) &&
                string.Equals(observation.ProviderTemplateFingerprint, operation.TemplateFingerprint, StringComparison.Ordinal) &&
-               (isReplay || operation.AttemptedStep is null || operation.AttemptedStep == observation.CompletedStep);
+               (isReplay || AzureProviderRecoveryObservationSupport.IsCompatibleBoundary(
+                   operation.AttemptedStep, operation.Phase, observation.CompletedStep, observation.ObservedPhase));
     }
 
     public async Task<ElsaInstanceCleanupObservation> CleanupAsync(

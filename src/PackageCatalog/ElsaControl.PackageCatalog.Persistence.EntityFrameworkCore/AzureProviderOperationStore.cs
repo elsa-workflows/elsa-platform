@@ -888,6 +888,8 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
             providerOperation.AttemptNumber != observation.ProviderAttemptNumber ||
             providerOperation.Version != observation.ProviderVersion ||
             providerOperation.CheckpointSequence != observation.ProviderCheckpointSequence ||
+            !AzureProviderRecoveryObservationSupport.IsCompatibleBoundary(
+                providerOperation.AttemptedStep, providerOperation.Phase, observation.CompletedStep, observation.ObservedPhase) ||
             providerOperation.IdempotencyKey != $"elsa-instance-operation:{observation.LifecycleOperationId:D}")
             throw new InvalidOperationException("Recovery observation provider state is stale.");
         ValidateRecoveryObservationProviderRequest(providerOperation);
@@ -928,7 +930,9 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
         if (providerOperation.Status != AzureProviderOperationStatus.RecoveryRequired ||
             providerOperation.AttemptNumber != observation.ProviderAttemptNumber ||
             providerOperation.Version != observation.ProviderVersion ||
-            providerOperation.CheckpointSequence != observation.ProviderCheckpointSequence)
+            providerOperation.CheckpointSequence != observation.ProviderCheckpointSequence ||
+            !AzureProviderRecoveryObservationSupport.IsCompatibleBoundary(
+                providerOperation.AttemptedStep, providerOperation.Phase, observation.CompletedStep, observation.ObservedPhase))
             throw new InvalidOperationException("Recovery observation provider state is stale.");
         ValidateRecoveryObservationProviderRequest(providerOperation);
 

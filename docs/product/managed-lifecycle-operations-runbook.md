@@ -212,6 +212,36 @@ Provider recovery execution and live fault/recovery proof remain under
 must be validated against the retained recovery request before claiming the provider
 attempt; it is not a reusable authorization after provider state changes.
 
+#### Azure staged SQL recovery
+
+The Azure SQL boundary uses three distinct provider steps. The legacy composite
+`SqlBootstrap` step is not eligible for this staged recovery path and is never
+replayed as a substitute for one of these steps:
+
+| Retained attempted step | Read-only recovery evidence | Durable checkpoint authorized |
+|---|---|---|
+| `SqlFirewallCreate` | Exactly one `elsa-bootstrap` rule in the retained subscription, resource group, and server, with both IPs equal to the configured bootstrap IP. | Exact presence confirms `SqlFirewallReady`. Absence after an uncertain create remains unknown because a late create may still arrive; it does not authorize a new create from observation. |
+| `SqlBootstrapScript` | The SQL endpoint reports exactly one contained principal named for the retained workload, type `E`, with the retained managed-identity client ID/SID and `db_datareader`, `db_datawriter`, and `db_ddladmin` memberships. | The complete postcondition confirms `SqlBootstrapReady`; the script is never rerun by observation. |
+| `SqlFirewallCleanup` | The exact temporary rule is absent, or the rule remains present while the same exact SQL script postcondition is independently proven. | Absence confirms firewall cleanup. The present-plus-script case confirms only the script checkpoint and permits the narrow cleanup-only resume; it does not replay the script. |
+
+The observer performs no firewall create, firewall delete, or SQL bootstrap
+script execution. A denied, malformed, duplicate, conflicting, or otherwise
+ambiguous firewall inventory fails closed before mutation. A successful staged
+script deliberately leaves the temporary rule for the separate durable cleanup
+step. If script preflight or execution fails after that rule exists, the runner
+attempts exact cleanup and verifies absence before returning a terminal failure;
+failure to prove cleanup remains `RecoveryRequired`/uncertain. An uncertain SQL
+script is not automatically retried, because its partial remote effects must be
+resolved by the read-only postcondition path first.
+
+These checkpoints prove only the named SQL postcondition. They do not establish
+workload completion, endpoint health, traffic promotion, lifecycle `Ready`, or
+confirmed `Delete`; the normal workload, health, traffic, and lifecycle gates
+remain required after SQL recovery. The staged contract and controlled tests are
+not live Azure acceptance evidence. Live acceptance still requires the opt-in
+production proof to exercise late-visible firewall/script outcomes, cleanup
+verification, restart/recovery correlation, and the complete lifecycle result.
+
 ### Unhealthy endpoint
 
 For `managed.lifecycle.unhealthy-endpoint`, confirm whether the projection is

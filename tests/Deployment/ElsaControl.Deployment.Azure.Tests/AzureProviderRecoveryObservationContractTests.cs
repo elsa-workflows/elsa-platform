@@ -100,7 +100,85 @@ public sealed class AzureProviderRecoveryObservationContractTests
             AzureProviderOperationPhase.SeedSecretsObserved) < 0);
         Assert.True(AzureProviderOperationPhaseOrdering.Compare(
             AzureProviderOperationPhase.SeedSecretsObserved,
+            AzureProviderOperationPhase.SqlFirewallReady) < 0);
+        Assert.True(AzureProviderOperationPhaseOrdering.Compare(
+            AzureProviderOperationPhase.SqlFirewallReady,
+            AzureProviderOperationPhase.SqlBootstrapReady) < 0);
+        Assert.True(AzureProviderOperationPhaseOrdering.Compare(
+            AzureProviderOperationPhase.SqlBootstrapReady,
             AzureProviderOperationPhase.FoundationReady) < 0);
+    }
+
+    [Fact]
+    public void Recovery_boundary_requires_the_observed_step_and_phase_to_match()
+    {
+        Assert.True(AzureProviderRecoveryObservationSupport.IsCompatibleBoundary(
+            AzureProviderRunnerStep.SqlFirewallCreate,
+            AzureProviderOperationPhase.FoundationSubmitted,
+            AzureProviderRunnerStep.SqlFirewallCreate,
+            AzureProviderOperationPhase.SqlFirewallReady));
+        Assert.True(AzureProviderRecoveryObservationSupport.IsCompatibleBoundary(
+            AzureProviderRunnerStep.SqlFirewallCreate,
+            AzureProviderOperationPhase.SeedSecretsObserved,
+            AzureProviderRunnerStep.SqlFirewallCreate,
+            AzureProviderOperationPhase.SqlFirewallReady));
+        Assert.True(AzureProviderRecoveryObservationSupport.IsCompatibleBoundary(
+            AzureProviderRunnerStep.SqlBootstrapScript,
+            AzureProviderOperationPhase.SqlFirewallReady,
+            AzureProviderRunnerStep.SqlBootstrapScript,
+            AzureProviderOperationPhase.SqlBootstrapReady));
+        Assert.True(AzureProviderRecoveryObservationSupport.IsCompatibleBoundary(
+            AzureProviderRunnerStep.SqlFirewallCleanup,
+            AzureProviderOperationPhase.SqlBootstrapReady,
+            AzureProviderRunnerStep.SqlBootstrapScript,
+            AzureProviderOperationPhase.SqlBootstrapReady));
+        Assert.True(AzureProviderRecoveryObservationSupport.IsCompatibleBoundary(
+            null,
+            AzureProviderOperationPhase.FoundationSubmitted,
+            AzureProviderRunnerStep.Foundation,
+            AzureProviderOperationPhase.FoundationObserved));
+
+        Assert.False(AzureProviderRecoveryObservationSupport.IsCompatibleBoundary(
+            AzureProviderRunnerStep.SqlFirewallCreate,
+            AzureProviderOperationPhase.FoundationSubmitted,
+            AzureProviderRunnerStep.SqlBootstrapScript,
+            AzureProviderOperationPhase.SqlBootstrapReady));
+        Assert.False(AzureProviderRecoveryObservationSupport.IsCompatibleBoundary(
+            AzureProviderRunnerStep.SqlBootstrapScript,
+            AzureProviderOperationPhase.SqlFirewallReady,
+            AzureProviderRunnerStep.SqlBootstrapScript,
+            AzureProviderOperationPhase.FoundationReady));
+        Assert.False(AzureProviderRecoveryObservationSupport.IsCompatibleBoundary(
+            AzureProviderRunnerStep.SqlFirewallCleanup,
+            AzureProviderOperationPhase.SqlBootstrapReady,
+            AzureProviderRunnerStep.SqlBootstrapScript,
+            AzureProviderOperationPhase.SqlFirewallReady));
+        Assert.False(AzureProviderRecoveryObservationSupport.IsCompatibleBoundary(
+            AzureProviderRunnerStep.SqlFirewallCreate,
+            AzureProviderOperationPhase.FoundationObserved,
+            AzureProviderRunnerStep.SqlFirewallCreate,
+            AzureProviderOperationPhase.SqlFirewallReady));
+        Assert.False(AzureProviderRecoveryObservationSupport.IsCompatibleBoundary(
+            AzureProviderRunnerStep.SqlBootstrap,
+            AzureProviderOperationPhase.FoundationReady,
+            AzureProviderRunnerStep.SqlBootstrap,
+            AzureProviderOperationPhase.FoundationReady));
+        Assert.False(AzureProviderRecoveryObservationSupport.IsCompatibleBoundary(
+            AzureProviderRunnerStep.Workload,
+            AzureProviderOperationPhase.WorkloadSubmitted,
+            AzureProviderRunnerStep.Workload,
+            AzureProviderOperationPhase.WorkloadReady));
+    }
+
+    [Theory]
+    [InlineData(AzureProviderRunnerStep.SqlFirewallCreate, AzureProviderOperationPhase.SqlFirewallReady)]
+    [InlineData(AzureProviderRunnerStep.SqlBootstrapScript, AzureProviderOperationPhase.SqlBootstrapReady)]
+    [InlineData(AzureProviderRunnerStep.SqlFirewallCleanup, AzureProviderOperationPhase.FoundationReady)]
+    public void Sql_recovery_steps_have_explicit_phase_mapping(
+        AzureProviderRunnerStep step,
+        AzureProviderOperationPhase expectedPhase)
+    {
+        Assert.Equal(expectedPhase, AzureProviderRecoveryObservationSupport.RecoveryPhase(step));
     }
 
     [Fact]
