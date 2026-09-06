@@ -7,9 +7,11 @@ namespace ElsaControl.Deployment.Core.Instances;
 public sealed class ElsaInstanceDeletionWorker(
     IElsaInstanceDeletionStore store,
     IElsaInstanceProviderCleanupPort cleanupPort,
-    TimeProvider? timeProvider = null)
+    TimeProvider? timeProvider = null,
+    IElsaInstanceProviderDeleteRecoveryPort? deleteRecoveryPort = null)
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+    private readonly IElsaInstanceProviderDeleteRecoveryPort? _deleteRecoveryPort = deleteRecoveryPort;
 
     public async Task<ElsaInstanceLifecycleWorkerBatchResult> ProcessAvailableAsync(string workerId, CancellationToken cancellationToken = default)
     {
@@ -83,8 +85,25 @@ public sealed class ElsaInstanceDeletionWorker(
             request.Validate();
             try
             {
+                if (item.RecoveryRequestId is not null && _deleteRecoveryPort is null)
+                    throw new InvalidOperationException("The accepted Azure delete recovery capability is unavailable.");
                 providerInvoked();
-                observation = await CleanupWithLeaseAsync(item, workerId, request, cancellationToken);
+                if (item.RecoveryRequestId is { } recoveryRequestId)
+                {
+                    observation = await RecoverDeleteWithLeaseAsync(
+                        item,
+                        workerId,
+                        new ElsaInstanceDeleteRecoveryRequest(
+                            request,
+                            recoveryRequestId,
+                            item.Instance.Version,
+                            workerId,
+                            item.LeaseToken,
+                            item.LeaseVersion),
+                        cancellationToken);
+                }
+                else
+                    observation = await CleanupWithLeaseAsync(item, workerId, request, cancellationToken);
                 observation.Validate();
             }
             catch (OperationCanceledException) { throw; }
@@ -149,8 +168,22 @@ public sealed class ElsaInstanceDeletionWorker(
         ElsaInstanceCleanupRequest request,
         CancellationToken cancellationToken)
     {
+        return await RunProviderWithLeaseAsync(
+            item,
+            workerId,
+            token => cleanupPort.CleanupAsync(request, token),
+            cancellationToken);
+    }
+
+    private async Task<ElsaInstanceCleanupObservation> RunProviderWithLeaseAsync(
+        ElsaInstanceDeletionWorkItem item,
+        string workerId,
+        Func<CancellationToken, Task<ElsaInstanceCleanupObservation>> providerCall,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(providerCall);
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var cleanup = cleanupPort.CleanupAsync(request, cancellation.Token);
+        var cleanup = providerCall(cancellation.Token);
         using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1), _timeProvider);
         while (await Task.WhenAny(cleanup, timer.WaitForNextTickAsync(cancellationToken).AsTask()) != cleanup)
         {
@@ -164,6 +197,20 @@ public sealed class ElsaInstanceDeletionWorker(
             }
         }
         return await cleanup;
+    }
+
+    private async Task<ElsaInstanceCleanupObservation> RecoverDeleteWithLeaseAsync(
+        ElsaInstanceDeletionWorkItem item,
+        string workerId,
+        ElsaInstanceDeleteRecoveryRequest request,
+        CancellationToken cancellationToken)
+    {
+        request.Validate();
+        return await RunProviderWithLeaseAsync(
+            item,
+            workerId,
+            token => _deleteRecoveryPort!.RecoverDeleteAsync(request, token),
+            cancellationToken);
     }
 
     private static ElsaInstanceLifecycleWorkerResult Map(ElsaInstanceDeletionResult result) => new(

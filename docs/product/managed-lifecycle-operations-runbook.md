@@ -206,6 +206,38 @@ boundary; it does not require a non-Delete retry observation or fresh confirmati
 An ordinary Delete acceptance/replay without the explicit recovery tuple still
 requires its confirmation context.
 
+For an uncertain Azure Delete, acceptance records an immutable authority snapshot
+on the existing recovery-request ledger. It binds the same provider operation,
+assignment, attempt, version, checkpoint, and plan/template/scope fingerprints to
+the accepted lifecycle attempt and committed instance version. The deletion worker
+must present its current lease when consuming that authority. An attempt number
+alone is not authorization, and ordinary provider polling never resumes an uncertain
+Delete automatically.
+
+Recovery runs in an independent provider scope so its database operations do not
+share an EF context with the lifecycle lease heartbeat. A repeated dispatch observes
+the exact claimed successor rather than creating another operation. If that successor
+becomes uncertain again, it requires a fresh explicit `Recover`; the original ledger
+entry cannot authorize another provider attempt. A successful operation status alone
+does not prove absence: the correlated assignment must be deleted, both inventories
+must contain only the retained resource-group name, and the operation must retain
+`CleanupVerified` with no endpoint.
+
+If the worker stops after persisting `CleanupVerified` but before recording success,
+explicit recovery may finish the same Delete without calling Azure again. This
+finalization-only path requires no retained attempted step, cleared inventories on
+both the operation and its exact correlated assignment, and no endpoint. The
+assignment may be `Deleted` after lease expiry or `Unknown` after explicit
+uncertainty; neither state alone grants recovery authority. Capture, claim, and
+executor assignment loading all enforce the same evidence predicate. Changed
+ownership, remaining resources, or invalid retained metadata fail closed.
+
+The recovery-authority column is nullable for existing ledger rows. Legacy absence
+of this snapshot does not grant Azure replay authority. The migration preserves
+append-only guards; SQLite rollback uses native column removal to keep those guards
+intact. Local migration and lifecycle tests are not a substitute for the managed-
+identity fault/recovery and confirmed-cleanup demonstration.
+
 These persistence rules do not activate an Azure observer or authorize blind replay.
 Provider recovery execution and live fault/recovery proof remain under
 [#271](https://github.com/valence-works/elsa-control/issues/271). An accepted observation

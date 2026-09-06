@@ -84,6 +84,17 @@ public interface IElsaInstanceProviderCleanupPort
         CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// Optional provider capability for an explicitly accepted Azure Delete recovery. Its absence
+/// must not turn an accepted provider recovery into an ordinary cleanup submission.
+/// </summary>
+public interface IElsaInstanceProviderDeleteRecoveryPort
+{
+    Task<ElsaInstanceCleanupObservation> RecoverDeleteAsync(
+        ElsaInstanceDeleteRecoveryRequest request,
+        CancellationToken cancellationToken = default);
+}
+
 public sealed record ElsaInstanceDeletionWorkItem(
     ElsaInstanceLifecycleOutboxMessage Outbox,
     ElsaInstanceOperation Operation,
@@ -93,6 +104,13 @@ public sealed record ElsaInstanceDeletionWorkItem(
     string LeaseToken,
     int LeaseVersion)
 {
+    /// <summary>
+    /// Identifies the immutable lifecycle recovery row when this Delete was explicitly
+    /// recovered. Ordinary and local deletions leave it null; providers must not infer a
+    /// recovery claim from the mutable operation alone.
+    /// </summary>
+    public Guid? RecoveryRequestId { get; init; }
+
     public void Validate()
     {
         if (Outbox.Action != ElsaInstanceOperationAction.Delete || Operation.Action != ElsaInstanceOperationAction.Delete ||
@@ -104,6 +122,32 @@ public sealed record ElsaInstanceDeletionWorkItem(
                 Instance.CurrentDeploymentReference is null && Instance.PlacementAssignmentReference is null &&
                 Instance.ElsaTenantReference is null))
             throw new InvalidOperationException("Deletion work item is invalid.");
+        ElsaInstanceLifecycleLease.Validate(LeaseToken, LeaseVersion);
+        if (RecoveryRequestId == Guid.Empty)
+            throw new InvalidOperationException("Deletion recovery identity is invalid.");
+        if (CanFinalizeLocally && RecoveryRequestId is not null)
+            throw new InvalidOperationException("Provider-backed deletion cannot finalize locally.");
+    }
+}
+
+/// <summary>
+/// Control-owned lease and immutable recovery identity passed only to a provider's dedicated
+/// Delete recovery port. The ordinary cleanup request deliberately remains provider-neutral.
+/// </summary>
+public sealed record ElsaInstanceDeleteRecoveryRequest(
+    ElsaInstanceCleanupRequest Cleanup,
+    Guid RecoveryRequestId,
+    int InstanceVersion,
+    string WorkerId,
+    string LeaseToken,
+    int LeaseVersion)
+{
+    public void Validate()
+    {
+        ArgumentNullException.ThrowIfNull(Cleanup);
+        Cleanup.Validate();
+        if (RecoveryRequestId == Guid.Empty || InstanceVersion < 1 || string.IsNullOrWhiteSpace(WorkerId))
+            throw new InvalidOperationException("Delete recovery identity is invalid.");
         ElsaInstanceLifecycleLease.Validate(LeaseToken, LeaseVersion);
     }
 }

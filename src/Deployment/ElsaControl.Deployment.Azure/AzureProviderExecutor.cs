@@ -82,6 +82,160 @@ public sealed class AzureProviderExecutor
         return ExecuteAsync(new AzureProviderExecutionRequest(operationRequest, plan), cancellationToken);
     }
 
+    /// <summary>
+    /// Claims and executes one explicitly accepted Azure Delete recovery. This entrypoint is
+    /// deliberately separate from <see cref="ExecuteAsync"/>: it never selects a latest
+    /// RecoveryRequired row or performs an automatic recovery claim.
+    /// </summary>
+    public async Task<AzureProviderExecutionResult?> RecoverDeleteAsync(
+        AzureProviderDeleteRecoveryClaimRequest request,
+        AzureWorkloadPlan plan,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(plan);
+        request.Validate();
+        if (_store is not IAzureProviderDeleteRecoveryStore recoveryStore)
+            return null;
+
+        // Resolve and validate the exact durable authority before attempting the claim. The
+        // caller's plan is only a transport value; the persisted operation remains authoritative
+        // and must be restored and compared before any state mutation or remote call.
+        var authority = await recoveryStore.GetDeleteRecoveryAuthorityAsync(
+            request.WorkspaceId,
+            request.RecoveryRequestId,
+            request.InstanceId,
+            request.LifecycleOperationId,
+            cancellationToken);
+        if (authority is null || authority.LifecycleAttemptNumber != request.LifecycleAttemptNumber ||
+            authority.InstanceVersion != request.InstanceVersion)
+            return null;
+
+        var retained = await _store.GetAsync(
+            request.WorkspaceId,
+            authority.ProviderOperationId,
+            cancellationToken);
+        if (retained is null || !IsDeleteRecoveryAuthorityBound(request, authority, retained) ||
+            !IsPlanForOperation(retained, plan))
+            return null;
+
+        if (retained.Status != AzureProviderOperationStatus.RecoveryRequired ||
+            retained.AttemptNumber != authority.ProviderAttemptNumber ||
+            retained.Version != authority.ProviderVersion ||
+            retained.CheckpointSequence != authority.ProviderCheckpointSequence)
+            return CreateDeleteRecoveryReplayResult(request, authority, retained);
+
+        var claimed = await recoveryStore.ClaimDeleteRecoveryAsync(
+            request,
+            _leaseDuration,
+            _timeProvider.GetUtcNow(),
+            cancellationToken);
+        if (claimed is null)
+        {
+            var current = await _store.GetAsync(
+                request.WorkspaceId,
+                authority.ProviderOperationId,
+                cancellationToken);
+            return CreateDeleteRecoveryReplayResult(request, authority, current);
+        }
+
+        // The store's claim is the durable linearization point. Treat a malformed result as
+        // unavailable rather than allowing an unbound operation to reach the runner.
+        if (!IsDeleteRecoveryAuthorityBound(request, authority, claimed) ||
+            !IsDeleteRecoverySuccessor(authority, claimed) ||
+            claimed.Status != AzureProviderOperationStatus.Running ||
+            !string.Equals(claimed.WorkerId, request.WorkerId, StringComparison.Ordinal) ||
+            !IsPlanForOperation(claimed, plan))
+            return null;
+
+        return await ExecuteClaimedAsync(CopySafePlan(plan), claimed, request.LeaseToken, cancellationToken);
+    }
+
+    private static bool IsPlanForOperation(AzureProviderOperation operation, AzureWorkloadPlan plan)
+    {
+        try
+        {
+            if (AzureProviderOperationService.TryRestorePlan(operation) is null)
+                return false;
+            ValidateExecutionRequest(new AzureProviderExecutionRequest(
+                AzureProviderOperationService.CreateOperationRequest(operation),
+                plan));
+            return true;
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsDeleteRecoveryAuthorityBound(
+        AzureProviderDeleteRecoveryClaimRequest request,
+        AzureProviderDeleteRecoveryAuthority authority,
+        AzureProviderOperation operation) =>
+        operation.Id == authority.ProviderOperationId &&
+        operation.WorkspaceId == request.WorkspaceId &&
+        operation.InstanceId == request.InstanceId &&
+        operation.OrganizationId is { } organizationId && organizationId != Guid.Empty &&
+        operation.Action == AzureProviderOperationAction.Delete &&
+        operation.LifecycleAction == ElsaInstanceOperationAction.Delete &&
+        operation.ProviderAssignmentId == authority.ProviderAssignmentId &&
+        AzureProviderOperationValidation.IsLifecycleDeleteIdempotencyKey(
+            operation.IdempotencyKey, request.LifecycleOperationId) &&
+        string.Equals(operation.OperationIdentity, authority.ProviderOperationIdentity, StringComparison.Ordinal) &&
+        string.Equals(operation.RequestHash, authority.ProviderRequestHash, StringComparison.Ordinal) &&
+        string.Equals(operation.TargetKey, authority.TargetKey, StringComparison.Ordinal) &&
+        string.Equals(operation.ProviderScopeFingerprint, authority.ProviderScopeFingerprint, StringComparison.Ordinal) &&
+        string.Equals(operation.PlanFingerprint, authority.ProviderPlanFingerprint, StringComparison.Ordinal) &&
+        string.Equals(operation.TemplateFingerprint, authority.ProviderTemplateFingerprint, StringComparison.Ordinal);
+
+    private static bool IsDeleteRecoverySuccessor(
+        AzureProviderDeleteRecoveryAuthority authority,
+        AzureProviderOperation operation) =>
+        authority.ProviderAttemptNumber < int.MaxValue &&
+        operation.AttemptNumber == authority.ProviderAttemptNumber + 1 &&
+        operation.Version > authority.ProviderVersion &&
+        operation.CheckpointSequence >= authority.ProviderCheckpointSequence &&
+        (operation.Phase == AzureProviderOperationPhase.CleanupSubmitted &&
+             operation.AttemptedStep == AzureProviderRunnerStep.Cleanup ||
+         operation.Phase == AzureProviderOperationPhase.CleanupVerified && operation.AttemptedStep is null) &&
+        operation.Status is AzureProviderOperationStatus.Running or AzureProviderOperationStatus.Succeeded or
+            AzureProviderOperationStatus.Failed or AzureProviderOperationStatus.Cancelled or
+            AzureProviderOperationStatus.RecoveryRequired;
+
+    private static AzureProviderExecutionResult? CreateDeleteRecoveryReplayResult(
+        AzureProviderDeleteRecoveryClaimRequest request,
+        AzureProviderDeleteRecoveryAuthority authority,
+        AzureProviderOperation? operation)
+    {
+        if (operation is null || !IsDeleteRecoveryAuthorityBound(request, authority, operation) ||
+            !IsDeleteRecoverySuccessor(authority, operation))
+            return null;
+
+        return operation.Status switch
+        {
+            AzureProviderOperationStatus.Running => Result(
+                operation,
+                AzureProviderExecutionOutcome.InProgress,
+                "azure.delete-recovery.in-progress",
+                "The accepted Azure delete recovery is already in progress."),
+            AzureProviderOperationStatus.Succeeded => Result(
+                operation,
+                AzureProviderExecutionOutcome.NoOp,
+                "azure.delete-recovery.completed",
+                "The accepted Azure delete recovery is already complete."),
+            AzureProviderOperationStatus.RecoveryRequired => Result(
+                operation,
+                AzureProviderExecutionOutcome.RecoveryRequired,
+                "azure.delete-recovery.recovery-required",
+                "The Azure delete recovery became uncertain and requires a fresh explicit recovery."),
+            _ => Result(
+                operation,
+                AzureProviderExecutionOutcome.Failed,
+                "azure.delete-recovery.terminal",
+                "The accepted Azure delete recovery reached a terminal state and requires a new lifecycle recovery.")
+        };
+    }
+
     public Task<AzureProviderExecutionResult> ExecuteAsync(
         AzureProviderExecutionRequest request,
         CancellationToken cancellationToken = default)
@@ -1177,7 +1331,10 @@ public sealed class AzureProviderExecutor
             assignment.InstanceId != operation.InstanceId ||
             !string.Equals(assignment.ProviderScopeFingerprint, operation.ProviderScopeFingerprint, StringComparison.Ordinal) ||
             !string.Equals(assignment.WorkloadName, operation.TargetKey, StringComparison.OrdinalIgnoreCase) ||
-            assignment.State == AzureProviderAssignmentState.Deleted ||
+            (assignment.State == AzureProviderAssignmentState.Deleted ||
+             operation.Action == AzureProviderOperationAction.Delete &&
+             operation.Phase == AzureProviderOperationPhase.CleanupVerified) &&
+            !AzureProviderDeleteRecoverySupport.IsVerifiedCleanupEligible(operation, assignment) ||
             operation.Action != AzureProviderOperationAction.Delete &&
             assignment.State is AzureProviderAssignmentState.Unknown or AzureProviderAssignmentState.Deleting)
             throw new InvalidOperationException("The provider assignment binding is invalid.");

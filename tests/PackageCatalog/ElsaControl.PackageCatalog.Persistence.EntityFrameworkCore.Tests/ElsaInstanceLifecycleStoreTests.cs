@@ -17,7 +17,7 @@ using Microsoft.EntityFrameworkCore.Migrations.Operations;
 
 namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests;
 
-public sealed class ElsaInstanceLifecycleStoreTests
+public sealed partial class ElsaInstanceLifecycleStoreTests
 {
     [Theory]
     [InlineData(1205)]

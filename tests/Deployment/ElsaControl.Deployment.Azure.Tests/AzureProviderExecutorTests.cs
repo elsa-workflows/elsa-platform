@@ -1053,6 +1053,82 @@ public sealed class AzureProviderExecutorTests
     }
 
     [Fact]
+    public async Task Accepted_delete_recovery_rejects_a_plan_mismatch_before_claim_or_runner_call()
+    {
+        var fixture = await CreateDeleteRecoveryFixtureAsync();
+        var runner = new RecordingRunner();
+        var executor = new AzureProviderExecutor(fixture.Store, runner, new StaticTimeProvider(Now));
+
+        var result = await executor.RecoverDeleteAsync(
+            fixture.Request,
+            fixture.Plan with { ImageDigest = new('f', 64) });
+
+        Assert.Null(result);
+        Assert.Equal(0, fixture.Store.DeleteRecoveryClaimCount);
+        Assert.Empty(runner.Steps);
+    }
+
+    [Fact]
+    public async Task Accepted_delete_recovery_replays_the_exact_running_successor_without_reclaiming()
+    {
+        var fixture = await CreateDeleteRecoveryFixtureAsync();
+        fixture.Store.Replace(fixture.Operation with
+        {
+            Status = AzureProviderOperationStatus.Running,
+            AttemptNumber = fixture.Authority.ProviderAttemptNumber + 1,
+            Version = fixture.Authority.ProviderVersion + 1,
+            WorkerId = "other-delete-worker",
+            LeaseExpiresAt = Now.AddMinutes(5),
+            HeartbeatAt = Now,
+            Phase = AzureProviderOperationPhase.CleanupSubmitted,
+            AttemptedStep = AzureProviderRunnerStep.Cleanup
+        });
+        var runner = new RecordingRunner();
+        var executor = new AzureProviderExecutor(fixture.Store, runner, new StaticTimeProvider(Now));
+
+        var result = await executor.RecoverDeleteAsync(fixture.Request, fixture.Plan);
+
+        Assert.NotNull(result);
+        Assert.Equal(AzureProviderExecutionOutcome.InProgress, result!.Outcome);
+        Assert.Equal(AzureProviderOperationStatus.Running, result.Operation.Status);
+        Assert.Equal(0, fixture.Store.DeleteRecoveryClaimCount);
+        Assert.Empty(runner.Steps);
+    }
+
+    [Fact]
+    public async Task Accepted_delete_recovery_rejects_invalid_retained_metadata_before_claim()
+    {
+        var fixture = await CreateDeleteRecoveryFixtureAsync();
+        fixture.Store.Replace(fixture.Operation with { PersistedMetadataInvalid = true });
+        var runner = new RecordingRunner();
+        var executor = new AzureProviderExecutor(fixture.Store, runner, new StaticTimeProvider(Now));
+
+        Assert.Null(await executor.RecoverDeleteAsync(fixture.Request, fixture.Plan));
+        Assert.Equal(0, fixture.Store.DeleteRecoveryClaimCount);
+        Assert.Empty(runner.Steps);
+    }
+
+    [Fact]
+    public async Task Accepted_delete_recovery_does_not_reclaim_a_new_uncertainty()
+    {
+        var fixture = await CreateDeleteRecoveryFixtureAsync();
+        fixture.Store.Replace(fixture.Operation with
+        {
+            AttemptNumber = fixture.Authority.ProviderAttemptNumber + 1,
+            Version = fixture.Authority.ProviderVersion + 2
+        });
+        var runner = new RecordingRunner();
+        var executor = new AzureProviderExecutor(fixture.Store, runner, new StaticTimeProvider(Now));
+
+        var result = await executor.RecoverDeleteAsync(fixture.Request, fixture.Plan);
+
+        Assert.NotNull(result);
+        Assert.Equal(AzureProviderExecutionOutcome.RecoveryRequired, result.Outcome);
+        Assert.Equal(0, fixture.Store.DeleteRecoveryClaimCount);
+        Assert.Empty(runner.Steps);
+    }
+
+    [Fact]
     public async Task Delete_without_owned_resources_absence_proof_fails_closed_even_without_a_snapshot()
     {
         var store = new FakeOperationStore();
@@ -1187,6 +1263,77 @@ public sealed class AzureProviderExecutorTests
         Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
         ElsaInstanceOperationAction.Reconcile,
         Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"));
+
+    private static async Task<DeleteRecoveryFixture> CreateDeleteRecoveryFixtureAsync()
+    {
+        var lifecycleOperationId = Guid.Parse("12121212-1212-1212-1212-121212121212");
+        var assignmentId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+        var instanceId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
+        var organizationId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        var plan = CreatePlan();
+        var store = new FakeOperationStore();
+        var request = AzureProviderOperationService.CreateOperationRequest(
+            WorkspaceId,
+            $"elsa-instance-operation:{lifecycleOperationId:D}:delete",
+            new('b', 64),
+            plan,
+            AzureProviderOperationAction.Delete,
+            new('a', 64),
+            organizationId,
+            instanceId,
+            ElsaInstanceOperationAction.Delete,
+            assignmentId);
+        var operation = await store.CreateOrGetAsync(request, Now);
+        operation = operation with
+        {
+            Status = AzureProviderOperationStatus.RecoveryRequired,
+            Phase = AzureProviderOperationPhase.CleanupSubmitted,
+            CheckpointSequence = 1,
+            AttemptNumber = 1,
+            Version = 2,
+            Resources = new AzureProviderResourceReferences(ResourceGroupName: "proof-rg"),
+            AttemptedStep = AzureProviderRunnerStep.Cleanup
+        };
+        store.Replace(operation);
+        var authority = new AzureProviderDeleteRecoveryAuthority(
+            operation.Id,
+            assignmentId,
+            LifecycleAttemptNumber: 2,
+            InstanceVersion: 1,
+            operation.AttemptNumber,
+            operation.Version,
+            operation.CheckpointSequence,
+            operation.OperationIdentity,
+            operation.RequestHash,
+            operation.TargetKey,
+            operation.ProviderScopeFingerprint!,
+            operation.PlanFingerprint,
+            operation.TemplateFingerprint);
+        authority.Validate();
+        store.DeleteRecoveryAuthority = authority;
+        return new(
+            store,
+            plan,
+            operation,
+            authority,
+            new(
+                Guid.Parse("13131313-1313-1313-1313-131313131313"),
+                WorkspaceId,
+                instanceId,
+                lifecycleOperationId,
+                2,
+                1,
+                "delete-worker",
+                "delete-lease-token",
+                1));
+    }
+
+    private sealed record DeleteRecoveryFixture(
+        FakeOperationStore Store,
+        AzureWorkloadPlan Plan,
+        AzureProviderOperation Operation,
+        AzureProviderDeleteRecoveryAuthority Authority,
+        AzureProviderDeleteRecoveryClaimRequest Request);
 
     private static AzureWorkloadPlan CreatePlan() => new(
         "workload-a",
@@ -1450,12 +1597,15 @@ public sealed class AzureProviderExecutorTests
 
     }
 
-    private sealed class FakeOperationStore : IAzureProviderOperationStore
+    private sealed class FakeOperationStore : IAzureProviderOperationStore, IAzureProviderDeleteRecoveryStore
     {
         private AzureProviderOperation? _operation;
         private readonly List<AzureProviderOperationTransition> _transitions = [];
         public int HeartbeatCount { get; private set; }
         public int RecoveryClaimCount { get; private set; }
+        public int DeleteRecoveryClaimCount { get; private set; }
+        public AzureProviderDeleteRecoveryAuthority? DeleteRecoveryAuthority { get; set; }
+        public AzureProviderOperation? DeleteRecoveryClaimResult { get; set; }
         public AzureProviderOperationStatus? RejectClaimWithStatus { get; init; }
         public AzureProviderOperationStatus? RejectCheckpointWithStatus { get; init; }
         public AzureProviderOperationStatus? RejectCreateWithStatus { get; init; }
@@ -1540,6 +1690,24 @@ public sealed class AzureProviderExecutorTests
 
         public Task<AzureProviderOperation?> GetAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_operation is { WorkspaceId: var id, Id: var operationIdValue } && id == workspaceId && operationIdValue == operationId ? _operation : null);
+
+        public Task<AzureProviderDeleteRecoveryAuthority?> GetDeleteRecoveryAuthorityAsync(
+            Guid workspaceId,
+            Guid recoveryRequestId,
+            Guid instanceId,
+            Guid lifecycleOperationId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(DeleteRecoveryAuthority);
+
+        public Task<AzureProviderOperation?> ClaimDeleteRecoveryAsync(
+            AzureProviderDeleteRecoveryClaimRequest request,
+            TimeSpan leaseDuration,
+            DateTimeOffset now,
+            CancellationToken cancellationToken = default)
+        {
+            DeleteRecoveryClaimCount++;
+            return Task.FromResult(DeleteRecoveryClaimResult);
+        }
 
         public Task<IReadOnlyList<AzureProviderOperation>> ListRunnableAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<AzureProviderOperation>>([]);

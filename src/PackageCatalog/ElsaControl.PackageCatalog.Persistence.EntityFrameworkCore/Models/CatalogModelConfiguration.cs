@@ -1204,6 +1204,7 @@ internal sealed class ElsaInstanceRecoveryRequestConfiguration : IEntityTypeConf
         builder.Property(x => x.RequestHash).HasMaxLength(64).IsRequired();
         builder.Property(x => x.RecoveryObservationReference).HasMaxLength(2048);
         builder.Property(x => x.RecoveryObservationDigest).HasMaxLength(71);
+        builder.Property(x => x.AzureDeleteRecoveryAuthority).HasMaxLength(4096);
         builder.Property(x => x.AcceptedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.HasIndex(x => new { x.WorkspaceId, x.IdempotencyScope, x.IdempotencyKey }).IsUnique();

@@ -264,6 +264,86 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Recovery_observer_keeps_an_absent_acr_assignment_in_progress_then_confirms_late_exact_visibility()
+    {
+        var process = new FakeCommandProcess();
+        var canonicalRole = "/subscriptions/22222222-2222-2222-2222-222222222222/providers/Microsoft.Authorization/roleDefinitions/7f951dda-4ed3-4680-a7ca-43fe172d538d";
+        var resources = _fixture.FoundationResources with
+        {
+            RegistryResourceId = _fixture.RegistryId,
+            AcrPullDeploymentId = _fixture.RegistryDeploymentId,
+            AcrPullRoleAssignmentId = null
+        };
+        process.Success(args => args.Contains("role") && args.Contains("assignment") && args.Contains("list"), "[]");
+
+        var first = await _fixture.Runner(process)
+            .ObserveAsync(CreateRecoveryRequest(resources, AzureProviderRunnerStep.AcrPull));
+
+        Assert.Equal(AzureProviderRecoveryObservationKind.InProgress, first.Kind);
+        Assert.Null(first.CompletedStep);
+
+        process.Success(args => args.Contains("role") && args.Contains("assignment") && args.Contains("list"),
+            "[{\"id\":\"" + _fixture.RegistryRoleAssignmentId + "\",\"scope\":\"" + _fixture.RegistryId +
+            "\",\"principalId\":\"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\",\"roleDefinitionId\":\"" + canonicalRole + "\"}]");
+        process.Success(args => args.Contains("deployment") && args.Contains("show"), "Succeeded");
+
+        var second = await _fixture.Runner(process)
+            .ObserveAsync(CreateRecoveryRequest(resources, AzureProviderRunnerStep.AcrPull));
+
+        Assert.Equal(AzureProviderRecoveryObservationKind.Confirmed, second.Kind);
+        Assert.Equal(AzureProviderRunnerStep.AcrPull, second.CompletedStep);
+        Assert.Equal(_fixture.RegistryRoleAssignmentId, second.Resources.AcrPullRoleAssignmentId);
+        Assert.Equal(3, process.Calls.Count);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("create") || call.Contains("delete") || call.Contains("set"));
+    }
+
+    [Theory]
+    [InlineData("Running")]
+    [InlineData("")]
+    public async Task Recovery_observer_keeps_a_nonterminal_foundation_deployment_in_progress_without_mutation(string deploymentState)
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("group") && args.Contains("exists"), "true");
+        process.Success(args => args.Contains("group") && args.Contains("show"), OwnedGroupTags);
+        process.Success(args => args.Contains("deployment") && args.Contains("show"), deploymentState);
+        var foundation = _fixture.FoundationResources with
+        {
+            FoundationDeploymentId = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.Resources/deployments/elsa-proof-aaaaaaaaaaaa-foundation"
+        };
+
+        var observation = await _fixture.Runner(process)
+            .ObserveAsync(CreateRecoveryRequest(foundation, AzureProviderRunnerStep.Foundation));
+
+        Assert.Equal(AzureProviderRecoveryObservationKind.InProgress, observation.Kind);
+        Assert.Null(observation.CompletedStep);
+        Assert.Equal(3, process.Calls.Count);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("create") || call.Contains("delete") || call.Contains("set"));
+    }
+
+    [Fact]
+    public async Task Recovery_observer_keeps_an_uncertain_foundation_deployment_in_progress_without_mutation()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("group") && args.Contains("exists"), "true");
+        process.Success(args => args.Contains("group") && args.Contains("show"), OwnedGroupTags);
+        process.Status(args => args.Contains("deployment") && args.Contains("show"),
+            AzureCommandProcessStatus.TerminationUncertain,
+            AzureCommandProcessFailureKind.TerminationUncertain);
+        var foundation = _fixture.FoundationResources with
+        {
+            FoundationDeploymentId = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.Resources/deployments/elsa-proof-aaaaaaaaaaaa-foundation"
+        };
+
+        var observation = await _fixture.Runner(process)
+            .ObserveAsync(CreateRecoveryRequest(foundation, AzureProviderRunnerStep.Foundation));
+
+        Assert.Equal(AzureProviderRecoveryObservationKind.InProgress, observation.Kind);
+        Assert.Null(observation.CompletedStep);
+        Assert.Equal(3, process.Calls.Count);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("create") || call.Contains("delete") || call.Contains("set"));
+    }
+
+    [Fact]
     public async Task Recovery_observer_rejects_a_deterministic_acr_assignment_with_an_extra_scoped_match()
     {
         var process = new FakeCommandProcess();
@@ -319,6 +399,33 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.Equal(AzureProviderRecoveryObservationKind.InProgress, observation.Kind);
         Assert.Null(observation.CompletedStep);
         Assert.Single(process.Calls);
+    }
+
+    [Fact]
+    public async Task Recovery_observer_confirms_late_exact_sql_firewall_visibility_without_replaying_creation_or_script()
+    {
+        var process = new FakeCommandProcess();
+        var resources = SqlFoundationResources();
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), "[]");
+
+        var first = await _fixture.Runner(process)
+            .ObserveAsync(CreateRecoveryRequest(resources, AzureProviderRunnerStep.SqlFirewallCreate,
+                AzureProviderOperationPhase.FoundationSubmitted));
+
+        Assert.Equal(AzureProviderRecoveryObservationKind.InProgress, first.Kind);
+        Assert.Null(first.CompletedStep);
+
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), ExactSqlBootstrapFirewall);
+
+        var second = await _fixture.Runner(process)
+            .ObserveAsync(CreateRecoveryRequest(resources, AzureProviderRunnerStep.SqlFirewallCreate,
+                AzureProviderOperationPhase.FoundationSubmitted));
+
+        Assert.Equal(AzureProviderRecoveryObservationKind.Confirmed, second.Kind);
+        Assert.Equal(AzureProviderRunnerStep.SqlFirewallCreate, second.CompletedStep);
+        Assert.Equal(resources, second.Resources);
+        Assert.Equal(2, process.Calls.Count);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("create") || call.Contains("delete") || call.Contains("-Q"));
     }
 
     [Fact]

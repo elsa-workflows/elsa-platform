@@ -19,7 +19,7 @@ using CatalogWorkspace = ElsaControl.PackageCatalog.Core.Accounts.Workspace;
 
 namespace ElsaControl.Api.Tests;
 
-public sealed class ElsaInstanceProviderReconciliationHostedServiceTests
+public sealed partial class ElsaInstanceProviderReconciliationHostedServiceTests
 {
     private static readonly Guid WorkspaceId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid OperationId = Guid.Parse("22222222-2222-2222-2222-222222222222");
