@@ -511,6 +511,102 @@ public sealed class AzureProviderRecoveryObservationPersistenceTests
     }
 
     [Theory]
+    [InlineData(AzureProviderOperationStatus.Running, ElsaInstanceProviderRecoveryOutcome.InProgress)]
+    [InlineData(AzureProviderOperationStatus.Succeeded, ElsaInstanceProviderRecoveryOutcome.Succeeded)]
+    public async Task Azure_adapter_replays_a_persisted_accepted_recovery_after_a_real_claim(
+        AzureProviderOperationStatus postClaimStatus,
+        ElsaInstanceProviderRecoveryOutcome expectedOutcome)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+
+        var fixture = await SeedProviderObservationAsync(db);
+        var observationStore = (IAzureProviderRecoveryObservationStore)fixture.OperationStore;
+        var binding = await AcceptRecoveryAsync(db, fixture, observationStore);
+        var claimed = Assert.IsType<AzureProviderOperation>(await fixture.OperationStore.ClaimRecoveryAsync(
+            fixture.Workspace.Id,
+            fixture.Operation.Id,
+            "adapter-replay-worker",
+            "adapter-replay-lease",
+            TimeSpan.FromMinutes(5),
+            fixture.Observation.ObservedAt.AddMinutes(3),
+            fixture.Operation.Version));
+        if (postClaimStatus == AzureProviderOperationStatus.Succeeded)
+        {
+            Assert.IsType<AzureProviderOperation>(await fixture.OperationStore.FinalizeAsync(
+                fixture.Workspace.Id,
+                fixture.Operation.Id,
+                "adapter-replay-lease",
+                postClaimStatus,
+                "azure.operation.succeeded",
+                fixture.Observation.ObservedAt.AddMinutes(3),
+                claimed.Version));
+        }
+
+        // Force the adapter and its EF store to rehydrate every accepted value from durable
+        // state. No mock recovery store, executor, or observer participates in this path.
+        db.ChangeTracker.Clear();
+        await using var adapterDb = CreateMigratedContext(connection);
+        var adapterStore = new AzureProviderOperationStore(adapterDb);
+        var provider = CreateProvider(fixture, adapterStore);
+        var result = await provider.RecoverAsync(CreateRecoveryRequest(fixture, binding));
+
+        Assert.Equal(expectedOutcome, result.Outcome);
+        Assert.Equal(
+            postClaimStatus == AzureProviderOperationStatus.Succeeded
+                ? "azure.operation.no-op"
+                : "azure.operation.in-progress",
+            result.Code);
+        var persisted = await adapterStore.GetAsync(fixture.Workspace.Id, fixture.Operation.Id);
+        Assert.Equal(postClaimStatus, persisted!.Status);
+        Assert.Equal(fixture.Observation.ProviderAttemptNumber + 1, persisted.AttemptNumber);
+    }
+
+    [Theory]
+    [InlineData("foreign")]
+    [InlineData("stale")]
+    public async Task Azure_adapter_rejects_foreign_or_stale_persisted_recovery_proof(string mismatch)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+
+        var fixture = await SeedProviderObservationAsync(db);
+        var observationStore = (IAzureProviderRecoveryObservationStore)fixture.OperationStore;
+        var binding = await AcceptRecoveryAsync(db, fixture, observationStore);
+        _ = Assert.IsType<AzureProviderOperation>(await fixture.OperationStore.ClaimRecoveryAsync(
+            fixture.Workspace.Id,
+            fixture.Operation.Id,
+            "adapter-negative-worker",
+            "adapter-negative-lease",
+            TimeSpan.FromMinutes(5),
+            fixture.Observation.ObservedAt.AddMinutes(3),
+            fixture.Operation.Version));
+        db.ChangeTracker.Clear();
+        await using var adapterDb = CreateMigratedContext(connection);
+        var adapterStore = new AzureProviderOperationStore(adapterDb);
+
+        var invalidBinding = mismatch == "foreign"
+            ? binding with { RecoveryRequestId = Guid.NewGuid() }
+            : binding with
+            {
+                ObservedLifecycleAttemptNumber = binding.ObservedLifecycleAttemptNumber + 1,
+                AcceptedLifecycleAttemptNumber = binding.AcceptedLifecycleAttemptNumber + 1
+            };
+        var result = await CreateProvider(fixture, adapterStore).RecoverAsync(
+            CreateRecoveryRequest(fixture, invalidBinding));
+
+        Assert.Equal(ElsaInstanceProviderRecoveryOutcome.Rejected, result.Outcome);
+        Assert.Equal("azure.recovery.observation-invalid", result.Code);
+        var persisted = await adapterStore.GetAsync(fixture.Workspace.Id, fixture.Operation.Id);
+        Assert.Equal(AzureProviderOperationStatus.Running, persisted!.Status);
+        Assert.Equal(fixture.Observation.ProviderAttemptNumber + 1, persisted.AttemptNumber);
+    }
+
+    [Theory]
     [InlineData(AzureProviderOperationStatus.Accepted)]
     [InlineData(AzureProviderOperationStatus.Queued)]
     [InlineData(AzureProviderOperationStatus.EntitlementHeld)]
@@ -739,6 +835,68 @@ public sealed class AzureProviderRecoveryObservationPersistenceTests
             recovery.RequestHash,
             receipt.Reference,
             receipt.Digest);
+    }
+
+    private static AzureElsaInstanceProvider CreateProvider(
+        ObservationFixture fixture,
+        AzureProviderOperationStore? operationStore = null)
+    {
+        operationStore ??= fixture.OperationStore;
+        return new(
+            new AzureProviderOperationService(operationStore),
+            operationStore,
+            operationStore,
+            options: new AzureElsaInstanceProviderOptions
+            {
+                Enabled = true,
+                TemplateFingerprint = fixture.Operation.TemplateFingerprint,
+                ProviderScopeFingerprint = fixture.Operation.ProviderScopeFingerprint,
+                SubscriptionId = fixture.Assignment.SubscriptionId,
+                ResourceGroupNamePrefix = "rg-recovery"
+            },
+            recoveryObservationStore: operationStore);
+    }
+
+    private static ElsaInstanceProviderRecoveryRequest CreateRecoveryRequest(
+        ObservationFixture fixture,
+        AzureProviderRecoveryObservationBinding binding)
+    {
+        var resolvedPlan = ResolvedElsaApplicationPlanSerialization.Deserialize(
+            fixture.ResolvedPlan.SerializedPlan);
+        var submission = new ElsaInstanceProviderSubmission(
+            binding.WorkspaceId,
+            binding.InstanceId,
+            binding.LifecycleOperationId,
+            binding.AcceptedLifecycleAttemptNumber,
+            ElsaDesiredLifecycle.Running,
+            resolvedPlan,
+            new(
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                Guid.NewGuid()),
+            fixture.Operation.Location,
+            binding.OrganizationId,
+            ElsaInstanceOperationAction.Reconcile,
+            fixture.Assignment.Id.ToString("D"));
+        var envelope = new ElsaInstanceProviderRecoveryEnvelope(
+            binding.RecoveryRequestId,
+            binding.OrganizationId,
+            binding.WorkspaceId,
+            binding.InstanceId,
+            binding.LifecycleOperationId,
+            binding.ObservedLifecycleAttemptNumber,
+            binding.ObservedInstanceVersion,
+            binding.AcceptedLifecycleAttemptNumber,
+            binding.AcceptedInstanceVersion,
+            binding.IdempotencyScope,
+            binding.IdempotencyKey,
+            binding.RequestHash,
+            binding.Reference,
+            binding.Digest);
+        return new(submission, envelope);
     }
 
     private sealed record ObservationFixture(
