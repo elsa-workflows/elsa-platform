@@ -289,6 +289,119 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Recovery_observer_confirms_an_exact_owned_sql_firewall_create_without_mutation()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), ExactSqlBootstrapFirewall);
+        var resources = SqlFoundationResources();
+
+        var observation = await _fixture.Runner(process)
+            .ObserveAsync(CreateRecoveryRequest(resources, AzureProviderRunnerStep.SqlFirewallCreate, AzureProviderOperationPhase.FoundationSubmitted));
+
+        Assert.Equal(AzureProviderRecoveryObservationKind.Confirmed, observation.Kind);
+        Assert.Equal(AzureProviderRunnerStep.SqlFirewallCreate, observation.CompletedStep);
+        Assert.Equal("azure.recovery.sql-firewall-create-observed", observation.Code);
+        Assert.Single(process.Calls);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("create") || call.Contains("delete") || call.Contains("-Q"));
+    }
+
+    [Theory]
+    [InlineData(AzureProviderOperationPhase.FoundationSubmitted)]
+    [InlineData(AzureProviderOperationPhase.SeedSecretsObserved)]
+    public async Task Recovery_observer_keeps_an_absent_uncertain_sql_firewall_create_in_progress(AzureProviderOperationPhase phase)
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), "[]");
+
+        var observation = await _fixture.Runner(process)
+            .ObserveAsync(CreateRecoveryRequest(SqlFoundationResources(), AzureProviderRunnerStep.SqlFirewallCreate, phase));
+
+        Assert.Equal(AzureProviderRecoveryObservationKind.InProgress, observation.Kind);
+        Assert.Null(observation.CompletedStep);
+        Assert.Single(process.Calls);
+    }
+
+    [Fact]
+    public async Task Recovery_observer_confirms_sql_script_only_after_exact_principal_and_roles_are_proven()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), ExactSqlBootstrapFirewall);
+        process.Success(args => args.Contains("-Q"), "complete");
+
+        var observation = await _fixture.Runner(process)
+            .ObserveAsync(CreateRecoveryRequest(SqlFoundationResources(), AzureProviderRunnerStep.SqlBootstrapScript, AzureProviderOperationPhase.SqlFirewallReady));
+
+        Assert.Equal(AzureProviderRecoveryObservationKind.Confirmed, observation.Kind);
+        Assert.Equal(AzureProviderRunnerStep.SqlBootstrapScript, observation.CompletedStep);
+        Assert.Equal("azure.recovery.sql-bootstrap-observed", observation.Code);
+        var query = Assert.Single(process.Calls, call => call.Contains("-Q"));
+        Assert.Contains("sys.database_principals", query);
+        Assert.Contains("db_datareader", query);
+        Assert.Contains("db_datawriter", query);
+        Assert.Contains("db_ddladmin", query);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("create") || call.Contains("delete"));
+    }
+
+    [Fact]
+    public async Task Recovery_observer_does_not_confirm_sql_script_for_an_incomplete_postcondition()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), ExactSqlBootstrapFirewall);
+        process.Success(args => args.Contains("-Q"), "incomplete");
+
+        var observation = await _fixture.Runner(process)
+            .ObserveAsync(CreateRecoveryRequest(SqlFoundationResources(), AzureProviderRunnerStep.SqlBootstrapScript, AzureProviderOperationPhase.SqlFirewallReady));
+
+        Assert.Equal(AzureProviderRecoveryObservationKind.InProgress, observation.Kind);
+        Assert.Null(observation.CompletedStep);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("create") || call.Contains("delete"));
+    }
+
+    [Fact]
+    public async Task Recovery_observer_confirms_sql_cleanup_from_exact_firewall_absence_without_sql_replay()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), "[]");
+
+        var observation = await _fixture.Runner(process)
+            .ObserveAsync(CreateRecoveryRequest(SqlFoundationResources(), AzureProviderRunnerStep.SqlFirewallCleanup, AzureProviderOperationPhase.SqlBootstrapReady));
+
+        Assert.Equal(AzureProviderRecoveryObservationKind.Confirmed, observation.Kind);
+        Assert.Equal(AzureProviderRunnerStep.SqlFirewallCleanup, observation.CompletedStep);
+        Assert.Equal("azure.recovery.sql-firewall-cleanup-observed", observation.Code);
+        Assert.Single(process.Calls);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("-Q") || call.Contains("delete") || call.Contains("create"));
+    }
+
+    [Fact]
+    public async Task Recovery_observer_allows_cleanup_replay_only_when_firewall_and_sql_postcondition_are_exact()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), ExactSqlBootstrapFirewall);
+        process.Success(args => args.Contains("-Q"), "complete");
+
+        var observation = await _fixture.Runner(process)
+            .ObserveAsync(CreateRecoveryRequest(SqlFoundationResources(), AzureProviderRunnerStep.SqlFirewallCleanup, AzureProviderOperationPhase.SqlBootstrapReady));
+
+        Assert.Equal(AzureProviderRecoveryObservationKind.Confirmed, observation.Kind);
+        Assert.Equal(AzureProviderRunnerStep.SqlBootstrapScript, observation.CompletedStep);
+        Assert.Equal("azure.recovery.sql-bootstrap-observed", observation.Code);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("create") || call.Contains("delete"));
+    }
+
+    [Fact]
+    public async Task Recovery_observer_rejects_legacy_sql_bootstrap_marker_without_remote_reads()
+    {
+        var process = new FakeCommandProcess();
+        var observation = await _fixture.Runner(process)
+            .ObserveAsync(CreateRecoveryRequest(SqlFoundationResources(), AzureProviderRunnerStep.SqlBootstrap, AzureProviderOperationPhase.FoundationSubmitted));
+
+        Assert.Equal(AzureProviderRecoveryObservationKind.Ambiguous, observation.Kind);
+        Assert.Null(observation.CompletedStep);
+        Assert.Empty(process.Calls);
+    }
+
+    [Fact]
     public async Task Rejects_a_durable_command_bound_to_a_different_provider_scope_before_execution()
     {
         var process = new FakeCommandProcess();
@@ -1179,6 +1292,95 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Sql_firewall_create_stage_does_not_start_script_or_cleanup()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), "[]");
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("create"));
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), ExactSqlBootstrapFirewall);
+
+        var result = await _fixture.Runner(process).RunAsync(
+            _fixture.Command(AzureProviderRunnerStep.SqlFirewallCreate, SqlFoundationResources()));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Completed, result.Outcome);
+        Assert.Equal(AzureProviderOperationPhase.SqlFirewallReady, result.Phase);
+        Assert.Equal(3, process.Calls.Count);
+        Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("create"));
+        Assert.DoesNotContain(process.Calls, call => call.Contains("-i") || call.Contains("-Q") || call.Contains("delete"));
+    }
+
+    [Fact]
+    public async Task Sql_firewall_create_stage_is_idempotent_for_an_exact_existing_rule()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), ExactSqlBootstrapFirewall);
+
+        var result = await _fixture.Runner(process).RunAsync(
+            _fixture.Command(AzureProviderRunnerStep.SqlFirewallCreate, SqlFoundationResources()));
+
+        Assert.Equal(AzureProviderRunnerOutcome.NoOp, result.Outcome);
+        Assert.Equal(AzureProviderOperationPhase.SqlFirewallReady, result.Phase);
+        Assert.Single(process.Calls);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("firewall-rule") && call.Contains("create"));
+    }
+
+    [Fact]
+    public async Task Sql_firewall_create_stage_refuses_a_conflicting_rule_without_mutation()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"),
+            "[{\"name\":\"elsa-bootstrap\",\"startIpAddress\":\"203.0.113.11\",\"endIpAddress\":\"203.0.113.11\"}]");
+
+        var result = await _fixture.Runner(process).RunAsync(
+            _fixture.Command(AzureProviderRunnerStep.SqlFirewallCreate, SqlFoundationResources()));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Failed, result.Outcome);
+        Assert.Equal("azure.sql.firewall-uncertain", result.Code);
+        Assert.Single(process.Calls);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("firewall-rule") && call.Contains("create"));
+    }
+
+    [Fact]
+    public async Task Sql_bootstrap_script_stage_does_not_create_or_cleanup_a_firewall()
+    {
+        var process = new FakeCommandProcess();
+        string? scriptPath = null;
+        process.Success(args => args.Contains("-?"), "Microsoft sqlcmd --authentication-method ActiveDirectoryDefault");
+        process.Success(args =>
+        {
+            scriptPath = args[Array.IndexOf(args, "-i") + 1];
+            return args.Contains("--authentication-method");
+        });
+
+        var result = await _fixture.Runner(process).RunAsync(
+            _fixture.Command(AzureProviderRunnerStep.SqlBootstrapScript, SqlFoundationResources()));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Completed, result.Outcome);
+        Assert.Equal(AzureProviderOperationPhase.SqlBootstrapReady, result.Phase);
+        Assert.NotNull(scriptPath);
+        Assert.False(File.Exists(scriptPath));
+        Assert.Single(process.Calls, call => call.Contains("-i"));
+        Assert.DoesNotContain(process.Calls, call => call.Contains("firewall-rule") || call.Contains("-Q"));
+    }
+
+    [Fact]
+    public async Task Sql_firewall_cleanup_stage_verifies_absence_and_does_not_run_script()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), ExactSqlBootstrapFirewall);
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("delete"));
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), "[]");
+
+        var result = await _fixture.Runner(process).RunAsync(
+            _fixture.Command(AzureProviderRunnerStep.SqlFirewallCleanup, SqlFoundationResources()));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Completed, result.Outcome);
+        Assert.Equal(AzureProviderOperationPhase.FoundationReady, result.Phase);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("-i") || call.Contains("-Q"));
+        Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("delete"));
+    }
+
+    [Fact]
     public async Task Foundation_reapply_restores_and_verifies_the_exact_sql_bootstrap_admin_before_deployment()
     {
         var process = new FakeCommandProcess();
@@ -1594,7 +1796,8 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
 
     private AzureProviderRecoveryRequest CreateRecoveryRequest(
         AzureProviderResourceReferences resources,
-        AzureProviderRunnerStep attemptedStep)
+        AzureProviderRunnerStep attemptedStep,
+        AzureProviderOperationPhase phase = AzureProviderOperationPhase.FoundationSubmitted)
     {
         var context = _fixture.Context;
         var operation = new AzureProviderOperation(
@@ -1617,7 +1820,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
             _fixture.Plan.ReleaseManifestDigest,
             _fixture.Plan.ReleaseManifestSignatureDigest,
             AzureProviderOperationStatus.RecoveryRequired,
-            AzureProviderOperationPhase.FoundationSubmitted,
+            phase,
             2,
             1,
             1,
@@ -1664,6 +1867,13 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
             DateTimeOffset.UtcNow);
         return new(operation, _fixture.Plan, assignment);
     }
+
+    private AzureProviderResourceReferences SqlFoundationResources() => _fixture.FoundationResources with
+    {
+        RegistryResourceId = _fixture.RegistryId,
+        AcrPullDeploymentId = _fixture.RegistryDeploymentId,
+        AcrPullRoleAssignmentId = _fixture.RegistryRoleAssignmentId
+    };
 
     private sealed class RunnerFixture : IDisposable
     {

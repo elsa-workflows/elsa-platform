@@ -82,6 +82,9 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner, IAzureProvi
                 AzureProviderRunnerStep.AcrPull => await RunAcrPullAsync(command, cancellationToken),
                 AzureProviderRunnerStep.SeedSecrets => await RunSeedSecretsAsync(command, cancellationToken),
                 AzureProviderRunnerStep.SqlBootstrap => await RunSqlBootstrapAsync(command, cancellationToken),
+                AzureProviderRunnerStep.SqlFirewallCreate => await RunSqlFirewallCreateAsync(command, cancellationToken),
+                AzureProviderRunnerStep.SqlBootstrapScript => await RunSqlBootstrapScriptAsync(command, cancellationToken),
+                AzureProviderRunnerStep.SqlFirewallCleanup => await RunSqlFirewallCleanupAsync(command, cancellationToken),
                 AzureProviderRunnerStep.Workload => await RunWorkloadAsync(command, cancellationToken),
                 AzureProviderRunnerStep.Health => await RunHealthAsync(command, cancellationToken),
                 AzureProviderRunnerStep.Promotion => await RunPromotionAsync(command, cancellationToken),
@@ -120,9 +123,10 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner, IAzureProvi
                 return RecoveryObservationInProgress(request);
 
             var operation = request.Operation;
+            var sqlRecoveryStep = GetSqlRecoveryStep(operation);
             var observesAcrPull = AzureProviderRecoveryObservationSupport.IsAcrPullEligible(operation);
             var observesFoundation = AzureProviderRecoveryObservationSupport.IsFoundationOnlyEligible(operation);
-            if (!observesAcrPull && !observesFoundation)
+            if (sqlRecoveryStep is null && !observesAcrPull && !observesFoundation)
                 return RecoveryObservationUnsupported(request);
 
             var assignment = request.Assignment;
@@ -130,7 +134,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner, IAzureProvi
                 return RecoveryObservationAmbiguous(request);
 
             var command = new AzureProviderRunnerCommand(
-                observesAcrPull ? AzureProviderRunnerStep.AcrPull : AzureProviderRunnerStep.Foundation,
+                sqlRecoveryStep ?? (observesAcrPull ? AzureProviderRunnerStep.AcrPull : AzureProviderRunnerStep.Foundation),
                 request.Plan,
                 operation.Resources,
                 operation.Resources.StableTrafficRevisionName,
@@ -151,9 +155,11 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner, IAzureProvi
                 assignment);
             ValidateCommand(command);
 
-            return observesAcrPull
-                ? await ObserveAcrPullAsync(request, command, cancellationToken)
-                : await ObserveFoundationAsync(request, command, cancellationToken);
+            return sqlRecoveryStep is not null
+                ? await ObserveSqlRecoveryAsync(request, command, sqlRecoveryStep.Value, cancellationToken)
+                : observesAcrPull
+                    ? await ObserveAcrPullAsync(request, command, cancellationToken)
+                    : await ObserveFoundationAsync(request, command, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -308,6 +314,156 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner, IAzureProvi
     private static AzureProviderRecoveryObservation RecoveryObservationUnsupported(AzureProviderRecoveryRequest request) =>
         new(AzureProviderRecoveryObservationKind.Ambiguous, null, request.Operation.Resources, AzureProviderHealth.Unknown,
             null, "azure.recovery.step-unsupported", "The retained Azure recovery step is not supported by this provider observer.");
+
+    private static AzureProviderRunnerStep? GetSqlRecoveryStep(AzureProviderOperation operation) =>
+        operation.AttemptedStep switch
+        {
+            AzureProviderRunnerStep.SqlFirewallCreate when AzureProviderRecoveryObservationSupport.IsSqlFirewallCreateEligible(operation) =>
+                AzureProviderRunnerStep.SqlFirewallCreate,
+            AzureProviderRunnerStep.SqlBootstrapScript when AzureProviderRecoveryObservationSupport.IsSqlBootstrapScriptEligible(operation) =>
+                AzureProviderRunnerStep.SqlBootstrapScript,
+            AzureProviderRunnerStep.SqlFirewallCleanup when AzureProviderRecoveryObservationSupport.IsSqlFirewallCleanupEligible(operation) =>
+                AzureProviderRunnerStep.SqlFirewallCleanup,
+            _ => null
+        };
+
+    private async Task<AzureProviderRecoveryObservation> ObserveSqlRecoveryAsync(
+        AzureProviderRecoveryRequest request,
+        AzureProviderRunnerCommand command,
+        AzureProviderRunnerStep attemptedStep,
+        CancellationToken cancellationToken)
+    {
+        var missing = RequireRegistry(command.Resources);
+        if (missing is not null || command.Resources.WorkloadIdentityClientId is null ||
+            command.Resources.SqlServerFqdn is null)
+            return RecoveryObservationAmbiguous(request);
+
+        // Observation must rebind the retained executable/template/scope authority before the
+        // first provider read. This method never creates or deletes a firewall rule.
+        EnsureMutationAuthority(command);
+        var firewall = await ObserveSqlFirewallAsync(command, cancellationToken);
+        switch (firewall)
+        {
+            case SqlFirewallObservationState.Uncertain:
+                return RecoveryObservationInProgress(request);
+            case SqlFirewallObservationState.Ambiguous:
+                return RecoveryObservationAmbiguous(request);
+            case SqlFirewallObservationState.Absent when attemptedStep == AzureProviderRunnerStep.SqlFirewallCreate:
+                // A create request may still be in flight after the caller lost its result. An
+                // absent read is therefore not proof that the remote create did not commit.
+                return RecoveryObservationInProgress(request);
+            case SqlFirewallObservationState.Absent when attemptedStep == AzureProviderRunnerStep.SqlFirewallCleanup:
+                return new(
+                    AzureProviderRecoveryObservationKind.Confirmed,
+                    AzureProviderRunnerStep.SqlFirewallCleanup,
+                    request.Operation.Resources,
+                    AzureProviderHealth.Unknown,
+                    null,
+                    "azure.recovery.sql-firewall-cleanup-observed",
+                    "The exact temporary SQL firewall rule was observed absent without mutation.");
+            case SqlFirewallObservationState.Absent:
+                // An uncertain SQL script cannot be replayed and the observer cannot reopen the
+                // firewall. Only an independently reachable SQL endpoint could prove completion.
+                return await ObserveSqlBootstrapPostconditionAsync(request, command, cancellationToken);
+            case SqlFirewallObservationState.ExactPresent:
+                break;
+            default:
+                return RecoveryObservationAmbiguous(request);
+        }
+
+        if (attemptedStep == AzureProviderRunnerStep.SqlFirewallCreate)
+            return new(
+                AzureProviderRecoveryObservationKind.Confirmed,
+                AzureProviderRunnerStep.SqlFirewallCreate,
+                request.Operation.Resources,
+                AzureProviderHealth.Unknown,
+                null,
+                "azure.recovery.sql-firewall-create-observed",
+                "The exact temporary SQL firewall rule was observed without mutation.");
+
+        return await ObserveSqlBootstrapPostconditionAsync(request, command, cancellationToken);
+    }
+
+    private async Task<AzureProviderRecoveryObservation> ObserveSqlBootstrapPostconditionAsync(
+        AzureProviderRecoveryRequest request,
+        AzureProviderRunnerCommand command,
+        CancellationToken cancellationToken)
+    {
+        // This path is intentionally read-only. When the firewall is absent it is useful only
+        // where the retained SQL endpoint remains reachable; it never creates a rule and
+        // therefore cannot turn a missing firewall into evidence that SQL bootstrap completed.
+        var result = await ExecuteSqlCmdAsync(
+            command,
+            ["-S", $"tcp:{command.Resources.SqlServerFqdn},1433", "-d", "Elsa", ..SqlAuthenticationArguments(),
+                "-b", "-h", "-1", "-W", "-Q", SqlBootstrapPostconditionQuery(command)],
+            ParseSqlBootstrapPostconditionAsync,
+            cancellationToken);
+        if (!result.Succeeded || result.Value is null)
+            return RecoveryObservationInProgress(request);
+
+        var postcondition = result.Value.Value;
+        return postcondition switch
+        {
+            SqlBootstrapPostconditionState.Complete => new(
+                AzureProviderRecoveryObservationKind.Confirmed,
+                AzureProviderRunnerStep.SqlBootstrapScript,
+                request.Operation.Resources,
+                AzureProviderHealth.Unknown,
+                null,
+                "azure.recovery.sql-bootstrap-observed",
+                "The exact SQL bootstrap principal and role postcondition was observed without mutation."),
+            SqlBootstrapPostconditionState.Conflict => RecoveryObservationAmbiguous(request),
+            _ => RecoveryObservationInProgress(request)
+        };
+    }
+
+    private async Task<SqlFirewallObservationState> ObserveSqlFirewallAsync(
+        AzureProviderRunnerCommand command,
+        CancellationToken cancellationToken)
+    {
+        var listed = await ExecuteAzAsync(
+            command,
+            ["sql", "server", "firewall-rule", "list", "--subscription", _scope.SubscriptionId,
+                "--resource-group", ResourceGroupName(command), "--server", SqlServerName(command),
+                "--output", "json", "--only-show-errors"],
+            ParseFirewallRulesAsync,
+            cancellationToken);
+        if (!listed.Succeeded || listed.Value is null)
+            return SqlFirewallObservationState.Uncertain;
+
+        return ClassifySqlFirewall(listed.Value.Value);
+    }
+
+    private SqlFirewallObservationState ClassifySqlFirewall(IReadOnlyList<FirewallRule> rules)
+    {
+        if (!AreWellFormedFirewallRules(rules))
+            return SqlFirewallObservationState.Ambiguous;
+
+        var ownedRules = rules.Where(rule =>
+            string.Equals(rule.Name, TemporaryFirewallRuleName, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (ownedRules.Length == 0)
+            return SqlFirewallObservationState.Absent;
+        if (ownedRules.Length != 1 ||
+            !string.Equals(ownedRules[0].StartIpAddress, _options.SqlBootstrapIp, StringComparison.Ordinal) ||
+            !string.Equals(ownedRules[0].EndIpAddress, _options.SqlBootstrapIp, StringComparison.Ordinal))
+            return SqlFirewallObservationState.Ambiguous;
+
+        return SqlFirewallObservationState.ExactPresent;
+    }
+
+    private static string SqlBootstrapPostconditionQuery(AzureProviderRunnerCommand command)
+    {
+        var principalName = SqlLiteral($"{command.Plan.WorkloadName}-identity");
+        var clientId = SqlLiteral(command.Resources.WorkloadIdentityClientId!);
+        return $"SET NOCOUNT ON; DECLARE @expectedName sysname = N'{principalName}'; DECLARE @expectedClientId uniqueidentifier = '{clientId}'; DECLARE @expectedSid varbinary(16) = CONVERT(varbinary(16), @expectedClientId); DECLARE @principalCount int = (SELECT COUNT(*) FROM sys.database_principals WHERE name = @expectedName); DECLARE @matchingPrincipal bit = CASE WHEN EXISTS (SELECT 1 FROM sys.database_principals WHERE name = @expectedName AND type = 'E' AND sid = @expectedSid) THEN 1 ELSE 0 END; DECLARE @matchingRoles int = (SELECT COUNT(DISTINCT role_principal.name) FROM sys.database_role_members drm JOIN sys.database_principals role_principal ON role_principal.principal_id = drm.role_principal_id JOIN sys.database_principals member_principal ON member_principal.principal_id = drm.member_principal_id WHERE member_principal.name = @expectedName AND role_principal.name IN (N'db_datareader', N'db_datawriter', N'db_ddladmin')); SELECT CASE WHEN @principalCount = 1 AND @matchingPrincipal = 1 AND @matchingRoles = 3 THEN N'complete' WHEN @principalCount > 0 THEN N'conflict' ELSE N'incomplete' END;";
+    }
+
+    private static string SqlLiteral(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Any(char.IsControl) || value.Contains('\'', StringComparison.Ordinal))
+            throw new ArgumentException("The SQL verification literal is unsafe.");
+        return value;
+    }
 
     private async Task<AzureProviderRunnerResult> RunFoundationAsync(
         AzureProviderRunnerCommand command,
@@ -689,6 +845,125 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner, IAzureProvi
             if (cleanupFailure is not null)
                 throw new InvalidOperationException("SQL bootstrap cleanup could not be proven complete.", cleanupFailure);
         }
+    }
+
+    private async Task<AzureProviderRunnerResult> RunSqlFirewallCreateAsync(
+        AzureProviderRunnerCommand command,
+        CancellationToken cancellationToken)
+    {
+        var missing = RequireRegistry(command.Resources);
+        if (missing is not null)
+            return Failed(command, AzureProviderOperationPhase.SqlFirewallReady, "azure.sql.foundation-missing", missing);
+
+        EnsureMutationAuthority(command);
+        var existing = await ObserveSqlFirewallAsync(command, cancellationToken);
+        if (existing == SqlFirewallObservationState.ExactPresent)
+            return Completed(command, AzureProviderOperationPhase.SqlFirewallReady, command.Resources, noOp: true);
+        if (existing != SqlFirewallObservationState.Absent)
+            return existing == SqlFirewallObservationState.Uncertain
+                ? Uncertain(command, AzureProviderOperationPhase.SqlFirewallReady, "azure.sql.firewall-uncertain", "The SQL firewall ownership boundary could not be proven before creation.")
+                : Failed(command, AzureProviderOperationPhase.SqlFirewallReady, "azure.sql.firewall-uncertain", "The SQL firewall ownership boundary is ambiguous; creation was refused.");
+
+        var firewall = await ExecuteAzAsync<AzureCommandNoOutput>(command,
+            ["sql", "server", "firewall-rule", "create", "--subscription", _scope.SubscriptionId,
+                "--resource-group", ResourceGroupName(command), "--server", SqlServerName(command),
+                "--name", TemporaryFirewallRuleName, "--start-ip-address", _options.SqlBootstrapIp,
+                "--end-ip-address", _options.SqlBootstrapIp, "--output", "none", "--only-show-errors"],
+            static _ => AzureCommandNoOutput.Instance,
+            cancellationToken);
+        if (!firewall.Succeeded)
+            return ProcessFailure(command, AzureProviderOperationPhase.SqlFirewallReady, firewall, command.Resources, mutation: true);
+
+        var created = await ObserveSqlFirewallAsync(command, cancellationToken);
+        if (created != SqlFirewallObservationState.ExactPresent)
+            return Uncertain(command, AzureProviderOperationPhase.SqlFirewallReady, "azure.sql.firewall-uncertain", "The SQL firewall create result could not be proven exact.");
+
+        return Completed(command, AzureProviderOperationPhase.SqlFirewallReady, command.Resources);
+    }
+
+    private async Task<AzureProviderRunnerResult> RunSqlBootstrapScriptAsync(
+        AzureProviderRunnerCommand command,
+        CancellationToken cancellationToken)
+    {
+        var missing = RequireRegistry(command.Resources);
+        if (missing is not null)
+            return Failed(command, AzureProviderOperationPhase.SqlBootstrapReady, "azure.sql.foundation-missing", missing);
+        if (command.Resources.SqlServerFqdn is null || command.Resources.WorkloadIdentityClientId is null)
+            return Failed(command, AzureProviderOperationPhase.SqlBootstrapReady, "azure.sql.output-missing", "The SQL bootstrap identities are incomplete.");
+
+        var compatibility = await ExecuteSqlCmdAsync<SafeValue<bool>>(command,
+            ["-?"],
+            output => new SafeValue<bool>(output.ToString().Contains("--authentication-method", StringComparison.Ordinal)),
+            cancellationToken);
+        if (!compatibility.Succeeded || compatibility.Value?.Value != true)
+            return ProcessFailure(command, AzureProviderOperationPhase.SqlBootstrapReady, compatibility, command.Resources, mutation: false);
+
+        var temporaryDirectory = string.Empty;
+        var scriptPath = string.Empty;
+        try
+        {
+            (temporaryDirectory, scriptPath) = await WriteSqlBootstrapFileAsync(
+                command.Resources.WorkloadIdentityClientId,
+                command.Plan.WorkloadName,
+                cancellationToken);
+
+            var bootstrapSucceeded = false;
+            AzureCommandProcessFailureKind? bootstrapFailureKind = null;
+            for (var attempt = 0; attempt < _options.ObservationAttempts; attempt++)
+            {
+                EnsureMutationAuthority(command);
+                var bootstrap = await ExecuteSqlCmdAsync<AzureCommandNoOutput>(command,
+                    ["-S", $"tcp:{command.Resources.SqlServerFqdn},1433", "-d", "Elsa", ..SqlAuthenticationArguments(),
+                        "-b", "-i", scriptPath],
+                    static _ => AzureCommandNoOutput.Instance,
+                    cancellationToken);
+                if (bootstrap.Succeeded)
+                {
+                    bootstrapSucceeded = true;
+                    break;
+                }
+
+                bootstrapFailureKind = bootstrap.FailureKind;
+                if (bootstrap.Status == AzureCommandProcessStatus.Cancelled || cancellationToken.IsCancellationRequested ||
+                    bootstrap.Status == AzureCommandProcessStatus.TerminationUncertain ||
+                    bootstrap.FailureKind == AzureCommandProcessFailureKind.TerminationUncertain)
+                    break;
+                if (attempt + 1 < _options.ObservationAttempts)
+                    await Task.Delay(_options.ObservationDelay, cancellationToken);
+            }
+
+            if (!bootstrapSucceeded)
+                return cancellationToken.IsCancellationRequested
+                    ? Uncertain(command, AzureProviderOperationPhase.SqlBootstrapReady, "azure.sql.cancelled", "SQL bootstrap was interrupted before completion.", processFailureKind: bootstrapFailureKind)
+                    : Uncertain(command, AzureProviderOperationPhase.SqlBootstrapReady, "azure.sql.bootstrap-uncertain", "SQL bootstrap did not produce a confirmed result.", processFailureKind: bootstrapFailureKind);
+
+            return Completed(command, AzureProviderOperationPhase.SqlBootstrapReady, command.Resources);
+        }
+        finally
+        {
+            try
+            {
+                DeleteTransientSecretFile(temporaryDirectory, scriptPath);
+            }
+            catch (Exception exception)
+            {
+                throw new InvalidOperationException("SQL bootstrap script cleanup could not be proven complete.", exception);
+            }
+        }
+    }
+
+    private async Task<AzureProviderRunnerResult> RunSqlFirewallCleanupAsync(
+        AzureProviderRunnerCommand command,
+        CancellationToken cancellationToken)
+    {
+        var missing = RequireRegistry(command.Resources);
+        if (missing is not null)
+            return Failed(command, AzureProviderOperationPhase.FoundationReady, "azure.sql.foundation-missing", missing);
+
+        if (!await DeleteAndVerifyFirewallAsync(command, SqlServerName(command), cancellationToken))
+            return Uncertain(command, AzureProviderOperationPhase.FoundationReady, "azure.sql.firewall-uncertain", "The temporary SQL firewall rule could not be proven absent.");
+
+        return Completed(command, AzureProviderOperationPhase.FoundationReady, command.Resources);
     }
 
     private async Task<AzureProviderRunnerResult> RunWorkloadAsync(
@@ -1247,15 +1522,10 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner, IAzureProvi
             return false;
 
         var rules = beforeDelete.Value.Value;
-        if (!AreWellFormedFirewallRules(rules))
-            return false;
-
-        var ownedRules = rules.Where(rule => string.Equals(rule.Name, TemporaryFirewallRuleName, StringComparison.OrdinalIgnoreCase)).ToArray();
-        if (ownedRules.Length == 0)
+        var state = ClassifySqlFirewall(rules);
+        if (state == SqlFirewallObservationState.Absent)
             return true;
-        if (ownedRules.Length != 1 ||
-            !string.Equals(ownedRules[0].StartIpAddress, _options.SqlBootstrapIp, StringComparison.Ordinal) ||
-            !string.Equals(ownedRules[0].EndIpAddress, _options.SqlBootstrapIp, StringComparison.Ordinal))
+        if (state != SqlFirewallObservationState.ExactPresent)
             return false;
 
         await ExecuteAzAsync<AzureCommandNoOutput>(command,
@@ -1270,8 +1540,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner, IAzureProvi
                     "--server", serverName, "--output", "json", "--only-show-errors"],
                 ParseFirewallRulesAsync,
                 cancellationToken);
-            if (list.Succeeded && list.Value is not null && AreWellFormedFirewallRules(list.Value.Value) &&
-                !list.Value.Value.Any(x => string.Equals(x.Name, TemporaryFirewallRuleName, StringComparison.OrdinalIgnoreCase)))
+            if (list.Succeeded && list.Value is not null &&
+                ClassifySqlFirewall(list.Value.Value) == SqlFirewallObservationState.Absent)
                 return true;
             if (attempt + 1 < _options.ObservationAttempts)
                 await Task.Delay(_options.ObservationDelay, cancellationToken);
@@ -1781,6 +2051,9 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner, IAzureProvi
     {
         AzureProviderRunnerStep.Foundation or AzureProviderRunnerStep.AcrPull or AzureProviderRunnerStep.SeedSecrets => AzureProviderOperationPhase.FoundationSubmitted,
         AzureProviderRunnerStep.SqlBootstrap => AzureProviderOperationPhase.FoundationReady,
+        AzureProviderRunnerStep.SqlFirewallCreate => AzureProviderOperationPhase.SqlFirewallReady,
+        AzureProviderRunnerStep.SqlBootstrapScript => AzureProviderOperationPhase.SqlBootstrapReady,
+        AzureProviderRunnerStep.SqlFirewallCleanup => AzureProviderOperationPhase.FoundationReady,
         AzureProviderRunnerStep.Workload => AzureProviderOperationPhase.WorkloadReady,
         AzureProviderRunnerStep.Health => AzureProviderOperationPhase.HealthVerified,
         AzureProviderRunnerStep.Promotion => AzureProviderOperationPhase.TrafficPromoted,
@@ -1992,6 +2265,14 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner, IAzureProvi
         new(ParseJson<List<AzureSecretSeedMetadata?>>(output).Value);
     private static SafeValue<int> ParseIntegerAsync(ReadOnlyMemory<char> output) =>
         int.TryParse(output.ToString().Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? new SafeValue<int>(value) : throw new FormatException();
+    private static SafeValue<SqlBootstrapPostconditionState> ParseSqlBootstrapPostconditionAsync(ReadOnlyMemory<char> output) =>
+        output.ToString().Trim() switch
+        {
+            "complete" => new(SqlBootstrapPostconditionState.Complete),
+            "incomplete" => new(SqlBootstrapPostconditionState.Incomplete),
+            "conflict" => new(SqlBootstrapPostconditionState.Conflict),
+            _ => throw new FormatException()
+        };
     private static bool AreWellFormedFirewallRules(IReadOnlyList<FirewallRule> rules) =>
         rules.All(rule => rule is not null && !string.IsNullOrWhiteSpace(rule.Name) &&
             System.Net.IPAddress.TryParse(rule.StartIpAddress, out var start) &&
@@ -2126,6 +2407,22 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner, IAzureProvi
         public string? StartIpAddress { get; set; }
         public string? EndIpAddress { get; set; }
     }
+    private enum SqlFirewallObservationState
+    {
+        Absent,
+        ExactPresent,
+        Ambiguous,
+        Uncertain
+    }
+
+    private enum SqlBootstrapPostconditionState
+    {
+        Complete,
+        Incomplete,
+        Conflict,
+        Uncertain
+    }
+
     private sealed class DeploymentRecord { public string? Name { get; set; } }
     private sealed class DeletedVault
     {
