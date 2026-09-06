@@ -173,12 +173,11 @@ public sealed record AzureProviderRecoveryObservationRecord(
         ResourceFingerprint,
         PostconditionFingerprint);
 
-    private static string RequireSafeToken(string? value, string name, int maxLength)
+    private static void RequireSafeToken(string? value, string name, int maxLength)
     {
         if (string.IsNullOrWhiteSpace(value) || value.Length > maxLength ||
-            value.Any(ch => !(char.IsAsciiLetterOrDigit(ch) || ch is '.' or '-' or '_' or ':')))
+            value.Any(ch => !(char.IsAsciiDigit(ch) || ch is >= 'a' and <= 'z' or '.' or '-' or '_' or ':')))
             throw new ArgumentException($"{name} is invalid.", name);
-        return value;
     }
 
     internal static void RequireFingerprint(string? value, string name)

@@ -8,6 +8,19 @@ namespace ElsaControl.Deployment.Azure.Tests;
 public sealed class AzureProviderRecoveryObservationContractTests
 {
     [Theory]
+    [InlineData("target")]
+    [InlineData("operation")]
+    public void Observation_rejects_noncanonical_identity_token_casing(string field)
+    {
+        var observation = CreateObservation();
+        observation = field == "target"
+            ? observation with { TargetKey = observation.TargetKey.ToUpperInvariant() }
+            : observation with { ProviderOperationIdentity = observation.ProviderOperationIdentity.ToUpperInvariant() };
+
+        Assert.Throws<ArgumentException>(observation.Validate);
+    }
+
+    [Theory]
     [InlineData("request")]
     [InlineData("scope")]
     [InlineData("plan")]
