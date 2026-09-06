@@ -9,6 +9,7 @@ namespace ElsaControl.Api.Tests;
 public sealed class ManagedIdentityProbeRetryPolicyTests
 {
     private const string Probe = "http://169.254.169.254/metadata/identity/getplatformmetadata?cred-api-version=2.0";
+    private const string RegionProbe = "http://169.254.169.254/metadata/instance/compute/location?api-version=2020-06-01&format=text";
 
     [Theory]
     [InlineData(false)]
@@ -25,6 +26,15 @@ public sealed class ManagedIdentityProbeRetryPolicyTests
     public async Task User_assigned_capability_probe_does_not_retry(bool async)
     {
         using var message = Message(Probe + "&client_id=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", 404);
+        Assert.False(await new ExposedPolicy().Evaluate(message, async));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Unsupported_region_discovery_probe_does_not_retry(bool async)
+    {
+        using var message = Message(RegionProbe, 404, metadata: "true");
         Assert.False(await new ExposedPolicy().Evaluate(message, async));
     }
 
@@ -46,6 +56,15 @@ public sealed class ManagedIdentityProbeRetryPolicyTests
     [InlineData("http://169.254.169.254/metadata/identity/other", "GET", 404, null)]
     [InlineData("https://example.test/metadata/identity/getplatformmetadata", "GET", 404, null)]
     [InlineData("http://169.254.169.254:8080/metadata/identity/getplatformmetadata", "GET", 404, null)]
+    [InlineData(RegionProbe, "GET", 410, "true")]
+    [InlineData(RegionProbe, "GET", 500, "true")]
+    [InlineData(RegionProbe, "POST", 404, "true")]
+    [InlineData(RegionProbe, "GET", 404, null)]
+    [InlineData(RegionProbe, "GET", 404, "false")]
+    [InlineData("http://169.254.169.254/metadata/instance/compute/location", "GET", 404, "true")]
+    [InlineData(RegionProbe + "&extra=true", "GET", 404, "true")]
+    [InlineData(RegionProbe + "#fragment", "GET", 404, "true")]
+    [InlineData("https://example.test/metadata/instance/compute/location?api-version=2020-06-01&format=text", "GET", 404, "true")]
     public async Task Unrelated_or_transient_response_preserves_classifier_retry(string uri, string method, int status, string? metadata)
     {
         using var message = Message(uri, status, method, metadata);

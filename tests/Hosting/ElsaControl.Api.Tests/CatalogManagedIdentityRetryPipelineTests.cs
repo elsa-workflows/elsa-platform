@@ -8,6 +8,25 @@ namespace ElsaControl.Api.Tests;
 
 public sealed class CatalogManagedIdentityRetryPipelineTests
 {
+    [Fact]
+    public async Task Actual_pipeline_does_not_retry_unsupported_region_discovery()
+    {
+        using var handler = new StatusHandler(404);
+        using var client = new HttpClient(handler);
+        var delay = new RecordingDelay();
+        var policy = new ManagedIdentityProbeRetryPolicy(delay);
+        var pipeline = new HttpPipeline(new HttpClientTransport(client), [policy], new ResponseClassifier());
+        using var message = pipeline.CreateMessage();
+        message.Request.Uri.Reset(new Uri(
+            "http://169.254.169.254/metadata/instance/compute/location?api-version=2020-06-01&format=text"));
+        message.Request.Headers.Add("Metadata", "true");
+
+        await pipeline.SendAsync(message, CancellationToken.None);
+
+        Assert.Equal(1, handler.Attempts);
+        Assert.Equal(0, delay.Attempts);
+    }
+
     [Theory]
     [InlineData(404, 6)]
     [InlineData(410, 6)]
