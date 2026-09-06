@@ -14,6 +14,7 @@ using ElsaControl.PackageCatalog.Abstractions.Compatibility;
 using ElsaControl.Api.Admin.Application;
 using ElsaControl.Api.Admin.Workspaces;
 using ElsaControl.Api.Authentication;
+using ElsaControl.Api.Catalog;
 using ElsaControl.Api.Admin.Packages;
 using ElsaControl.Api.Admin.Sources;
 using ElsaControl.Api.Admin.Sync;
@@ -245,7 +246,13 @@ builder.Services.AddScoped<ManagedElsaHandoffRedeemer>();
 builder.Services.AddScoped<ManagedElsaHandoffService>();
 builder.Services.AddHostedService<ManagedElsaHandoffConfigurationValidator>();
 builder.Services.AddSingleton<IWorkspacePermissionContribution, ManagedElsaInstancePermissionContribution>();
-builder.Services.AddCatalogDbContext(builder.Configuration);
+var catalogSqlManagedIdentityInterceptor =
+    CatalogSqlManagedIdentityConnectionInterceptor.TryCreate(builder.Configuration);
+builder.Services.AddCatalogDbContext(builder.Configuration, options =>
+{
+    if (catalogSqlManagedIdentityInterceptor is not null)
+        options.AddInterceptors(catalogSqlManagedIdentityInterceptor);
+});
 builder.Services.AddScoped<OrganizationBillingStore>();
 builder.Services.AddScoped<IOrganizationBillingStore>(services =>
     services.GetRequiredService<OrganizationBillingStore>());

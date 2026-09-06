@@ -87,7 +87,7 @@ resource webapp 'Microsoft.Web/sites@2025-03-01' = {
         }
         {
           name: 'ConnectionStrings__Catalog'
-          value: 'Server=tcp:${control_sql_outputs_sqlserverfqdn},1433;Encrypt=True;Authentication="Active Directory Default";Database=Catalog'
+          value: 'Server=tcp:${control_sql_outputs_sqlserverfqdn},1433;Encrypt=True;TrustServerCertificate=False;Authentication=Active Directory Managed Identity;User Id=${api_identity_outputs_clientid};Database=Catalog'
         }
         {
           name: 'CATALOG_HOST'

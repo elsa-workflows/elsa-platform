@@ -15,7 +15,8 @@ public static class CatalogDatabaseServiceCollectionExtensions
 
     public static IServiceCollection AddCatalogDbContext(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        Action<DbContextOptionsBuilder>? configureSqlServerOptions = null)
     {
         var databaseOptions = configuration
             .GetSection(CatalogDatabaseOptions.SectionName)
@@ -24,7 +25,7 @@ public static class CatalogDatabaseServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Catalog");
 
         services.AddDbContext<CatalogDbContext>(options =>
-            ConfigureProvider(options, databaseOptions, connectionString));
+            ConfigureProvider(options, databaseOptions, connectionString, configureSqlServerOptions));
 
         return services;
     }
@@ -32,7 +33,8 @@ public static class CatalogDatabaseServiceCollectionExtensions
     private static void ConfigureProvider(
         DbContextOptionsBuilder options,
         CatalogDatabaseOptions databaseOptions,
-        string? connectionString)
+        string? connectionString,
+        Action<DbContextOptionsBuilder>? configureSqlServerOptions)
     {
         switch (databaseOptions.Provider)
         {
@@ -61,6 +63,7 @@ public static class CatalogDatabaseServiceCollectionExtensions
                         databaseOptions.SqlServer.MaxRetryDelay,
                         errorNumbersToAdd: null);
                 });
+                configureSqlServerOptions?.Invoke(options);
                 break;
 
             default:
