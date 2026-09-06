@@ -20,12 +20,29 @@ public sealed class ManagedIdentityProbeRetryPolicyTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task User_assigned_capability_probe_does_not_retry(bool async)
+    {
+        using var message = Message(Probe + "&client_id=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", 404);
+        Assert.False(await new ExposedPolicy().Evaluate(message, async));
+    }
+
+    [Theory]
     [InlineData("http://169.254.169.254/metadata/identity/oauth2/token", "GET", 404, "true")]
     [InlineData(Probe, "GET", 429, null)]
     [InlineData(Probe, "GET", 500, null)]
     [InlineData(Probe, "GET", 503, null)]
     [InlineData(Probe, "POST", 404, null)]
     [InlineData(Probe, "GET", 404, "true")]
+    [InlineData("http://169.254.169.254/metadata/identity/getplatformmetadata", "GET", 404, null)]
+    [InlineData(Probe + "&extra=true", "GET", 404, null)]
+    [InlineData(Probe + "&client_id=", "GET", 404, null)]
+    [InlineData(Probe + "&client_id=00000000-0000-0000-0000-000000000000", "GET", 404, null)]
+    [InlineData(Probe + "&client_id=not-a-guid", "GET", 404, null)]
+    [InlineData(Probe + "&client_id=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee&extra=true", "GET", 404, null)]
+    [InlineData(Probe + "#fragment", "GET", 404, null)]
+    [InlineData("http://169.254.169.254/metadata/identity/getplatformmetadata?cred-api-version=3.0", "GET", 404, null)]
     [InlineData("http://169.254.169.254/metadata/identity/other", "GET", 404, null)]
     [InlineData("https://example.test/metadata/identity/getplatformmetadata", "GET", 404, null)]
     [InlineData("http://169.254.169.254:8080/metadata/identity/getplatformmetadata", "GET", 404, null)]

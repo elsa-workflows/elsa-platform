@@ -49,6 +49,7 @@ public sealed class CatalogManagedIdentityCredentialPipelineTests
             Assert.Equal(HttpMethod.Get, request.Method);
             if (uri.AbsolutePath == "/metadata/identity/getplatformmetadata")
             {
+                Assert.Equal("?cred-api-version=2.0&client_id=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", uri.Query);
                 Assert.False(request.Headers.Contains("Metadata"));
                 Stages.Add("capability");
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));

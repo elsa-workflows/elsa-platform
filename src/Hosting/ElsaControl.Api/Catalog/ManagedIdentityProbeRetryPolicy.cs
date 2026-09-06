@@ -40,7 +40,19 @@ internal class ManagedIdentityProbeRetryPolicy(DelayStrategy? delayStrategy = nu
 
         var uri = message.Request.Uri.ToUri();
         return uri.Scheme == "http" && uri.Host == "169.254.169.254" && uri.Port == 80 &&
-            uri.UserInfo.Length == 0 && uri.AbsolutePath == "/metadata/identity/getplatformmetadata";
+            uri.UserInfo.Length == 0 && uri.AbsolutePath == "/metadata/identity/getplatformmetadata" &&
+            IsCapabilityQuery(uri.Query) && uri.Fragment.Length == 0;
+    }
+
+    // MSAL appends client_id for our supported user-assigned identity mode; system-assigned
+    // probes carry only the version. Unknown versions, selectors and extra parameters retry normally.
+    private static bool IsCapabilityQuery(string query)
+    {
+        const string version = "?cred-api-version=2.0";
+        const string clientPrefix = version + "&client_id=";
+        return query == version ||
+            (query.StartsWith(clientPrefix, StringComparison.Ordinal) &&
+             Guid.TryParseExact(query.AsSpan(clientPrefix.Length), "D", out var clientId) && clientId != Guid.Empty);
     }
 
     private sealed class IdentityResponseClassifier : ResponseClassifier
