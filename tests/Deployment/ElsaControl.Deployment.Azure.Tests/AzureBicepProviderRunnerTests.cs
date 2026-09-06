@@ -1365,6 +1365,62 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Sql_bootstrap_script_stage_cleans_firewall_when_required_inputs_are_missing()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), ExactSqlBootstrapFirewall);
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("delete"));
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), "[]");
+        var resources = SqlFoundationResources() with { WorkloadIdentityClientId = null };
+
+        var result = await _fixture.Runner(process).RunAsync(
+            _fixture.Command(AzureProviderRunnerStep.SqlBootstrapScript, resources));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Failed, result.Outcome);
+        Assert.Equal("azure.sql.foundation-missing", result.Code);
+        Assert.Equal(3, process.Calls.Count);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("-?") || call.Contains("-i"));
+        Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("delete"));
+    }
+
+    [Fact]
+    public async Task Sql_bootstrap_script_stage_cleans_firewall_when_sqlcmd_compatibility_fails()
+    {
+        var process = new FakeCommandProcess();
+        process.Failure(args => args.Contains("-?"));
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), ExactSqlBootstrapFirewall);
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("delete"));
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), "[]");
+
+        var result = await _fixture.Runner(process).RunAsync(
+            _fixture.Command(AzureProviderRunnerStep.SqlBootstrapScript, SqlFoundationResources()));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Failed, result.Outcome);
+        Assert.Equal("azure.step.failed", result.Code);
+        Assert.Equal(4, process.Calls.Count);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("-i"));
+        Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("delete"));
+    }
+
+    [Fact]
+    public async Task Sql_bootstrap_script_stage_requires_uncertain_result_when_failed_preflight_cleanup_is_not_verified()
+    {
+        var process = new FakeCommandProcess();
+        process.Failure(args => args.Contains("-?"));
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), ExactSqlBootstrapFirewall);
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("delete"));
+        process.Failure(args => args.Contains("firewall-rule") && args.Contains("list"));
+
+        var result = await _fixture.Runner(process).RunAsync(
+            _fixture.Command(AzureProviderRunnerStep.SqlBootstrapScript, SqlFoundationResources()));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
+        Assert.Equal("azure.runner.uncertain", result.Code);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("-i"));
+        Assert.Contains(process.Calls, call => call.Contains("firewall-rule") && call.Contains("delete"));
+    }
+
+    [Fact]
     public async Task Sql_firewall_cleanup_stage_verifies_absence_and_does_not_run_script()
     {
         var process = new FakeCommandProcess();

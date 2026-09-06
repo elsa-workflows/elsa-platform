@@ -885,23 +885,24 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner, IAzureProvi
         AzureProviderRunnerCommand command,
         CancellationToken cancellationToken)
     {
-        var missing = RequireRegistry(command.Resources);
-        if (missing is not null)
-            return Failed(command, AzureProviderOperationPhase.SqlBootstrapReady, "azure.sql.foundation-missing", missing);
-        if (command.Resources.SqlServerFqdn is null || command.Resources.WorkloadIdentityClientId is null)
-            return Failed(command, AzureProviderOperationPhase.SqlBootstrapReady, "azure.sql.output-missing", "The SQL bootstrap identities are incomplete.");
-
-        var compatibility = await ExecuteSqlCmdAsync<SafeValue<bool>>(command,
-            ["-?"],
-            output => new SafeValue<bool>(output.ToString().Contains("--authentication-method", StringComparison.Ordinal)),
-            cancellationToken);
-        if (!compatibility.Succeeded || compatibility.Value?.Value != true)
-            return ProcessFailure(command, AzureProviderOperationPhase.SqlBootstrapReady, compatibility, command.Resources, mutation: false);
-
         var temporaryDirectory = string.Empty;
         var scriptPath = string.Empty;
+        var scriptSucceeded = false;
         try
         {
+            var missing = RequireRegistry(command.Resources);
+            if (missing is not null)
+                return Failed(command, AzureProviderOperationPhase.SqlBootstrapReady, "azure.sql.foundation-missing", missing);
+            if (command.Resources.SqlServerFqdn is null || command.Resources.WorkloadIdentityClientId is null)
+                return Failed(command, AzureProviderOperationPhase.SqlBootstrapReady, "azure.sql.output-missing", "The SQL bootstrap identities are incomplete.");
+
+            var compatibility = await ExecuteSqlCmdAsync<SafeValue<bool>>(command,
+                ["-?"],
+                output => new SafeValue<bool>(output.ToString().Contains("--authentication-method", StringComparison.Ordinal)),
+                cancellationToken);
+            if (!compatibility.Succeeded || compatibility.Value?.Value != true)
+                return ProcessFailure(command, AzureProviderOperationPhase.SqlBootstrapReady, compatibility, command.Resources, mutation: false);
+
             (temporaryDirectory, scriptPath) = await WriteSqlBootstrapFileAsync(
                 command.Resources.WorkloadIdentityClientId,
                 command.Plan.WorkloadName,
@@ -937,18 +938,34 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner, IAzureProvi
                     ? Uncertain(command, AzureProviderOperationPhase.SqlBootstrapReady, "azure.sql.cancelled", "SQL bootstrap was interrupted before completion.", processFailureKind: bootstrapFailureKind)
                     : Uncertain(command, AzureProviderOperationPhase.SqlBootstrapReady, "azure.sql.bootstrap-uncertain", "SQL bootstrap did not produce a confirmed result.", processFailureKind: bootstrapFailureKind);
 
+            scriptSucceeded = true;
             return Completed(command, AzureProviderOperationPhase.SqlBootstrapReady, command.Resources);
         }
         finally
         {
+            Exception? cleanupFailure = null;
             try
             {
                 DeleteTransientSecretFile(temporaryDirectory, scriptPath);
             }
             catch (Exception exception)
             {
-                throw new InvalidOperationException("SQL bootstrap script cleanup could not be proven complete.", exception);
+                cleanupFailure = exception;
             }
+            if (!scriptSucceeded)
+            {
+                try
+                {
+                    if (!await DeleteAndVerifyFirewallAsync(command, SqlServerName(command), CancellationToken.None))
+                        throw new InvalidOperationException("The temporary SQL firewall rule could not be proven absent.");
+                }
+                catch (Exception exception)
+                {
+                    cleanupFailure ??= exception;
+                }
+            }
+            if (cleanupFailure is not null)
+                throw new InvalidOperationException("SQL bootstrap cleanup could not be proven complete.", cleanupFailure);
         }
     }
 
