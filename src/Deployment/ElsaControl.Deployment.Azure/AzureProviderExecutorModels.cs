@@ -130,7 +130,7 @@ public sealed record AzureProviderRecoveryObservation(
     public void Validate()
     {
         if (!Enum.IsDefined(Kind) || !Enum.IsDefined(Health) || Resources is null)
-            throw new ArgumentException("The Azure recovery observation is invalid.", nameof(Resources));
+            throw new ArgumentException("The Azure recovery observation is invalid.");
         AzureProviderOperationValidation.ValidateCode(Code);
         AzureProviderOperationValidation.ValidateMessage(Message);
         AzureProviderOperationValidation.ValidateReferences(Resources);
@@ -170,6 +170,15 @@ public sealed record AzureProviderRecoveryRequest(
             !string.Equals(Operation.TargetKey, Plan.WorkloadName, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(Operation.PlanFingerprint, Plan.Fingerprint, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("The Azure recovery operation is not bound to its retained plan.");
+        if (Assignment is { } assignment &&
+            (assignment.Id != Operation.ProviderAssignmentId ||
+             assignment.OrganizationId != Operation.OrganizationId ||
+             assignment.WorkspaceId != Operation.WorkspaceId ||
+             assignment.InstanceId != Operation.InstanceId ||
+             assignment.LastOperationId != Operation.Id ||
+             !string.Equals(assignment.WorkloadName, Operation.TargetKey, StringComparison.OrdinalIgnoreCase) ||
+             !string.Equals(assignment.ProviderScopeFingerprint, Operation.ProviderScopeFingerprint, StringComparison.Ordinal)))
+            throw new InvalidOperationException("The Azure recovery assignment is not bound to its retained operation.");
         AzureProviderOperationValidation.ValidateReferences(Operation.Resources);
     }
 }

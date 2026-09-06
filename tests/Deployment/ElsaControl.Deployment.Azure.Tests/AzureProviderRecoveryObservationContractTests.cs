@@ -137,6 +137,58 @@ public sealed class AzureProviderRecoveryObservationContractTests
         Assert.Throws<ArgumentException>(() => confirmedWithoutStep.Validate());
         Assert.Throws<ArgumentException>(() => uncertainWithStep.Validate());
         Assert.Throws<ArgumentException>(() => healthyUncertainty.Validate());
+
+        var invalidKind = confirmed with { Kind = (AzureProviderRecoveryObservationKind)999 };
+        var exception = Assert.Throws<ArgumentException>(invalidKind.Validate);
+        Assert.Equal("The Azure recovery observation is invalid.", exception.Message);
+        Assert.Null(exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData("id")]
+    [InlineData("organization")]
+    [InlineData("workspace")]
+    [InlineData("instance")]
+    [InlineData("last-operation")]
+    [InlineData("target")]
+    [InlineData("scope")]
+    public void Recovery_request_rejects_assignment_tuple_mismatch_before_observation(string mismatch)
+    {
+        var request = CreateRecoveryRequest();
+        var assignment = request.Assignment!;
+        assignment = mismatch switch
+        {
+            "id" => assignment with { Id = Guid.Parse("77777777-7777-7777-7777-777777777777") },
+            "organization" => assignment with { OrganizationId = Guid.Parse("88888888-8888-8888-8888-888888888888") },
+            "workspace" => assignment with { WorkspaceId = Guid.Parse("99999999-9999-9999-9999-999999999999") },
+            "instance" => assignment with { InstanceId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa") },
+            "last-operation" => assignment with { LastOperationId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb") },
+            "target" => assignment with { WorkloadName = "another-instance" },
+            "scope" => assignment with { ProviderScopeFingerprint = new string('c', 64) },
+            _ => throw new InvalidOperationException()
+        };
+
+        var invalidRequest = request with { Assignment = assignment };
+        Assert.Throws<InvalidOperationException>(invalidRequest.Validate);
+    }
+
+    [Fact]
+    public void Recovery_request_keeps_original_elsa_lifecycle_action_distinct_from_provider_action()
+    {
+        var request = CreateRecoveryRequest();
+
+        request.Validate();
+        Assert.Equal(AzureProviderOperationAction.Reconcile, request.Operation.Action);
+        Assert.Equal(ElsaInstanceOperationAction.Create, request.Operation.LifecycleAction);
+    }
+
+    [Fact]
+    public void Recovery_request_keeps_nullable_assignment_for_observer_fail_closed_validation()
+    {
+        var request = CreateRecoveryRequest() with { Assignment = null };
+
+        request.Validate();
+        Assert.Null(request.Assignment);
     }
 
     [Fact]
@@ -246,5 +298,91 @@ public sealed class AzureProviderRecoveryObservationContractTests
             ElsaInstanceProviderRecoveryObservationReference.Create(
                 Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"), digest),
             digest);
+    }
+
+    private static AzureProviderRecoveryRequest CreateRecoveryRequest()
+    {
+        var organizationId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var workspaceId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        var instanceId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        var operationId = Guid.Parse("44444444-4444-4444-4444-444444444444");
+        var assignmentId = Guid.Parse("66666666-6666-6666-6666-666666666666");
+        var planFingerprint = new string('d', 64);
+        var scopeFingerprint = new string('b', 64);
+        var plan = new AzureWorkloadPlan(
+            "elsa-instance",
+            "westeurope",
+            "3.8.0",
+            "3.8",
+            "combined",
+            "Dedicated",
+            "valenceruntimeimages.azurecr.io/runtime-combined",
+            new string('e', 64),
+            "oci://valenceruntimeimages.azurecr.io/runtime-manifest@sha256:" + new string('f', 64),
+            "sha256:" + new string('f', 64),
+            "oci://valenceruntimeimages.azurecr.io/runtime-signature@sha256:" + new string('0', 64),
+            "sha256:" + new string('0', 64),
+            new Dictionary<string, string>(),
+            planFingerprint);
+        var operation = new AzureProviderOperation(
+            operationId,
+            workspaceId,
+            plan.WorkloadName,
+            AzureProviderOperationAction.Reconcile,
+            "elsa-instance-operation:" + operationId.ToString("D"),
+            new string('a', 64),
+            "operation-identity-1",
+            planFingerprint,
+            new string('1', 64),
+            "3.8.0",
+            "3.8",
+            "combined",
+            "Dedicated",
+            "westeurope",
+            plan.ImageRepository,
+            plan.ImageDigest,
+            plan.ReleaseManifestDigest,
+            plan.ReleaseManifestSignatureDigest,
+            AzureProviderOperationStatus.RecoveryRequired,
+            AzureProviderOperationPhase.FoundationSubmitted,
+            3,
+            1,
+            7,
+            new(),
+            null,
+            AzureProviderHealth.Unknown,
+            [],
+            "worker-1",
+            null,
+            null,
+            DateTimeOffset.Parse("2026-09-06T08:00:00Z"),
+            DateTimeOffset.Parse("2026-09-06T08:00:00Z"),
+            null,
+            ProviderScopeFingerprint: scopeFingerprint,
+            OrganizationId: organizationId,
+            InstanceId: instanceId,
+            LifecycleAction: ElsaInstanceOperationAction.Create,
+            ProviderAssignmentId: assignmentId,
+            AttemptedStep: AzureProviderRunnerStep.Foundation);
+        var assignment = new AzureProviderResourceAssignment(
+            assignmentId,
+            workspaceId,
+            organizationId,
+            instanceId,
+            scopeFingerprint,
+            AzureProviderResourceAssignmentNaming.CurrentVersion,
+            "subscription-1",
+            "elsa-instance-rg",
+            plan.WorkloadName,
+            new string('2', 64),
+            "westeurope",
+            AzureProviderAssignmentState.Unknown,
+            new(),
+            operationId,
+            2,
+            DateTimeOffset.Parse("2026-09-06T08:00:00Z"),
+            DateTimeOffset.Parse("2026-09-06T08:00:00Z"));
+
+        return new(operation, plan, assignment);
     }
 }
