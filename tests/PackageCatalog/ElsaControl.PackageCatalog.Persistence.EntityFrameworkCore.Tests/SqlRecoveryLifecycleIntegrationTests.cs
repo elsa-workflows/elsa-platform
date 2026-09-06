@@ -8,18 +8,14 @@ using ElsaControl.PackageCatalog.Core.Accounts;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Xunit.Sdk;
 
 namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests;
 
 public sealed partial class AzureProviderRecoveryObservationPersistenceTests
 {
-    [Fact]
+    [PosixSqlProofFact]
     public async Task Sql_script_observation_rehydrates_through_lifecycle_and_provider_without_reexecution_or_early_success()
     {
-        if (OperatingSystem.IsWindows())
-            throw SkipException.ForSkip("The fake Azure command process uses POSIX executable scripts.");
-
         var root = Path.Combine(Path.GetTempPath(), $"elsa-sql-recovery-proof-{Guid.NewGuid():N}");
         Directory.CreateDirectory(root);
         try
@@ -392,6 +388,15 @@ exit 93
                 UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
                 UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
                 UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+        }
+    }
+
+    private sealed class PosixSqlProofFactAttribute : FactAttribute
+    {
+        public PosixSqlProofFactAttribute()
+        {
+            if (OperatingSystem.IsWindows())
+                Skip = "The fake Azure command process uses POSIX executable scripts.";
         }
     }
 }
