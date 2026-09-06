@@ -331,6 +331,10 @@ public sealed partial class ElsaInstanceProviderReconciliationHostedServiceTests
             // Re-open both stores in a third context. Assertions against restartDb would only
             // prove the tracked in-memory view and could miss an uncommitted hand-off.
             await using var finalDb = CreateMigratedContext(connection);
+            var retainedProviderIds = await finalDb.Database.SqlQuery<Guid>(
+                $"SELECT Id AS Value FROM AzureProviderOperations WHERE WorkspaceId = {workspace.Id} AND InstanceId = {instanceId}")
+                .ToArrayAsync();
+            Assert.Equal(providerOperation.Id, Assert.Single(retainedProviderIds));
             var finalProviderStore = new AzureProviderOperationStore(finalDb);
             var persistedProvider = await finalProviderStore.GetLatestReconcileAsync(
                 workspace.Id,
