@@ -310,6 +310,24 @@ public sealed class AzureProviderOperationValidationTests
             new Dictionary<string, string> { [name] = reference }));
     }
 
+    [Theory]
+    [InlineData("database:connectionstring", AzureManagedSecretReferences.SqlConnection, true)]
+    [InlineData("identity:signingkey", AzureManagedSecretReferences.IdentitySigningKey, true)]
+    [InlineData("admin:password", AzureManagedSecretReferences.AdminPassword, true)]
+    [InlineData("database:connectionstring", AzureManagedSecretReferences.IdentitySigningKey, false)]
+    [InlineData("identity:signingkey", AzureManagedSecretReferences.AdminPassword, false)]
+    [InlineData("admin:password", AzureManagedSecretReferences.SqlConnection, false)]
+    [InlineData("IDENTITY:SIGNINGKEY", AzureManagedSecretReferences.IdentitySigningKey, false)]
+    public void Provider_owned_secret_references_are_bound_to_exact_slots(
+        string name,
+        string reference,
+        bool expected)
+    {
+        Assert.Equal(expected, AzureProviderOperationValidation.IsSecretReferenceBoundToKey(name, reference));
+        Assert.Equal(expected, AzureProviderOperationValidation.IsSafeSecretReferences(
+            new Dictionary<string, string> { [name] = reference }));
+    }
+
     [Fact]
     public void Secret_reference_binding_rejects_a_null_name_without_throwing()
     {

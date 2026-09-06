@@ -55,12 +55,19 @@ does not validate its deployment-specific inputs.
 It also requires
 `DataProtection:KeysPath` on durable storage, all lifecycle and
 provider workers enabled, the v1 instance-provider scope, pinned CLI/sqlcmd/curl/template paths,
-and two versioned source Key Vault references plus the provider-owned SQL sentinel. The database
-slot uses the provider-owned `secret://azure-managed/sql-connection` sentinel; signing-key and
-admin-password slots remain versioned Key Vault locators. Their source secret names must be
-`identity-signing-key` and `admin-password`, respectively, matching the governed target names.
-For example, `identity-signingkey` is not an accepted alias for `identity-signing-key`.
-The production configuration preflight rejects a name mismatch before provisioning.
+and the three provider-owned secret instructions. The database slot uses
+`secret://azure-managed/sql-connection`; signing-key and
+admin-password use `secret://azure-managed/identity-signing-key` and
+`secret://azure-managed/admin-password`. The managed resolver generates those credentials
+per authorized instance and seeds only that instance's provider-owned target vault. They are
+lifetime-stable for the assignment; rotation, restore, or rebind does not regenerate or
+overwrite existing or ambiguous target metadata and fails closed until a dedicated operation
+exists. External versioned Key Vault references remain supported for other slots,
+including the pre-existing external SQL-reference path, but production composition
+rejects external admin/signing credential locators and raw values. This production
+proof uses the passwordless SQL instruction rather than an external SQL source.
+The provider-owned instructions bind to the governed target names. The production
+configuration uses exact provider-owned credential instructions.
 Raw secret values are not accepted.
 HTTPS configuration locators are normalized to canonical `secret://` plan references.
 Set `RuntimeBuilder:InstancePlans:DefaultEgress=unrestricted` explicitly for this Azure
@@ -83,7 +90,7 @@ attached to the host. It needs:
 - subscription-level permission to create/delete the generated v1 sibling resource group and
   mutate its descendants;
 - the governed ACR resource-group permissions, including the exact `AcrPull` role assignment;
-- read access to the source Key Vault's two versioned secrets;
+- no source Key Vault access is required for the provider-owned credential slots;
 - SQL Entra bootstrap permission, with `Runner:SqlBootstrapObjectId` and the approved bootstrap
   login matching the identity;
 - access to the immutable runtime image and its governed catalog projection.

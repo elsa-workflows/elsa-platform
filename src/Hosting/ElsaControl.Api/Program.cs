@@ -286,7 +286,7 @@ builder.Services.Configure<ElsaInstancePlanAuthorityOptions>(
 var azureInstanceLifecycleConfigured = builder.Configuration.GetValue<bool>(
     $"{AzureElsaInstanceProviderOptions.ConfigurationSection}:{nameof(AzureElsaInstanceProviderOptions.Enabled)}");
 var governedAzureSecretReferences = azureInstanceLifecycleConfigured
-    ? ConfiguredAzureSecretResolver.ReadNamedReferences(builder.Configuration)
+    ? ConfiguredAzureSecretResolver.ReadNamedReferences(builder.Configuration, requireProviderOwnedCredentials: true)
     : null;
 builder.Services.AddScoped<IElsaInstanceLifecycleResolutionInputSource>(services =>
     new CatalogElsaInstanceLifecycleResolutionInputSource(

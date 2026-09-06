@@ -145,7 +145,49 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
     }
 
     [Fact]
-    public void Enabled_worker_rejects_a_key_vault_source_name_that_does_not_match_the_governed_slot_before_composition()
+    public void Production_named_secret_references_accept_exact_provider_owned_credentials()
+    {
+        var references = ConfiguredAzureSecretResolver.ReadNamedReferences(
+            Configuration(new Dictionary<string, string?>
+            {
+                ["Deployment:AzureProvider:Secrets:0:Name"] = "database:connectionstring",
+                ["Deployment:AzureProvider:Secrets:0:Reference"] = AzureManagedSecretReferences.SqlConnection,
+                ["Deployment:AzureProvider:Secrets:1:Name"] = "identity:signingkey",
+                ["Deployment:AzureProvider:Secrets:1:Reference"] = AzureManagedSecretReferences.IdentitySigningKey,
+                ["Deployment:AzureProvider:Secrets:2:Name"] = "admin:password",
+                ["Deployment:AzureProvider:Secrets:2:Reference"] = AzureManagedSecretReferences.AdminPassword
+            }),
+            requireProviderOwnedCredentials: true);
+
+        Assert.Equal(AzureManagedSecretReferences.IdentitySigningKey, references["identity:signingkey"]);
+        Assert.Equal(AzureManagedSecretReferences.AdminPassword, references["admin:password"]);
+    }
+
+    [Theory]
+    [InlineData("identity:signingkey", "identity-signing-key")]
+    [InlineData("admin:password", "admin-password")]
+    public void Production_named_secret_references_reject_shared_external_credentials(string name, string secretName)
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() => ConfiguredAzureSecretResolver.ReadNamedReferences(
+            Configuration(new Dictionary<string, string?>
+            {
+                ["Deployment:AzureProvider:Secrets:0:Name"] = "database:connectionstring",
+                ["Deployment:AzureProvider:Secrets:0:Reference"] = AzureManagedSecretReferences.SqlConnection,
+                ["Deployment:AzureProvider:Secrets:1:Name"] = name,
+                ["Deployment:AzureProvider:Secrets:1:Reference"] = KeyVaultReference(secretName),
+                ["Deployment:AzureProvider:Secrets:2:Name"] = name == "identity:signingkey" ? "admin:password" : "identity:signingkey",
+                ["Deployment:AzureProvider:Secrets:2:Reference"] = name == "identity:signingkey"
+                    ? AzureManagedSecretReferences.AdminPassword
+                    : AzureManagedSecretReferences.IdentitySigningKey
+            }),
+            requireProviderOwnedCredentials: true));
+
+        Assert.Equal("Azure provider named secret references are invalid, duplicated, or unsupported.", exception.Message);
+        Assert.DoesNotContain(secretName, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Enabled_worker_rejects_an_external_sql_source_name_that_does_not_match_the_governed_slot()
     {
         var services = new ServiceCollection();
 
@@ -154,11 +196,11 @@ public sealed class AzureProviderRunnerCompositionTests : IDisposable
             {
                 ["Deployment:AzureProvider:WorkerEnabled"] = "true",
                 ["Deployment:AzureProvider:Secrets:0:Name"] = "database:connectionstring",
-                ["Deployment:AzureProvider:Secrets:0:Reference"] = KeyVaultReference("sql-connection"),
+                ["Deployment:AzureProvider:Secrets:0:Reference"] = KeyVaultReference("wrong-sql-name"),
                 ["Deployment:AzureProvider:Secrets:1:Name"] = "identity:signingkey",
-                ["Deployment:AzureProvider:Secrets:1:Reference"] = KeyVaultReference("identity-signingkey"),
+                ["Deployment:AzureProvider:Secrets:1:Reference"] = AzureManagedSecretReferences.IdentitySigningKey,
                 ["Deployment:AzureProvider:Secrets:2:Name"] = "admin:password",
-                ["Deployment:AzureProvider:Secrets:2:Reference"] = KeyVaultReference("admin-password")
+                ["Deployment:AzureProvider:Secrets:2:Reference"] = AzureManagedSecretReferences.AdminPassword
             })));
 
         Assert.Equal("Azure provider named secret references are incomplete or unsafe.", exception.Message);

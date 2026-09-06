@@ -40,7 +40,8 @@ references. Secret aliases are configured under
 name binds the governed reference to a required resolved-plan configuration slot;
 only the reference crosses into lifecycle resolution and durable provider
 records. External names bind immutable Key Vault locators; the provider-owned
-SQL instruction is the sole internal exception. Names must already be canonical
+SQL, identity-signing-key, and admin-password instructions are the internal
+exceptions. Names must already be canonical
 lower-case keys, and no two names may collapse to the same Azure secret name
 after `:` and `_` are mapped to `-`. A
 missing, unsafe, or ambiguous named alias fails startup closed when managed
@@ -53,9 +54,10 @@ assigned to two names. The managed resolver requires the exact persisted canonic
 reference, and converts it to the fixed HTTPS vault origin only when reading the secret.
 The external source secret name must match the slot's governed Azure name, using the
 same case-insensitive binding at startup and during durable authorization. In particular,
-`identity:signingkey` binds `identity-signing-key`, `admin:password` binds `admin-password`,
-and an external `database:connectionstring` binds `sql-connection`. A mismatched source
-name fails startup before provisioning; it is not silently remapped or authorized later.
+`database:connectionstring` binds `sql-connection` for an external SQL reference.
+A mismatched source name fails startup before provisioning; it is not silently
+remapped or authorized later. Production admin and signing slots require the
+provider-owned instructions below, not external source locators.
 An enabled production worker rejects configured `Value` entries and disposable
 proof mode. Its managed identity resolves values only after checking the durable
 workspace, organization, instance, assignment and running-operation authorization.
@@ -69,6 +71,19 @@ slot may use the fixed provider-owned reference
 Key Vault locator: during the post-Foundation `SeedSecrets` step the managed
 identity resolver authorizes the current durable assignment and materializes a
 passwordless SQL connection from its persisted SQL server and workload identity
-resource references. The caller-provided resource snapshot is not trusted. The
-identity-signing and admin-password slots remain immutable, versioned Key Vault
-references; the internal reference is rejected for every other slot.
+resource references. The caller-provided resource snapshot is not trusted.
+The `identity:signingkey` and `admin:password` slots use the exact provider-owned
+instructions `secret://azure-managed/identity-signing-key` and
+`secret://azure-managed/admin-password`; the resolver generates distinct
+cryptographic material for each authorized instance and the runner seeds it into
+that instance's provider-owned target vault. Each internal reference is rejected
+for every other slot.
+
+Generated credentials are retained for the assignment lifetime. Reuse requires
+exact provider-assignment, instance, slot and generation tags, read through the
+metadata-only secret list API. Missing, foreign or ambiguous metadata never
+authorizes overwriting an existing value. An absent generated credential during
+resume requires explicit recovery rather than silent regeneration. Automatic
+rotation and restore/rebind are not implemented; a create retry is not a rotation
+operation. These gates do not replace the separate two-instance negative
+authentication and confirmed-cleanup acceptance proof tracked in #287.

@@ -308,7 +308,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         var process = new FakeCommandProcess();
         string? transientFile = null;
         string? observedSecret = null;
-        process.Success(args => args.Contains("secret") && args.Contains("list"), "0");
+        process.Success(args => args.Contains("secret") && args.Contains("list"), "[]");
         process.Success(args =>
         {
             transientFile = args[Array.IndexOf(args, "--file") + 1];
@@ -340,6 +340,135 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.Single(resolver.Requests);
         Assert.DoesNotContain("database-password", JsonSerializer.Serialize(result), StringComparison.Ordinal);
         Assert.DoesNotContain("database-password", string.Join(" ", process.Calls.SelectMany(x => x)), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Existing_provider_owned_secret_metadata_skips_regeneration()
+    {
+        var process = new FakeCommandProcess();
+        var resolver = new RecordingSecretResolver("must-not-be-generated");
+        var command = GeneratedAdminSeedCommand();
+        process.Success(args => args.Contains("secret") && args.Contains("list"),
+            $"[{{\"managedBy\":\"elsa-control\",\"assignmentId\":\"{command.Context.ProviderAssignmentId}\",\"instanceId\":\"{command.Context.InstanceId:D}\",\"secretSlot\":\"admin-password\",\"generation\":\"provider-v1\"}}]");
+        var result = await _fixture.Runner(process, resolver).RunAsync(command);
+
+        Assert.Equal(AzureProviderRunnerOutcome.NoOp, result.Outcome);
+        Assert.Empty(resolver.Requests);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("secret") && call.Contains("set"));
+        Assert.DoesNotContain(process.Calls, call => call.Contains("secret") && call.Contains("show"));
+        var list = Assert.Single(process.Calls, call => call.Contains("secret") && call.Contains("list"));
+        Assert.Contains(list, value => value.Contains("[?name=='admin-password']", StringComparison.Ordinal));
+        Assert.Contains(list, value => value.Contains("secretSlot", StringComparison.Ordinal));
+        Assert.Contains("--output", list);
+        Assert.Contains("json", list);
+    }
+
+    [Fact]
+    public async Task Existing_unmarked_provider_owned_secret_fails_closed_without_overwrite()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("secret") && args.Contains("list"), "[{}]");
+        var resolver = new RecordingSecretResolver("must-not-be-generated");
+        var command = GeneratedAdminSeedCommand();
+
+        var result = await _fixture.Runner(process, resolver).RunAsync(command);
+
+        Assert.Equal(AzureProviderRunnerOutcome.Failed, result.Outcome);
+        Assert.Equal("azure.secrets.metadata-invalid", result.Code);
+        Assert.Empty(resolver.Requests);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("secret") && call.Contains("set"));
+    }
+
+    [Fact]
+    public async Task Ambiguous_provider_owned_secret_metadata_fails_closed_without_overwrite()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("secret") && args.Contains("list"), "[{},{}]");
+        var resolver = new RecordingSecretResolver("must-not-be-generated");
+        var command = GeneratedAdminSeedCommand();
+
+        var result = await _fixture.Runner(process, resolver).RunAsync(command);
+
+        Assert.Equal(AzureProviderRunnerOutcome.Failed, result.Outcome);
+        Assert.Equal("azure.secrets.inventory-invalid", result.Code);
+        Assert.Empty(resolver.Requests);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("secret") && call.Contains("set"));
+        Assert.DoesNotContain(process.Calls, call => call.Contains("secret") && call.Contains("show"));
+    }
+
+    [Fact]
+    public async Task Null_provider_owned_secret_metadata_fails_closed_without_overwrite()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("secret") && args.Contains("list"), "[null]");
+        var resolver = new RecordingSecretResolver("must-not-be-generated");
+        var command = GeneratedAdminSeedCommand();
+
+        var result = await _fixture.Runner(process, resolver).RunAsync(command);
+
+        Assert.Equal(AzureProviderRunnerOutcome.Failed, result.Outcome);
+        Assert.Equal("azure.secrets.metadata-invalid", result.Code);
+        Assert.Empty(resolver.Requests);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("secret") && call.Contains("set"));
+    }
+
+    [Fact]
+    public async Task Wrong_type_provider_owned_secret_metadata_fails_closed_without_overwrite()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("secret") && args.Contains("list"), "[1]");
+        var resolver = new RecordingSecretResolver("must-not-be-generated");
+        var command = GeneratedAdminSeedCommand();
+
+        var result = await _fixture.Runner(process, resolver).RunAsync(command);
+
+        Assert.Equal(AzureProviderRunnerOutcome.Failed, result.Outcome);
+        Assert.Equal("azure.step.failed", result.Code);
+        Assert.Empty(resolver.Requests);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("secret") && call.Contains("set"));
+    }
+
+    [Fact]
+    public async Task New_provider_owned_secret_records_only_safe_ownership_metadata()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("secret") && args.Contains("list"), "[]");
+        string[]? setArguments = null;
+        process.Success(args =>
+        {
+            setArguments = args;
+            return args.Contains("secret") && args.Contains("set");
+        });
+        var resolver = new RecordingSecretResolver("generated-value");
+        var command = GeneratedAdminSeedCommand();
+
+        var result = await _fixture.Runner(process, resolver).RunAsync(command);
+
+        Assert.Equal(AzureProviderRunnerOutcome.Completed, result.Outcome);
+        Assert.NotNull(setArguments);
+        Assert.Contains("--tags", setArguments!);
+        Assert.Contains("managed-by=elsa-control", setArguments!);
+        Assert.Contains($"provider-assignment={command.Context.ProviderAssignmentId}", setArguments!);
+        Assert.Contains($"instance={command.Context.InstanceId:D}", setArguments!);
+        Assert.Contains("secret-slot=admin-password", setArguments!);
+        Assert.Contains("generation=provider-v1", setArguments!);
+        Assert.DoesNotContain("generated-value", string.Join(" ", setArguments!), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Resumed_provider_owned_seed_fails_closed_when_secret_is_absent()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("secret") && args.Contains("list"), "[]");
+        var resolver = new RecordingSecretResolver("must-not-be-generated");
+        var command = GeneratedAdminSeedCommand(resume: true);
+
+        var result = await _fixture.Runner(process, resolver).RunAsync(command);
+
+        Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
+        Assert.Equal("azure.secrets.recovery-required", result.Code);
+        Assert.Empty(resolver.Requests);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("secret") && call.Contains("set"));
     }
 
     [Fact]
@@ -1329,6 +1458,27 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         public void Dispose() => Directory.Delete(_root, recursive: true);
     }
 
+    private AzureProviderRunnerCommand GeneratedAdminSeedCommand(bool resume = false)
+    {
+        return _fixture.Command(AzureProviderRunnerStep.SeedSecrets, _fixture.FoundationResources with
+        {
+            RegistryResourceId = _fixture.RegistryId,
+            AcrPullDeploymentId = _fixture.RegistryDeploymentId,
+            AcrPullRoleAssignmentId = _fixture.RegistryRoleAssignmentId
+        }) with
+        {
+            IsResume = resume,
+            AttemptNumber = resume ? 2 : 1,
+            Plan = _fixture.Plan with
+            {
+                SecretReferences = new Dictionary<string, string>
+                {
+                    ["admin:password"] = AzureManagedSecretReferences.AdminPassword
+                }
+            }
+        };
+    }
+
     private sealed class FakeCommandProcess : IAzureCommandProcess
     {
         private readonly Queue<Response> _responses = new();
@@ -1352,7 +1502,22 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
                 : response.Status;
             if (status != AzureCommandProcessStatus.Succeeded)
                 return Task.FromResult(new AzureCommandProcessResult<T>(status, response.FailureKind, 1, null, "test.command.failed", "The test command failed."));
-            var result = new AzureCommandProcessResult<T>(status, AzureCommandProcessFailureKind.None, 0, outputProjector(response.Output.AsMemory()), "test.command.succeeded", "The test command completed.");
+            T projected;
+            try
+            {
+                projected = outputProjector(response.Output.AsMemory());
+            }
+            catch (Exception)
+            {
+                return Task.FromResult(new AzureCommandProcessResult<T>(
+                    AzureCommandProcessStatus.Failed,
+                    AzureCommandProcessFailureKind.InvalidOutput,
+                    1,
+                    null,
+                    "test.command.invalid-output",
+                    "The test command returned invalid output."));
+            }
+            var result = new AzureCommandProcessResult<T>(status, AzureCommandProcessFailureKind.None, 0, projected, "test.command.succeeded", "The test command completed.");
             response.After?.Invoke();
             return Task.FromResult(result);
         }
