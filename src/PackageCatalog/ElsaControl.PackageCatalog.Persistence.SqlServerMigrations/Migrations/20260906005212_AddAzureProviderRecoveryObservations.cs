@@ -138,7 +138,7 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 
             migrationBuilder.Sql(
                 """
-                EXEC(N'CREATE TRIGGER TR_AzureProviderRecoveryObservations_AppendOnly
+                EXEC(N'CREATE TRIGGER dbo.TR_AzureProviderRecoveryObservations_AppendOnly
                 ON dbo.AzureProviderRecoveryObservations
                 INSTEAD OF UPDATE, DELETE
                 AS

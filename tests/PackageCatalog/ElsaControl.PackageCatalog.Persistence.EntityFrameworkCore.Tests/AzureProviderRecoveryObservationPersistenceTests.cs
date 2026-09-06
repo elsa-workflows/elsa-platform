@@ -435,6 +435,19 @@ public sealed class AzureProviderRecoveryObservationPersistenceTests
         Assert.NotNull(consumed);
         Assert.Equal(observation.ObservedInstanceVersion, consumed!.ObservedInstanceVersion);
         Assert.Equal(1, consumed.ObservedLifecycleAttemptNumber);
+
+        var pending = Assert.Single(await lifecycleStore.ListPendingProviderOperationsAsync(10));
+        Assert.NotNull(pending.Submission);
+        Assert.NotNull(pending.Recovery);
+
+        // Simulate storage corruption outside the ordinary append-only boundary.
+        // Partial recovery metadata must never downgrade into ordinary submission.
+        await db.Database.ExecuteSqlRawAsync("DROP TRIGGER TR_ElsaInstanceRecoveryRequests_AppendOnly_Update");
+        await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE ElsaInstanceRecoveryRequests SET RecoveryObservationReference = NULL WHERE Id = {recovery.Id}");
+        db.ChangeTracker.Clear();
+        pending = Assert.Single(await lifecycleStore.ListPendingProviderOperationsAsync(10));
+        Assert.Null(pending.Submission);
+        Assert.Null(pending.Recovery);
     }
 
     [Fact]

@@ -1963,8 +1963,13 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 ElsaInstanceProviderRecoveryEnvelope? recovery = null;
                 if (operation.AttemptNumber > 1 &&
                     recoveries.TryGetValue(operation.Id, out var recoveryEntity) &&
-                    recoveryEntity.RecoveryObservationReference is not null)
+                    (recoveryEntity.RecoveryObservationReference is not null ||
+                     recoveryEntity.RecoveryObservationDigest is not null ||
+                     recoveryEntity.ObservedLifecycleAttemptNumber is not null ||
+                     recoveryEntity.ObservedInstanceVersion is not null))
                 {
+                    // Partial metadata is corrupt recovery authority, not permission
+                    // to downgrade the accepted operation into ordinary submission.
                     recovery = new(
                         recoveryEntity.Id,
                         recoveryEntity.OrganizationId,
