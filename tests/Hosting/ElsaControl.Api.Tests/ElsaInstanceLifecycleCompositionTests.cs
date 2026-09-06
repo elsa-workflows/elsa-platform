@@ -1,8 +1,14 @@
 using ElsaControl.Deployment.Azure;
 using ElsaControl.Deployment.Core.Instances;
 using ElsaControl.Api.Workspace;
+using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using System.Collections.Concurrent;
+using System.Data.Common;
 using ElsaControl.RuntimeBuilder.Abstractions.Plans;
 
 namespace ElsaControl.Api.Tests;
@@ -94,6 +100,73 @@ public sealed class ElsaInstanceLifecycleCompositionTests : IDisposable
     }
 
     [Fact]
+    public async Task Azure_delete_recovery_port_uses_a_child_scope_for_provider_dependencies()
+    {
+        var services = new ServiceCollection();
+        var configuration = Configuration(new Dictionary<string, string?>
+        {
+            ["Deployment:AzureProvider:InstanceLifecycle:Enabled"] = "true"
+        });
+        var authority = Authority();
+        Assert.True(AzureInstanceLifecycleComposition.AddProviderPorts(services, configuration, authority));
+
+        var contextIds = new RecordingDbContextInterceptor();
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        services.AddSingleton(connection);
+        services.AddDbContext<CatalogDbContext>(options =>
+            options.UseSqlite(connection).AddInterceptors(contextIds));
+        services.AddScoped<AzureProviderOperationStore>();
+        services.AddScoped<IAzureProviderOperationStore>(provider =>
+            provider.GetRequiredService<AzureProviderOperationStore>());
+        services.AddScoped<IAzureProviderResourceAssignmentStore>(provider =>
+            provider.GetRequiredService<AzureProviderOperationStore>());
+        services.AddScoped<IAzureProviderRecoveryObservationStore>(provider =>
+            provider.GetRequiredService<AzureProviderOperationStore>());
+        services.AddScoped<IAzureProviderRunner, UnconfiguredAzureProviderRunner>();
+        services.AddScoped<AzureProviderExecutor>();
+        services.AddScoped<IAzureProviderOperationService, AzureProviderOperationService>();
+
+        using var provider = services.BuildServiceProvider();
+        await using (var initializationScope = provider.CreateAsyncScope())
+        {
+            var db = initializationScope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        contextIds.Clear();
+        await using var lifecycleScope = provider.CreateAsyncScope();
+        var lifecycleDb = lifecycleScope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+        var lifecycleProvider = lifecycleScope.ServiceProvider.GetRequiredService<AzureElsaInstanceProvider>();
+        var cleanupPort = lifecycleScope.ServiceProvider.GetRequiredService<IElsaInstanceProviderCleanupPort>();
+        var recoveryPort = lifecycleScope.ServiceProvider.GetRequiredService<IElsaInstanceProviderDeleteRecoveryPort>();
+
+        Assert.Same(lifecycleProvider, cleanupPort);
+        Assert.IsType<ScopedAzureInstanceProviderDeleteRecoveryPort>(recoveryPort);
+
+        var request = new ElsaInstanceDeleteRecoveryRequest(
+            new ElsaInstanceCleanupRequest(
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                1,
+                CurrentDeployment: null,
+                PlacementAssignment: null,
+                Tenant: null),
+            Guid.NewGuid(),
+            InstanceVersion: 1,
+            WorkerId: "scope-test-worker",
+            LeaseToken: new string('a', 64),
+            LeaseVersion: 1);
+        var observation = await recoveryPort.RecoverDeleteAsync(request);
+
+        Assert.Equal(ElsaInstanceCleanupObservationKind.Ambiguous, observation.Kind);
+        var childContextIds = contextIds.ContextIds.ToArray();
+        Assert.NotEmpty(childContextIds);
+        Assert.All(childContextIds, contextId => Assert.NotEqual(lifecycleDb.ContextId.InstanceId, contextId));
+    }
+
+    [Fact]
     public void Enabled_Azure_lifecycle_fails_closed_without_the_concrete_runner_authority()
     {
         var services = new ServiceCollection();
@@ -138,6 +211,26 @@ public sealed class ElsaInstanceLifecycleCompositionTests : IDisposable
 
     private static IConfiguration Configuration(IReadOnlyDictionary<string, string?> values) =>
         new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+
+    private sealed class RecordingDbContextInterceptor : DbCommandInterceptor
+    {
+        private readonly ConcurrentBag<Guid> _contextIds = [];
+
+        public IReadOnlyCollection<Guid> ContextIds => _contextIds;
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (eventData.Context is { } context)
+                _contextIds.Add(context.ContextId.InstanceId);
+            return ValueTask.FromResult(result);
+        }
+
+        public void Clear() => _contextIds.Clear();
+    }
 
     public void Dispose()
     {
