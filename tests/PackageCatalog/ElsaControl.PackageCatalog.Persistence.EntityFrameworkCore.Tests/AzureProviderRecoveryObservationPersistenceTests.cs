@@ -16,7 +16,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests;
 
-public sealed class AzureProviderRecoveryObservationPersistenceTests
+public sealed partial class AzureProviderRecoveryObservationPersistenceTests
 {
     [Theory]
     [InlineData(AzureProviderRunnerStep.SqlFirewallCreate, AzureProviderOperationPhase.SeedSecretsObserved, AzureProviderRunnerStep.SqlFirewallCreate, AzureProviderOperationPhase.SqlFirewallReady, true)]
@@ -830,9 +830,11 @@ public sealed class AzureProviderRecoveryObservationPersistenceTests
     private static async Task<AzureProviderRecoveryObservationBinding> AcceptRecoveryAsync(
         CatalogDbContext db,
         ObservationFixture fixture,
-        IAzureProviderRecoveryObservationStore observationStore)
+        IAzureProviderRecoveryObservationStore observationStore,
+        bool lifecycleRunAlreadyAdded = false)
     {
-        await AddLifecycleRunAsync(db, fixture);
+        if (!lifecycleRunAlreadyAdded)
+            await AddLifecycleRunAsync(db, fixture);
         var lifecycleStore = new EfCoreElsaInstanceLifecycleStore(
             db,
             EmptyResolutionInputSource.Instance,
