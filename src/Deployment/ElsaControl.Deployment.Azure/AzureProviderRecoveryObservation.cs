@@ -329,4 +329,14 @@ public interface IAzureProviderRecoveryObservationStore
     Task<AzureProviderRecoveryObservationRecord?> GetAndValidateForAcceptedRecoveryAsync(
         AzureProviderRecoveryObservationBinding binding,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Validates the same accepted proof after the provider has advanced the retained
+    /// operation through its recovery claim. The pre-claim method remains strict about
+    /// the provider RecoveryRequired tuple; this replay method only permits the exact
+    /// claimed Running/Succeeded successor.
+    /// </summary>
+    Task<AzureProviderRecoveryObservationRecord?> GetAndValidateForAcceptedRecoveryReplayAsync(
+        AzureProviderRecoveryObservationBinding binding,
+        CancellationToken cancellationToken = default);
 }
