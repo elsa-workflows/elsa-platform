@@ -155,7 +155,7 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
                       x.Status == AzureProviderOperationStatus.Running ||
                       x.Status == AzureProviderOperationStatus.RecoveryRequired),
                 cancellationToken);
-            if (!lifecycleIsCurrent || !providerIsCurrent || !assignmentIsCurrent || competingOperation)
+            if (providerOperation is null || !lifecycleIsCurrent || !providerIsCurrent || !assignmentIsCurrent || competingOperation)
             {
                 await transaction.RollbackAsync(cancellationToken);
                 return;

@@ -599,7 +599,7 @@ public sealed class AzureElsaInstanceProvider(
         request.Validate();
         EnsureEnabled();
 
-        if (_executor is null || _operationStore is not IAzureProviderDeleteRecoveryStore recoveryStore)
+        if (_executor is null || operationStore is not IAzureProviderDeleteRecoveryStore recoveryStore)
             return CleanupUnknown(request.Cleanup, "deletion.recovery.capability-unavailable", ElsaInstanceCleanupObservationKind.Unavailable);
 
         var authority = await recoveryStore.GetDeleteRecoveryAuthorityAsync(
@@ -611,7 +611,7 @@ public sealed class AzureElsaInstanceProvider(
         if (authority is null)
             return CleanupUnknown(request.Cleanup, "deletion.recovery.authority-unavailable", ElsaInstanceCleanupObservationKind.Ambiguous);
 
-        var operation = await _operationStore.GetAsync(
+        var operation = await operationStore.GetAsync(
             request.Cleanup.WorkspaceId,
             authority.ProviderOperationId,
             cancellationToken);

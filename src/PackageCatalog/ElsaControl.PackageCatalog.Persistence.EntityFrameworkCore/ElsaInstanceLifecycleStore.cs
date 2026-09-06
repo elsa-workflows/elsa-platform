@@ -2317,9 +2317,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         DateTimeOffset acceptedAt,
         CancellationToken cancellationToken)
     {
-        // A missing placement assignment is the existing local/non-Azure delete path. Preserve
-        // that compatibility; once an assignment is present, an uncertain provider delete must
-        // bind to its exact durable operation rather than selecting a latest row.
+        // Opaque non-Azure placements remain provider-owned. Retained Azure provenance must
+        // never be downgraded to that path when its assignment reference is malformed.
         if (string.IsNullOrWhiteSpace(instance.PlacementAssignmentId))
             return null;
         if (lifecycleOperation.Action != ElsaInstanceOperationAction.Delete ||
@@ -2327,7 +2326,15 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             instance.DesiredLifecycle != ElsaDesiredLifecycle.Deleting)
             throw Conflict("Azure delete recovery lifecycle authority is unavailable.");
         if (!Guid.TryParseExact(instance.PlacementAssignmentId, "D", out var assignmentId))
-            throw Conflict("Azure delete recovery assignment authority is invalid.");
+        {
+            var hasAzureProvenance = await dbContext.AzureProviderResourceAssignments.AsNoTracking()
+                .AnyAsync(x => x.InstanceId == instance.Id, cancellationToken) ||
+                await dbContext.AzureProviderOperations.AsNoTracking()
+                    .AnyAsync(x => x.InstanceId == instance.Id, cancellationToken);
+            if (hasAzureProvenance)
+                throw Conflict("Azure delete recovery assignment authority is invalid.");
+            return null;
+        }
 
         var assignment = await dbContext.AzureProviderResourceAssignments.AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == assignmentId &&

@@ -3280,10 +3280,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("AzureDeleteRecoveryAuthority")
-                        .HasMaxLength(4096)
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<long>("AcceptedAt")
                         .HasColumnType("bigint");
 
@@ -3465,6 +3461,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqlServerMigrations.Migrations
 
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceRecoveryRequestEntity", b =>
                 {
+                    b.Property<string>("AzureDeleteRecoveryAuthority")
+                        .HasMaxLength(4096)
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
