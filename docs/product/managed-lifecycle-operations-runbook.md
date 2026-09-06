@@ -360,6 +360,25 @@ identity. It does not modify API deployment mode, expose the Aspire dashboard,
 enable workers, or prove ingestion. The Azure service endpoints are Entra/RBAC
 protected; private-link ingestion is not implied.
 
+The opt-in API exporter requires `ManagedLifecycleTelemetry:AzureMonitor:Enabled`,
+an explicit `ConnectionString` with its ingestion endpoint, and the matching
+`ManagedIdentityClientId` in the same section. Keep it disabled until the sink and
+identity grant have been verified. Set the process environment variable
+`APPLICATIONINSIGHTS_STATSBEAT_DISABLED=true` before API startup: the pinned Azure
+Monitor SDK exposes its auxiliary statistics opt-out through the environment,
+not public exporter options. Startup fails closed if this opt-out is absent.
+The host does not silently change process-wide SDK settings. Live metrics,
+performance counters, standard metrics and offline storage are disabled; only
+the managed lifecycle meter and activity source are registered with this sink.
+Normal component connection metadata may include `LiveEndpoint` and `ApplicationId`;
+these are validated but excluded from the connection string given to the exporter.
+Token acquisition and ingestion each have a separate ten-second cancellation
+budget, with ingestion retries disabled. Provider shutdown shares a five-second
+drain budget rather than starting separate flush and shutdown grace periods.
+These are cooperative SDK deadlines, not a promise that the entire host can stop
+within five seconds under every failure. An expired export is missing evidence,
+not a successful observation; offline replay is disabled.
+
 Treat exporter startup, actual signal ingestion, private operator dashboard access,
 and the fresh five-minute observation window as separate gates. An anonymous
 dashboard denial alone is not positive operator-access proof. Stored instance
