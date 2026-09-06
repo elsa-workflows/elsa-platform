@@ -33,6 +33,20 @@ public sealed class DisposableAzureProofSecrets : IAzureSecretResolver, IElsaPro
         };
     }
 
+    public ValueTask<bool> IsAuthorizedAsync(
+        AzureSecretResolutionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        request.Validate();
+        var normalized = request.Name.Trim().ToLowerInvariant();
+        return ValueTask.FromResult(normalized is
+            "database:connectionstring" or "database:connection-string" or "sql-connection" or
+            "identity:signingkey" or "identity:signing-key" or "identity-signing-key" or
+            "admin:password" or "admin-password");
+    }
+
     public ValueTask<AzureSecretLease> ResolvePasswordAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

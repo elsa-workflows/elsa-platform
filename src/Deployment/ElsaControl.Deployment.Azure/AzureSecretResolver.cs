@@ -38,6 +38,12 @@ public static class AzureManagedSecretReferences
         string.Equals(reference, AdminPassword, StringComparison.Ordinal);
 }
 
+/// <summary>
+/// Provider secret resolution input. The init-only operation generation fields are required by
+/// the durable managed-identity resolver and remain optional only for local/proof resolvers that
+/// do not consult provider operation authorization. They are intentionally not positional so the
+/// original constructor and deconstruction shape remain compatible.
+/// </summary>
 public sealed record AzureSecretResolutionRequest(
     Guid WorkspaceId,
     Guid OrganizationId,
@@ -47,10 +53,25 @@ public sealed record AzureSecretResolutionRequest(
     string Reference,
     AzureProviderResourceReferences? Resources = null)
 {
+    /// <summary>
+    /// Trusted provider-operation identity supplied by the runner's accepted command context.
+    /// This is init-only so the original positional constructor and deconstruction remain stable.
+    /// </summary>
+    public Guid? OperationId { get; init; }
+
+    /// <summary>
+    /// Trusted provider-operation attempt supplied by the runner's accepted command context.
+    /// </summary>
+    public int? AttemptNumber { get; init; }
+
     public void Validate()
     {
         if (WorkspaceId == Guid.Empty || OrganizationId == Guid.Empty || InstanceId == Guid.Empty)
             throw new ArgumentException("The provider secret ownership identity is invalid.", nameof(WorkspaceId));
+        if (OperationId == Guid.Empty)
+            throw new ArgumentException("The provider operation identity is invalid.", nameof(OperationId));
+        if (AttemptNumber is <= 0)
+            throw new ArgumentException("The provider operation attempt is invalid.", nameof(AttemptNumber));
         if (string.IsNullOrWhiteSpace(ProviderAssignmentId) || ProviderAssignmentId.Length > 128 ||
             ProviderAssignmentId.Any(char.IsControl) || ProviderAssignmentId.Any(char.IsWhiteSpace))
             throw new ArgumentException("The provider assignment identity is invalid.", nameof(ProviderAssignmentId));
@@ -120,6 +141,18 @@ public interface IAzureSecretResolver
     ValueTask<AzureSecretLease> ResolveAsync(
         AzureSecretResolutionRequest request,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Checks the current durable authorization without materializing secret material. This is a
+    /// best-effort pre-mutation guard for stale lease generations; it is not remote fencing for a
+    /// request that has already crossed the provider boundary.
+    /// </summary>
+    ValueTask<bool> IsAuthorizedAsync(
+        AzureSecretResolutionRequest request,
+        CancellationToken cancellationToken = default) =>
+        // Existing third-party resolvers compiled against the previous interface must fail closed
+        // until they explicitly implement the generation-aware authorization check.
+        ValueTask.FromResult(false);
 }
 
 /// <summary>
@@ -348,6 +381,31 @@ public sealed class ManagedIdentityAzureSecretResolver : IAzureSecretResolver
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        var context = await ReadAuthorizationAsync(request, cancellationToken);
+        if (!HasCallerGeneration(request) ||
+            !IsAuthorized(request, context.AssignmentId, context.Locator, context.Authorization, _timeProvider.GetUtcNow()))
+            throw new InvalidOperationException("The requested Azure secret is not authorized.");
+
+        if (context.ProviderOwned)
+            return MaterializeProviderOwnedSecret(request.Name, context.Authorization!.Assignment);
+
+        return await _reader.GetAsync(context.Locator!.VaultUri, context.Locator.Name, context.Locator.Version, cancellationToken);
+    }
+
+    public async ValueTask<bool> IsAuthorizedAsync(
+        AzureSecretResolutionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var context = await ReadAuthorizationAsync(request, cancellationToken);
+        return HasCallerGeneration(request) &&
+            IsAuthorized(request, context.AssignmentId, context.Locator, context.Authorization, _timeProvider.GetUtcNow());
+    }
+
+    private async Task<SecretAuthorizationContext> ReadAuthorizationAsync(
+        AzureSecretResolutionRequest request,
+        CancellationToken cancellationToken)
+    {
         request.Validate();
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -360,14 +418,18 @@ public sealed class ManagedIdentityAzureSecretResolver : IAzureSecretResolver
             throw new ArgumentException("The Key Vault secret locator is unsafe.", nameof(request));
 
         var authorization = await _authorizationStore.GetAsync(request.WorkspaceId, assignmentId, cancellationToken);
-        if (!IsAuthorized(request, assignmentId, locator, authorization, _timeProvider.GetUtcNow()))
-            throw new InvalidOperationException("The requested Azure secret is not authorized.");
-
-        if (providerOwned)
-            return MaterializeProviderOwnedSecret(request.Name, authorization!.Assignment);
-
-        return await _reader.GetAsync(locator!.VaultUri, locator.Name, locator.Version, cancellationToken);
+        return new SecretAuthorizationContext(assignmentId, providerOwned, locator, authorization);
     }
+
+    private static bool HasCallerGeneration(AzureSecretResolutionRequest request) =>
+        request.OperationId is { } operationId && operationId != Guid.Empty &&
+        request.AttemptNumber is > 0;
+
+    private sealed record SecretAuthorizationContext(
+        Guid AssignmentId,
+        bool ProviderOwned,
+        AzureKeyVaultSecretLocator? Locator,
+        AzureSecretAuthorization? Authorization);
 
     private static bool IsAuthorized(
         AzureSecretResolutionRequest request,
@@ -389,6 +451,7 @@ public sealed class ManagedIdentityAzureSecretResolver : IAzureSecretResolver
             assignment.LastOperationId != operation.Id ||
             operation.WorkspaceId != request.WorkspaceId || operation.OrganizationId != request.OrganizationId ||
             operation.InstanceId != request.InstanceId || operation.ProviderAssignmentId != assignmentId ||
+            operation.Id != request.OperationId || operation.AttemptNumber != request.AttemptNumber ||
             !string.Equals(operation.TargetKey, assignment.WorkloadName, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(operation.ProviderScopeFingerprint, assignment.ProviderScopeFingerprint, StringComparison.Ordinal) ||
             operation.Status != AzureProviderOperationStatus.Running ||
@@ -480,13 +543,13 @@ public sealed class ManagedIdentityAzureSecretResolver : IAzureSecretResolver
 
         Span<byte> entropy = stackalloc byte[48];
         Span<char> secret = stackalloc char[68];
-        RandomNumberGenerator.Fill(entropy);
-        secret[0] = 'E';
-        secret[1] = 'a';
-        secret[2] = '1';
-        secret[3] = '!';
         try
         {
+            RandomNumberGenerator.Fill(entropy);
+            secret[0] = 'E';
+            secret[1] = 'a';
+            secret[2] = '1';
+            secret[3] = '!';
             if (!Convert.TryToBase64Chars(entropy, secret[4..], out var charsWritten))
                 throw new InvalidOperationException("The provider-owned secret could not be generated.");
             return new AzureSecretLease(secret[..(charsWritten + 4)]);
@@ -507,6 +570,11 @@ public sealed class ManagedIdentityAzureSecretResolver : IAzureSecretResolver
 public sealed class UnconfiguredAzureSecretResolver : IAzureSecretResolver
 {
     public ValueTask<AzureSecretLease> ResolveAsync(
+        AzureSecretResolutionRequest request,
+        CancellationToken cancellationToken = default) =>
+        throw new InvalidOperationException("No transient Azure secret resolver is configured.");
+
+    public ValueTask<bool> IsAuthorizedAsync(
         AzureSecretResolutionRequest request,
         CancellationToken cancellationToken = default) =>
         throw new InvalidOperationException("No transient Azure secret resolver is configured.");

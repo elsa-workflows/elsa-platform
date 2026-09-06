@@ -312,18 +312,22 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                     "azure.secrets.recovery-required",
                     "A provider-owned secret is absent after an interrupted seed and requires explicit recovery.");
 
+            var secretRequest = new AzureSecretResolutionRequest(
+                command.Context.WorkspaceId,
+                command.Context.OrganizationId,
+                command.Context.InstanceId,
+                command.Context.ProviderAssignmentId,
+                key,
+                reference,
+                command.Resources)
+            {
+                OperationId = command.Context.OperationId,
+                AttemptNumber = command.AttemptNumber
+            };
             AzureSecretLease lease;
             try
             {
-                lease = await _secretResolver.ResolveAsync(
-                    new AzureSecretResolutionRequest(
-                        command.Context.WorkspaceId,
-                        command.Context.OrganizationId,
-                        command.Context.InstanceId,
-                        command.Context.ProviderAssignmentId,
-                        key,
-                        reference,
-                        command.Resources), cancellationToken);
+                lease = await _secretResolver.ResolveAsync(secretRequest, cancellationToken);
             }
             catch (OperationCanceledException)
             {
@@ -349,6 +353,15 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                 try
                 {
                     EnsureMutationAuthority(command);
+                    // Recheck the durable lease generation without materializing another secret.
+                    // Reject a generation change observed here; the lease may still change
+                    // after this check, and an already-submitted request cannot be fenced.
+                    if (!await _secretResolver.IsAuthorizedAsync(secretRequest, cancellationToken))
+                        return Uncertain(
+                            command,
+                            AzureProviderOperationPhase.FoundationSubmitted,
+                            "azure.secrets.authorization-changed",
+                            "Secret seeding authorization changed before the remote mutation.");
                     var seedArguments = new List<string>
                     {
                         "keyvault", "secret", "set", "--subscription", _scope.SubscriptionId, "--vault-name", vaultName,
@@ -1322,6 +1335,8 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
     {
         if (command.Context.WorkspaceId == Guid.Empty || command.Context.OperationId == Guid.Empty)
             throw new ArgumentException("The Azure execution context identity is required.", nameof(command));
+        if (command.AttemptNumber < 1)
+            throw new ArgumentException("The Azure execution attempt is required.", nameof(command));
         if (!string.Equals(command.Plan.WorkloadName, command.Context.TargetKey, StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("The Azure plan target does not match its execution context.", nameof(command));
         if (!IsSafeWorkloadName(command.Plan.WorkloadName) ||
