@@ -174,6 +174,109 @@ public sealed class ManagedIdentityAzureSecretResolverTests
         Assert.Equal(0, reader.Calls);
     }
 
+    [Fact]
+    public async Task Rejects_a_secret_request_created_before_the_same_operation_was_reclaimed()
+    {
+        var reader = new FakeReader();
+        var originalAuthorization = ProviderOwnedAuthorization();
+        var authorizationStore = new SwitchingAuthorizationStore(originalAuthorization);
+        var resolver = new ManagedIdentityAzureSecretResolver(authorizationStore, reader);
+        var requestCreatedForAttemptA = RequestFor(
+            InstanceId,
+            AzureManagedSecretReferences.IdentitySigningKeyName,
+            AzureManagedSecretReferences.IdentitySigningKey);
+
+        await using (var currentAttemptLease = await resolver.ResolveAsync(requestCreatedForAttemptA))
+            Assert.True(currentAttemptLease.Value.Length >= 64);
+
+        authorizationStore.Current = originalAuthorization with
+        {
+            Operation = originalAuthorization.Operation with
+            {
+                AttemptNumber = 2,
+                Version = 4,
+                WorkerId = "recovery-worker",
+                LeaseExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10)
+            }
+        };
+
+        var currentAttemptRequest = requestCreatedForAttemptA with { AttemptNumber = 2, OperationId = OperationId };
+        Assert.NotEqual(requestCreatedForAttemptA.AttemptNumber, currentAttemptRequest.AttemptNumber);
+        Assert.False(await resolver.IsAuthorizedAsync(requestCreatedForAttemptA));
+        Assert.True(await resolver.IsAuthorizedAsync(currentAttemptRequest));
+
+        await using (var currentAttemptLease = await resolver.ResolveAsync(currentAttemptRequest))
+            Assert.True(currentAttemptLease.Value.Length >= 64);
+
+        var exception = await Record.ExceptionAsync(async () =>
+        {
+            await using var staleAttemptLease = await resolver.ResolveAsync(requestCreatedForAttemptA);
+        });
+
+        Assert.IsType<InvalidOperationException>(exception);
+        Assert.Equal("The requested Azure secret is not authorized.", exception.Message);
+        Assert.Equal(0, reader.Calls);
+    }
+
+    [Theory]
+    [InlineData("MissingOperation")]
+    [InlineData("WrongOperation")]
+    [InlineData("MissingAttempt")]
+    [InlineData("WrongAttempt")]
+    public async Task Rejects_missing_or_mismatched_secret_request_generation(string changed)
+    {
+        var reader = new FakeReader();
+        var resolver = CreateResolver(reader);
+        var request = Request() with
+        {
+            OperationId = changed == "MissingOperation" ? null :
+                changed == "WrongOperation" ? Guid.NewGuid() : OperationId,
+            AttemptNumber = changed == "MissingAttempt" ? null :
+                changed == "WrongAttempt" ? 2 : 1
+        };
+
+        Assert.False(await resolver.IsAuthorizedAsync(request));
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await resolver.ResolveAsync(request));
+
+        Assert.Equal("The requested Azure secret is not authorized.", exception.Message);
+        Assert.Equal(0, reader.Calls);
+    }
+
+    [Theory]
+    [InlineData("EmptyOperation")]
+    [InlineData("ZeroAttempt")]
+    public async Task Rejects_invalid_secret_request_generation(string changed)
+    {
+        var reader = new FakeReader();
+        var resolver = CreateResolver(reader);
+        var request = Request() with
+        {
+            OperationId = changed == "EmptyOperation" ? Guid.Empty : OperationId,
+            AttemptNumber = changed == "ZeroAttempt" ? 0 : 1
+        };
+
+        await Assert.ThrowsAsync<ArgumentException>(async () => await resolver.ResolveAsync(request));
+        Assert.Equal(0, reader.Calls);
+    }
+
+    [Fact]
+    public async Task Keeps_authorization_when_only_the_operation_version_changes()
+    {
+        var reader = new FakeReader();
+        var authorization = Authorization() with
+        {
+            Operation = Operation() with { Version = 8 }
+        };
+        var resolver = new ManagedIdentityAzureSecretResolver(new FakeAuthorizationStore(authorization), reader);
+
+        Assert.True(await resolver.IsAuthorizedAsync(Request()));
+        await using var lease = await resolver.ResolveAsync(Request());
+
+        Assert.Equal("resolved-value", lease.Value.ToString());
+        Assert.Equal(1, reader.Calls);
+    }
+
     [Theory]
     [InlineData("identity:signingkey", AzureManagedSecretReferences.AdminPassword)]
     [InlineData("admin:password", AzureManagedSecretReferences.IdentitySigningKey)]
@@ -394,7 +497,11 @@ public sealed class ManagedIdentityAzureSecretResolverTests
         InstanceId,
         AssignmentId.ToString("D"),
         "database:connectionstring",
-        SecretReference);
+        SecretReference)
+    {
+        OperationId = OperationId,
+        AttemptNumber = 1
+    };
 
     private static AzureSecretResolutionRequest RequestFor(Guid instanceId, string name, string reference) => new(
         WorkspaceId,
@@ -402,7 +509,11 @@ public sealed class ManagedIdentityAzureSecretResolverTests
         instanceId,
         AssignmentId.ToString("D"),
         name,
-        reference);
+        reference)
+    {
+        OperationId = OperationId,
+        AttemptNumber = 1
+    };
 
     private static AzureSecretAuthorization Authorization() => new(
         new AzureProviderResourceAssignment(
@@ -476,6 +587,17 @@ public sealed class ManagedIdentityAzureSecretResolverTests
             Guid providerAssignmentId,
             CancellationToken cancellationToken = default) =>
             Task.FromResult<AzureSecretAuthorization?>(authorization);
+    }
+
+    private sealed class SwitchingAuthorizationStore(AzureSecretAuthorization authorization) : IAzureSecretAuthorizationStore
+    {
+        public AzureSecretAuthorization? Current { get; set; } = authorization;
+
+        public Task<AzureSecretAuthorization?> GetAsync(
+            Guid workspaceId,
+            Guid providerAssignmentId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(Current);
     }
 
     private sealed class FakeReader : IAzureKeyVaultSecretReader

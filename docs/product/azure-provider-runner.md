@@ -87,3 +87,27 @@ resume requires explicit recovery rather than silent regeneration. Automatic
 rotation and restore/rebind are not implemented; a create retry is not a rotation
 operation. These gates do not replace the separate two-instance negative
 authentication and confirmed-cleanup acceptance proof tracked in #287.
+
+## Secret-seeding generation guard
+
+The production runner binds every transient secret-resolution request to the
+accepted provider operation's trusted `OperationId` and `AttemptNumber`. The
+managed resolver compares both values with the current durable operation, in
+addition to the workspace, organization, instance, assignment, running lease,
+phase, resource and reference checks. A request from an old claim or a missing
+generation is rejected before secret material is read or generated. The legacy
+request-constructor shape remains available for local and proof callers, but a
+durable managed resolver fails closed when its operation generation is absent.
+
+Immediately before `keyvault secret set`, the runner performs a second,
+non-materializing authorization check with the same request. This closes the
+stale-generation window when a generation change is observed before submission,
+without resolving or retaining a second secret. The lease may still change after
+that check. It is a durable admission check, not physical remote fencing:
+an Azure request already submitted, or already in flight when a lease is lost,
+cannot be withdrawn by this process.
+
+This guard is one #287 gate. It does not replace #271's durable attempted-step,
+read-only provider observation, replay and live-recovery gates. In particular,
+an uncertain seed is not silently regenerated, and recovery must still observe
+the provider's retained state before any permitted resume.

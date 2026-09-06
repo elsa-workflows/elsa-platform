@@ -88,6 +88,16 @@ internal sealed class ConfiguredAzureSecretResolver : IAzureSecretResolver
             : throw new InvalidOperationException("The requested Azure secret is not configured.");
     }
 
+    public ValueTask<bool> IsAuthorizedAsync(
+        AzureSecretResolutionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        request.Validate();
+        return ValueTask.FromResult(_values.ContainsKey(request.Reference));
+    }
+
     private static bool IsSafeConfiguredValue(string? value) =>
         !string.IsNullOrWhiteSpace(value) &&
         value.Length <= MaximumConfiguredSecretLength &&

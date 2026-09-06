@@ -338,8 +338,42 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.NotNull(transientFile);
         Assert.False(File.Exists(transientFile));
         Assert.Single(resolver.Requests);
+        Assert.Equal(command.Context.OperationId, resolver.Requests[0].OperationId);
+        Assert.Equal(command.AttemptNumber, resolver.Requests[0].AttemptNumber);
+        Assert.Same(resolver.Requests[0], resolver.AuthorizationRequests[0]);
         Assert.DoesNotContain("database-password", JsonSerializer.Serialize(result), StringComparison.Ordinal);
         Assert.DoesNotContain("database-password", string.Join(" ", process.Calls.SelectMany(x => x)), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Rejects_changed_secret_authorization_before_set_and_cleans_the_transient_file()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("secret") && args.Contains("list"), "[]");
+        var resolver = new RecordingSecretResolver("must-not-be-written") { AuthorizationResult = false };
+        var command = _fixture.Command(AzureProviderRunnerStep.SeedSecrets, _fixture.FoundationResources with
+        {
+            RegistryResourceId = _fixture.RegistryId,
+            AcrPullDeploymentId = _fixture.RegistryDeploymentId,
+            AcrPullRoleAssignmentId = _fixture.RegistryRoleAssignmentId
+        }) with
+        {
+            Plan = _fixture.Plan with { SecretReferences = new Dictionary<string, string>
+            {
+                ["database:connectionstring"] = "secret://vault/database"
+            }}
+        };
+        var before = Directory.GetDirectories(Path.GetTempPath(), "elsa-azure-*");
+
+        var result = await _fixture.Runner(process, resolver).RunAsync(command);
+
+        Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
+        Assert.Equal("azure.secrets.authorization-changed", result.Code);
+        Assert.Single(resolver.Requests);
+        Assert.Single(resolver.AuthorizationRequests);
+        Assert.Equal(resolver.Requests[0], resolver.AuthorizationRequests[0]);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("secret") && call.Contains("set"));
+        Assert.Equal(before, Directory.GetDirectories(Path.GetTempPath(), "elsa-azure-*"));
     }
 
     [Fact]
@@ -1534,10 +1568,18 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     private sealed class RecordingSecretResolver(string value) : IAzureSecretResolver
     {
         public List<AzureSecretResolutionRequest> Requests { get; } = [];
+        public List<AzureSecretResolutionRequest> AuthorizationRequests { get; } = [];
+        public bool AuthorizationResult { get; init; } = true;
         public ValueTask<AzureSecretLease> ResolveAsync(AzureSecretResolutionRequest request, CancellationToken cancellationToken = default)
         {
             Requests.Add(request);
             return ValueTask.FromResult(new AzureSecretLease(value));
+        }
+
+        public ValueTask<bool> IsAuthorizedAsync(AzureSecretResolutionRequest request, CancellationToken cancellationToken = default)
+        {
+            AuthorizationRequests.Add(request);
+            return ValueTask.FromResult(AuthorizationResult);
         }
     }
 }
