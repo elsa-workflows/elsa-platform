@@ -31,29 +31,10 @@ public sealed partial class AzureProviderRecoveryObservationPersistenceTests
 
             var firewallDeleted = Path.Combine(root, "firewall-deleted");
             var sqlObservations = Path.Combine(root, "sql-observations");
+            var azObservations = Path.Combine(root, "az-observations");
             var azPath = Path.Combine(root, "az");
             var sqlCmdPath = Path.Combine(root, "sqlcmd");
             var curlPath = Path.Combine(root, "curl");
-            await WriteExecutableAsync(azPath, $$"""
-#!/bin/sh
-set -eu
-state={{ShellQuote(firewallDeleted)}}
-case " $* " in
-  *" firewall-rule delete "*) : > "$state"; exit 0 ;;
-  *" firewall-rule list "*)
-    if [ -f "$state" ]; then printf '%s' '[]'; else printf '%s' '[{"name":"elsa-bootstrap","startIpAddress":"203.0.113.10","endIpAddress":"203.0.113.10"}]'; fi
-    exit 0 ;;
-  *" resource list "*) printf '%s' 'not-a-number'; exit 0 ;;
-  *) printf '%s' '[]'; exit 0 ;;
-esac
-""");
-            await WriteExecutableAsync(sqlCmdPath, $"""
-#!/bin/sh
-set -eu
-printf x >> {ShellQuote(sqlObservations)}
-printf '%s' 'complete'
-""");
-            await WriteExecutableAsync(curlPath, "#!/bin/sh\nprintf '%s' 'unused'\n");
 
             var options = new AzureProviderRunnerOptions
             {
@@ -86,6 +67,105 @@ printf '%s' 'complete'
                 "rg-registry",
                 "registry",
                 "westeurope");
+
+            var expectedSubscription = scope.SubscriptionId;
+            var expectedResourceGroup = assignmentResourceGroup;
+            var expectedServer = $"{providerPlan.WorkloadName}-sql";
+            var expectedApp = $"{providerPlan.WorkloadName}-app";
+            var expectedFirewallRule = "elsa-bootstrap";
+            var expectedSqlQueryPrefix =
+                $"SET NOCOUNT ON; DECLARE @expectedName sysname = N'{providerPlan.WorkloadName}-identity'; DECLARE @expectedClientId uniqueidentifier = '11111111-1111-1111-1111-111111111111';";
+            await WriteExecutableAsync(azPath, $$"""
+#!/bin/sh
+set -eu
+state={{ShellQuote(firewallDeleted)}}
+calls={{ShellQuote(azObservations)}}
+subscription={{ShellQuote(expectedSubscription)}}
+resource_group={{ShellQuote(expectedResourceGroup)}}
+server={{ShellQuote(expectedServer)}}
+rule={{ShellQuote(expectedFirewallRule)}}
+ip={{ShellQuote(options.SqlBootstrapIp)}}
+app={{ShellQuote(expectedApp)}}
+query="[?name=='$app'] | length(@)"
+
+record() { printf '%s\n' "$1" >> "$calls"; }
+unexpected() { record unexpected; exit 91; }
+
+if [ "$#" -eq 13 ] &&
+   [ "$1" = "sql" ] && [ "$2" = "server" ] && [ "$3" = "firewall-rule" ] && [ "$4" = "list" ] &&
+   [ "$5" = "--subscription" ] && [ "$6" = "$subscription" ] &&
+   [ "$7" = "--resource-group" ] && [ "$8" = "$resource_group" ] &&
+   [ "$9" = "--server" ] && [ "${10}" = "$server" ] &&
+   [ "${11}" = "--output" ] && [ "${12}" = "json" ] && [ "${13}" = "--only-show-errors" ]; then
+    record firewall-list
+    if [ -f "$state" ]; then printf '%s' '[]'; else printf '%s' "[{\"name\":\"$rule\",\"startIpAddress\":\"$ip\",\"endIpAddress\":\"$ip\"}]"; fi
+    exit 0
+fi
+
+if [ "$#" -eq 15 ] &&
+   [ "$1" = "sql" ] && [ "$2" = "server" ] && [ "$3" = "firewall-rule" ] && [ "$4" = "delete" ] &&
+   [ "$5" = "--subscription" ] && [ "$6" = "$subscription" ] &&
+   [ "$7" = "--resource-group" ] && [ "$8" = "$resource_group" ] &&
+   [ "$9" = "--server" ] && [ "${10}" = "$server" ] &&
+   [ "${11}" = "--name" ] && [ "${12}" = "$rule" ] &&
+   [ "${13}" = "--output" ] && [ "${14}" = "none" ] && [ "${15}" = "--only-show-errors" ]; then
+    record firewall-delete
+    : > "$state"
+    exit 0
+fi
+
+if [ "$#" -eq 13 ] &&
+   [ "$1" = "resource" ] && [ "$2" = "list" ] &&
+   [ "$3" = "--subscription" ] && [ "$4" = "$subscription" ] &&
+   [ "$5" = "--resource-group" ] && [ "$6" = "$resource_group" ] &&
+   [ "$7" = "--resource-type" ] && [ "$8" = "Microsoft.App/containerApps" ] &&
+   [ "$9" = "--query" ] && [ "${10}" = "$query" ] &&
+   [ "${11}" = "--output" ] && [ "${12}" = "tsv" ] && [ "${13}" = "--only-show-errors" ]; then
+    record workload-resource-list
+    printf '%s' 'not-a-number'
+    exit 0
+fi
+
+unexpected
+""");
+            await WriteExecutableAsync(sqlCmdPath, $$"""
+#!/bin/sh
+set -eu
+calls={{ShellQuote(sqlObservations)}}
+server={{ShellQuote(expectedServer + ".database.windows.net")}}
+query_prefix={{ShellQuote(expectedSqlQueryPrefix)}}
+has_q=0
+has_i=0
+for argument in "$@"; do
+    case "$argument" in
+        -Q) has_q=$((has_q + 1)) ;;
+        -i) has_i=$((has_i + 1)) ;;
+    esac
+done
+record() { printf '%s\n' "$1" >> "$calls"; }
+if [ "$has_i" -ne 0 ]; then
+    record sql-write
+    exit 92
+fi
+if [ "$#" -eq 14 ] && [ "$has_q" -eq 1 ] &&
+   [ "$1" = "-S" ] && [ "$2" = "tcp:$server,1433" ] &&
+   [ "$3" = "-d" ] && [ "$4" = "Elsa" ] &&
+   [ "$5" = "--authentication-method" ] && [ "$6" = "ActiveDirectoryManagedIdentity" ] &&
+   [ "$7" = "-U" ] && [ "$8" = "11111111-1111-1111-1111-111111111111" ] &&
+   [ "$9" = "-b" ] && [ "${10}" = "-h" ] && [ "${11}" = "-1" ] && [ "${12}" = "-W" ] &&
+   [ "${13}" = "-Q" ]; then
+    case "${14}" in
+        "$query_prefix"*)
+            record sql-read
+            printf '%s' 'complete'
+            exit 0
+            ;;
+    esac
+fi
+record sql-unexpected
+exit 93
+""");
+            await WriteExecutableAsync(curlPath, "#!/bin/sh\nprintf '%s' 'unused'\n");
             var templateFingerprint = options.ComputeTemplateAuthorityFingerprint();
             var scopeFingerprint = options.ComputeProviderScopeFingerprint(scope);
             var operationStore = new AzureProviderOperationStore(db);
@@ -270,7 +350,16 @@ printf '%s' 'complete'
 
             Assert.Equal(ElsaInstanceProviderRecoveryOutcome.RecoveryRequired, result.Outcome);
             Assert.Equal("azure.step.uncertain", result.Code);
-            Assert.Equal(2, await CountAsync(sqlObservations));
+            var sqlCalls = await File.ReadAllLinesAsync(sqlObservations);
+            Assert.Equal(2, sqlCalls.Count(call => call == "sql-read"));
+            Assert.DoesNotContain("sql-write", sqlCalls);
+            Assert.DoesNotContain("sql-unexpected", sqlCalls);
+            Assert.True(File.Exists(firewallDeleted), "The provider cleanup command must have executed and left an absence marker.");
+            var azCalls = await File.ReadAllLinesAsync(azObservations);
+            Assert.Equal(4, azCalls.Count(call => call == "firewall-list"));
+            Assert.Equal(1, azCalls.Count(call => call == "firewall-delete"));
+            Assert.Equal(1, azCalls.Count(call => call == "workload-resource-list"));
+            Assert.DoesNotContain("unexpected", azCalls);
             var persisted = Assert.IsType<AzureProviderOperation>(await providerStore.GetAsync(workspace.Id, operation.Id));
             Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, persisted.Status);
             // The failed workload observation cannot advance the last confirmed checkpoint.
@@ -290,13 +379,6 @@ printf '%s' 'complete'
         {
             if (Directory.Exists(root))
                 Directory.Delete(root, recursive: true);
-        }
-
-        static async Task<int> CountAsync(string path)
-        {
-            for (var attempt = 0; attempt < 20 && !File.Exists(path); attempt++)
-                await Task.Delay(10);
-            return File.Exists(path) ? (await File.ReadAllTextAsync(path)).Length : 0;
         }
 
         static string ShellQuote(string value) => $"'{value.Replace("'", "'\\''", StringComparison.Ordinal)}'";
