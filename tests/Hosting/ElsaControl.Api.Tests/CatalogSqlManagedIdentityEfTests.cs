@@ -15,6 +15,42 @@ public sealed class CatalogSqlManagedIdentityEfTests
 {
     private const string ClientId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task Unchanged_owned_connection_passes_open_guard(bool useMaster, bool async)
+    {
+        using var services = CreateServices(out var interceptor);
+        using var scope = services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+#pragma warning disable EF1001
+        using var master = useMaster ? db.GetService<ISqlServerConnection>().CreateMasterConnection() : null;
+#pragma warning restore EF1001
+        var connection = master?.DbConnection ?? db.Database.GetDbConnection();
+
+        var result = async
+            ? await interceptor.ConnectionOpeningAsync(connection, null!, default)
+            : interceptor.ConnectionOpening(connection, null!, default);
+
+        Assert.False(result.IsSuppressed);
+    }
+
+    [Fact]
+    public void Sql_builder_keyword_support_is_not_explicit_authentication_presence()
+    {
+        var settings = new SqlConnectionStringBuilder("Server=example.test;Database=Catalog");
+        Assert.True(settings.ContainsKey("Authentication"));
+        Assert.True(settings.TryGetValue("Authentication", out _));
+        Assert.False(settings.ShouldSerialize("Authentication"));
+        settings.Authentication = SqlAuthenticationMethod.ActiveDirectoryManagedIdentity;
+        Assert.True(settings.ShouldSerialize("Authentication"));
+        settings.Remove("Authentication");
+        Assert.True(settings.ContainsKey("Authentication"));
+        Assert.False(settings.ShouldSerialize("Authentication"));
+    }
+
     [Fact]
     public void Scoped_contexts_own_distinct_connections_with_one_stable_callback()
     {

@@ -129,7 +129,7 @@ internal sealed class CatalogSqlManagedIdentityConnectionInterceptor : DbConnect
             throw InvalidConnectionIdentity();
         }
 
-        if (builder.ContainsKey("Authentication") || !MatchesIdentity(builder.UserID) ||
+        if (builder.ShouldSerialize("Authentication") || !MatchesIdentity(builder.UserID) ||
             !string.Equals(sqlConnection.ConnectionString, binding.ConnectionString, StringComparison.Ordinal))
             throw InvalidConnectionIdentity();
     }
