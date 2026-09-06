@@ -191,6 +191,11 @@ public sealed partial class ElsaInstanceLifecycleStoreTests
             Assert.Equal(deletion.Operation.Id, recovered.Operation.Id);
             Assert.Equal(ElsaInstanceOperationState.Queued, recovered.Operation.State);
             Assert.Equal(deletion.Operation.AttemptNumber + 1, recovered.Operation.AttemptNumber);
+            var recoveryRow = await lifecycleDb.ElsaInstanceRecoveryRequests.AsNoTracking()
+                .SingleAsync(x => x.OperationId == deletion.Operation.Id);
+            Assert.True(AzureProviderDeleteRecoveryAuthority.TryParse(recoveryRow.AzureDeleteRecoveryAuthority,
+                out var capturedAuthority));
+            Assert.Equal(recovered.Instance.Version, capturedAuthority!.InstanceVersion);
         }
 
         // Ordinary provider polling must never authorize recovery, even after the lifecycle
@@ -209,15 +214,20 @@ public sealed partial class ElsaInstanceLifecycleStoreTests
 
         await using (var finalizeDb = CreateMigratedContext(connection))
         {
+            await using var recoveryDb = CreateMigratedContext(connection);
+            var recoveryStore = new AzureProviderOperationStore(recoveryDb);
+            var recoveryProvider = CreateProvider(recoveryStore, providerOptions, Now.AddMinutes(8),
+                CreateDeleteRecoveryExecutor(recoveryStore, runnerOptions, scope, Now.AddMinutes(8)));
             var operationStore = new AzureProviderOperationStore(finalizeDb);
             var deletionWorker = new ElsaInstanceDeletionWorker(
                     new EfCoreElsaInstanceLifecycleStore(finalizeDb, EmptyResolutionInputSource.Instance,
                         new FixedTimeProvider(Now.AddMinutes(8))),
                     CreateProvider(operationStore, providerOptions, Now.AddMinutes(8)),
-                    new FixedTimeProvider(Now.AddMinutes(8)));
+                    new FixedTimeProvider(Now.AddMinutes(8)),
+                    recoveryProvider);
             var completed = await deletionWorker.ProcessAvailableAsync("delete-recovery-worker");
             var result = Assert.Single(completed.Results);
-            Assert.Equal(ElsaInstanceLifecycleWorkerOutcome.Deleted, result.Outcome);
+            Assert.True(result.Outcome == ElsaInstanceLifecycleWorkerOutcome.Deleted, result.FailureCode);
             var resumedOperation = await operationStore.GetAsync(workspace.Id, deleteOperationId);
             Assert.Equal(AzureProviderOperationStatus.Succeeded, resumedOperation?.Status);
             Assert.Single(await finalizeDb.AzureProviderOperations.AsNoTracking()
@@ -249,30 +259,36 @@ public sealed partial class ElsaInstanceLifecycleStoreTests
         AzureProviderTargetScope scope,
         DateTimeOffset now)
     {
-        var runner = new AzureBicepProviderRunner(runnerOptions, scope);
-        var executor = new AzureProviderExecutor(
-            operationStore,
-            runner,
-            new FixedTimeProvider(now),
-            leaseDuration: TimeSpan.FromMinutes(5),
-            workerId: "delete-recovery-provider-worker",
-            assignmentStore: operationStore);
         return new(
             operationStore,
-            executor,
+            CreateDeleteRecoveryExecutor(operationStore, runnerOptions, scope, now),
             new PersistedAzureProviderPlanSource(),
             new FixedTimeProvider(now));
     }
 
+    private static AzureProviderExecutor CreateDeleteRecoveryExecutor(
+        AzureProviderOperationStore operationStore,
+        AzureProviderRunnerOptions runnerOptions,
+        AzureProviderTargetScope scope,
+        DateTimeOffset now) => new(
+        operationStore,
+        new AzureBicepProviderRunner(runnerOptions, scope),
+        new FixedTimeProvider(now),
+        leaseDuration: TimeSpan.FromMinutes(5),
+        workerId: "delete-recovery-provider-worker",
+        assignmentStore: operationStore);
+
     private static AzureElsaInstanceProvider CreateProvider(
         AzureProviderOperationStore operationStore,
         AzureElsaInstanceProviderOptions options,
-        DateTimeOffset now) => new(
+        DateTimeOffset now,
+        AzureProviderExecutor? executor = null) => new(
         new AzureProviderOperationService(operationStore, new FixedTimeProvider(now)),
         operationStore,
         operationStore,
         timeProvider: new FixedTimeProvider(now),
-        options: options);
+        options: options,
+        executor: executor);
 
     private static async Task<CleanupTools> CreateCleanupToolsAsync(
         AzureProviderTargetScope scope,

@@ -2231,7 +2231,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         {
             var deleteAuthority = existingOperation.Action == ElsaInstanceOperationAction.Delete
                 ? await CaptureAzureDeleteRecoveryAuthorityAsync(
-                    existingInstance, existingOperation, requestedOperation.AttemptNumber, requestedAt, cancellationToken)
+                    existingInstance, existingOperation, requestedOperation.AttemptNumber,
+                    checked(observedInstanceVersion + 1), requestedAt, cancellationToken)
                 : null;
             recovery = new ElsaInstanceRecoveryRequestEntity
             {
@@ -2314,6 +2315,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         ElsaInstanceEntity instance,
         ElsaInstanceOperationEntity lifecycleOperation,
         int acceptedLifecycleAttemptNumber,
+        int acceptedInstanceVersion,
         DateTimeOffset acceptedAt,
         CancellationToken cancellationToken)
     {
@@ -2392,7 +2394,9 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 providerOperation.Id,
                 assignment.Id,
                 acceptedLifecycleAttemptNumber,
-                instance.Version,
+                // CatalogDbContext advances the aggregate version on SaveChanges. Bind the
+                // ledger to that committed version, not the pre-save tracked snapshot.
+                acceptedInstanceVersion,
                 providerOperation.AttemptNumber,
                 providerOperation.Version,
                 providerOperation.CheckpointSequence,
