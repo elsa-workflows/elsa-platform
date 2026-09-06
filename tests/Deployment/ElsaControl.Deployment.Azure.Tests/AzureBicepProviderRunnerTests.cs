@@ -345,12 +345,25 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.DoesNotContain("database-password", string.Join(" ", process.Calls.SelectMany(x => x)), StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task Rejects_changed_secret_authorization_before_set_and_cleans_the_transient_file()
+    [Theory]
+    [InlineData("denied", "azure.secrets.authorization-changed")]
+    [InlineData("failed", "azure.runner.uncertain")]
+    [InlineData("cancelled", "azure.runner.cancelled")]
+    public async Task Rejects_changed_secret_authorization_before_set_and_cleans_the_transient_file(
+        string authorizationOutcome, string expectedCode)
     {
         var process = new FakeCommandProcess();
         process.Success(args => args.Contains("secret") && args.Contains("list"), "[]");
-        var resolver = new RecordingSecretResolver("must-not-be-written") { AuthorizationResult = false };
+        var resolver = new RecordingSecretResolver("must-not-be-written")
+        {
+            AuthorizationResult = false,
+            AuthorizationFailure = authorizationOutcome switch
+            {
+                "failed" => new InvalidOperationException("must-not-appear-in-diagnostics"),
+                "cancelled" => new OperationCanceledException("must-not-appear-in-diagnostics"),
+                _ => null
+            }
+        };
         var command = _fixture.Command(AzureProviderRunnerStep.SeedSecrets, _fixture.FoundationResources with
         {
             RegistryResourceId = _fixture.RegistryId,
@@ -368,12 +381,14 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         var result = await _fixture.Runner(process, resolver).RunAsync(command);
 
         Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
-        Assert.Equal("azure.secrets.authorization-changed", result.Code);
+        Assert.Equal(expectedCode, result.Code);
         Assert.Single(resolver.Requests);
         Assert.Single(resolver.AuthorizationRequests);
         Assert.Equal(resolver.Requests[0], resolver.AuthorizationRequests[0]);
         Assert.DoesNotContain(process.Calls, call => call.Contains("secret") && call.Contains("set"));
-        Assert.Equal(before, Directory.GetDirectories(Path.GetTempPath(), "elsa-azure-*"));
+        Assert.Equal(before.Order(StringComparer.Ordinal),
+            Directory.GetDirectories(Path.GetTempPath(), "elsa-azure-*").Order(StringComparer.Ordinal));
+        Assert.DoesNotContain("must-not-appear-in-diagnostics", JsonSerializer.Serialize(result), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1570,6 +1585,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         public List<AzureSecretResolutionRequest> Requests { get; } = [];
         public List<AzureSecretResolutionRequest> AuthorizationRequests { get; } = [];
         public bool AuthorizationResult { get; init; } = true;
+        public Exception? AuthorizationFailure { get; init; }
         public ValueTask<AzureSecretLease> ResolveAsync(AzureSecretResolutionRequest request, CancellationToken cancellationToken = default)
         {
             Requests.Add(request);
@@ -1579,6 +1595,8 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         public ValueTask<bool> IsAuthorizedAsync(AzureSecretResolutionRequest request, CancellationToken cancellationToken = default)
         {
             AuthorizationRequests.Add(request);
+            if (AuthorizationFailure is not null)
+                throw AuthorizationFailure;
             return ValueTask.FromResult(AuthorizationResult);
         }
     }
