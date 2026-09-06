@@ -351,6 +351,53 @@ cutover.
   text is not an operational code and must not be copied into alerts, metrics,
   API projections, or audit history.
 
+## Authenticated telemetry rollout (#266)
+
+The separate [managed telemetry sink template](../../infra/managed-telemetry/README.md)
+prepares workspace-based Application Insights with local authentication disabled
+and an exact-resource publisher grant for the existing Control API managed
+identity. It does not modify API deployment mode, expose the Aspire dashboard,
+enable workers, or prove ingestion. The Azure service endpoints are Entra/RBAC
+protected; private-link ingestion is not implied.
+
+The opt-in API exporter requires `ManagedLifecycleTelemetry:AzureMonitor:Enabled`,
+an explicit `ConnectionString` with its ingestion endpoint, and the matching
+`ManagedIdentityClientId` in the same section. Keep it disabled until the sink and
+identity grant have been verified. Set the process environment variable
+`APPLICATIONINSIGHTS_STATSBEAT_DISABLED=true` before API startup: the pinned Azure
+Monitor SDK exposes its auxiliary statistics opt-out through the environment,
+not public exporter options. Startup fails closed if this opt-out is absent.
+The host does not silently change process-wide SDK settings. Live metrics,
+performance counters, standard metrics and offline storage are disabled; only
+the managed lifecycle meter and activity source are registered with this sink.
+Normal component connection metadata may include `LiveEndpoint` and `ApplicationId`;
+these are validated but excluded from the connection string given to the exporter.
+Token acquisition and ingestion each have a separate ten-second cancellation
+budget, with ingestion retries disabled. Provider shutdown shares a five-second
+drain budget rather than starting separate flush and shutdown grace periods.
+Host cancellation suppresses any subsequent drain wait; an already-running
+synchronous SDK shutdown call cannot be interrupted through this API.
+These are cooperative SDK deadlines, not a promise that the entire host can stop
+within five seconds under every failure. An expired export is missing evidence,
+not a successful observation; offline replay is disabled.
+Metrics use delta temporality, matching the Azure Monitor exporter contract:
+each interval contains new counts rather than replaying the cumulative total.
+
+The API owns one Azure Monitor sink for the process lifetime. Do not register a
+second Azure Monitor exporter against the same connection string or hot-replace
+the sink: the pinned SDK caches the first transmitter and its credential/options.
+Apply changes through an API restart/promotion. Existing ServiceDefaults OTLP
+export is preserved; when `OTEL_EXPORTER_OTLP_ENDPOINT` is configured, managed
+lifecycle signals reach that explicitly configured destination as well as this
+Azure Monitor sink. Review both destinations during operational acceptance.
+
+Treat exporter startup, actual signal ingestion, private operator dashboard access,
+and the fresh five-minute observation window as separate gates. An anonymous
+dashboard denial alone is not positive operator-access proof. Stored instance
+health alone is not a fresh endpoint sample. A missing or capped telemetry window
+remains unknown/incomplete, never healthy. Keep the metric and authorized trace
+contracts above unchanged throughout rollout.
+
 ## Controlled-fixture validation
 
 Validate this runbook against controlled persistence/API fixtures for:

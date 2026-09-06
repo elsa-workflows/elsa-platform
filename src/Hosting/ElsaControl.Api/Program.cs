@@ -50,6 +50,7 @@ using ElsaControl.RuntimeBuilder.Core.RuntimeConfigurations;
 using ElsaControl.RuntimeBuilder.Core.ReleaseCatalog;
 using ElsaControl.RuntimeBuilder.Core.ReleaseManifests;
 using ElsaControl.Api.ReleaseCatalog;
+using ElsaControl.Api.Telemetry;
 using ElsaControl.Weaver.Core.Configuration;
 using ElsaControl.Weaver.Core.Plans;
 using ElsaControl.Weaver.Core.Runtime;
@@ -73,6 +74,7 @@ IdentityModelEventSource.ShowPII = builder.Environment.IsDevelopment()
     && builder.Configuration.GetValue<bool>("Diagnostics:IdentityModel:ShowPII");
 
 builder.AddServiceDefaults();
+builder.AddManagedLifecycleAzureMonitorTelemetry();
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<BadRequestExceptionHandler>();
