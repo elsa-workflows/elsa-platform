@@ -15,13 +15,15 @@ internal class ManagedIdentityProbeRetryPolicy(DelayStrategy? delayStrategy = nu
     {
         message.ResponseClassifier = ManagedIdentityClassifier;
         return !IsAvailabilityProbe(message) && !IsUnsupportedCapabilityProbe(message, exception) &&
+            !IsUnsupportedRegionDiscoveryProbe(message, exception) &&
             base.ShouldRetry(message, exception);
     }
 
     protected override ValueTask<bool> ShouldRetryAsync(HttpMessage message, Exception? exception)
     {
         message.ResponseClassifier = ManagedIdentityClassifier;
-        return IsAvailabilityProbe(message) || IsUnsupportedCapabilityProbe(message, exception)
+        return IsAvailabilityProbe(message) || IsUnsupportedCapabilityProbe(message, exception) ||
+            IsUnsupportedRegionDiscoveryProbe(message, exception)
             ? ValueTask.FromResult(false)
             : base.ShouldRetryAsync(message, exception);
     }
@@ -39,10 +41,28 @@ internal class ManagedIdentityProbeRetryPolicy(DelayStrategy? delayStrategy = nu
             return false;
 
         var uri = message.Request.Uri.ToUri();
-        return uri.Scheme == "http" && uri.Host == "169.254.169.254" && uri.Port == 80 &&
-            uri.UserInfo.Length == 0 && uri.AbsolutePath == "/metadata/identity/getplatformmetadata" &&
-            IsCapabilityQuery(uri.Query) && uri.Fragment.Length == 0;
+        return IsExactImdsUri(uri, "/metadata/identity/getplatformmetadata") && IsCapabilityQuery(uri.Query);
     }
+
+    // MSAL's optional regional authority discovery shares the credential pipeline. A 404 means
+    // this host does not expose the compute-location endpoint and must fall through immediately;
+    // applying managed-identity token retries can exceed SqlClient's connection timeout.
+    private static bool IsUnsupportedRegionDiscoveryProbe(HttpMessage message, Exception? exception)
+    {
+        if (exception is not null || !message.HasResponse || message.Response.Status != 404 ||
+            message.Request.Method != RequestMethod.Get ||
+            !message.Request.Headers.TryGetValue("Metadata", out var metadata) ||
+            !string.Equals(metadata, "true", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var uri = message.Request.Uri.ToUri();
+        return IsExactImdsUri(uri, "/metadata/instance/compute/location") &&
+            uri.Query == "?api-version=2020-06-01&format=text";
+    }
+
+    private static bool IsExactImdsUri(Uri uri, string path) =>
+        uri.Scheme == Uri.UriSchemeHttp && uri.Host == "169.254.169.254" && uri.Port == 80 &&
+        uri.UserInfo.Length == 0 && uri.AbsolutePath == path && uri.Fragment.Length == 0;
 
     // MSAL appends client_id for our supported user-assigned identity mode; system-assigned
     // probes carry only the version. Unknown versions, selectors and extra parameters retry normally.
