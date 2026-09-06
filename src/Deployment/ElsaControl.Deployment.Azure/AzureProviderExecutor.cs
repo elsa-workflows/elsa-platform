@@ -169,8 +169,13 @@ public sealed class AzureProviderExecutor
                     AttemptedStep: null),
                 CancellationToken.None);
         }
-        catch (OperationCanceledException)
+        catch (Exception exception) when (exception is OperationCanceledException or InvalidOperationException)
         {
+            // A claimed recovery can still fail its durable assignment/phase invariant, or be
+            // cancelled, while the store reloads current state. Use the claimed snapshot and its
+            // expected-version CAS to convert this value-free uncertain checkpoint to recovery.
+            // FinalizeResultAsync retains that CAS; if the store itself fails, that exception must
+            // escape rather than being reported as a fabricated persisted recovery result.
             return await MarkRecoveryAsync(claimed, leaseToken, "azure.recovery.checkpoint-uncertain", "The observed Azure recovery step could not be durably checkpointed.");
         }
         if (checkpointed is null)

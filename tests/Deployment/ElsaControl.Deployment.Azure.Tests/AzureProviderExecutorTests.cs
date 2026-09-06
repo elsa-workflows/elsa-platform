@@ -339,6 +339,57 @@ public sealed class AzureProviderExecutorTests
         Assert.Contains(AzureProviderRunnerStep.Promotion, runner.Steps);
     }
 
+    [Theory]
+    [InlineData("The Azure provider assignment binding is invalid.")]
+    [InlineData("Checkpoint phase cannot move backwards.")]
+    public async Task Injected_checkpoint_validation_exception_is_durably_recoverable_without_a_second_runner_call(
+        string injectedExceptionMessage)
+    {
+        var scenario = await CreateCheckpointFailureRecoveryScenarioAsync();
+        scenario.Store.ThrowCheckpointExceptionMessage = injectedExceptionMessage;
+
+        var resumed = await scenario.Executor.RecoverAsync(scenario.Operation, scenario.Plan, scenario.Observation);
+
+        Assert.Equal(AzureProviderExecutionOutcome.RecoveryRequired, resumed.Outcome);
+        Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, resumed.Operation.Status);
+        Assert.Equal("azure.recovery.checkpoint-uncertain", resumed.Code);
+        Assert.Equal([AzureProviderRunnerStep.Foundation], scenario.Runner.Steps);
+        Assert.DoesNotContain(injectedExceptionMessage, resumed.Message, StringComparison.Ordinal);
+        Assert.Contains(await scenario.Store.ListTransitionsAsync(WorkspaceId, resumed.Operation.Id), transition =>
+            transition.Code == "azure.recovery.checkpoint-uncertain" &&
+            transition.Status == AzureProviderOperationStatus.RecoveryRequired);
+    }
+
+    [Fact]
+    public async Task Recovery_checkpoint_fallback_does_not_mask_a_finalize_store_failure()
+    {
+        var scenario = await CreateCheckpointFailureRecoveryScenarioAsync();
+        scenario.Store.ThrowCheckpointExceptionMessage = "The Azure provider assignment binding is invalid.";
+        scenario.Store.ThrowFinalizeExceptionMessage = "durable store unavailable";
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            scenario.Executor.RecoverAsync(scenario.Operation, scenario.Plan, scenario.Observation));
+
+        var latest = await scenario.Store.GetAsync(WorkspaceId, scenario.Operation.Id);
+        Assert.Equal(AzureProviderOperationStatus.Running, latest!.Status);
+        Assert.Equal([AzureProviderRunnerStep.Foundation], scenario.Runner.Steps);
+    }
+
+    [Fact]
+    public async Task Recovery_checkpoint_fallback_reports_the_concurrent_winner_instead_of_fabricating_recovery()
+    {
+        var scenario = await CreateCheckpointFailureRecoveryScenarioAsync();
+        scenario.Store.ThrowCheckpointExceptionMessage = "Checkpoint phase cannot move backwards.";
+        scenario.Store.ConcurrentWinnerStatus = AzureProviderOperationStatus.Succeeded;
+
+        var result = await scenario.Executor.RecoverAsync(scenario.Operation, scenario.Plan, scenario.Observation);
+
+        Assert.Equal(AzureProviderExecutionOutcome.NoOp, result.Outcome);
+        Assert.Equal(AzureProviderOperationStatus.Succeeded, result.Operation.Status);
+        Assert.Equal("azure.operation.no-op", result.Code);
+        Assert.Equal([AzureProviderRunnerStep.Foundation], scenario.Runner.Steps);
+    }
+
     [Fact]
     public async Task Sql_bootstrap_observation_is_not_claimed_without_a_proven_sql_postcondition()
     {
@@ -972,6 +1023,35 @@ public sealed class AzureProviderExecutorTests
         Assert.True(store.HeartbeatCount > 0);
     }
 
+    private static async Task<(
+        FakeOperationStore Store,
+        RecordingRunner Runner,
+        AzureProviderExecutor Executor,
+        AzureWorkloadPlan Plan,
+        AzureProviderOperation Operation,
+        AzureProviderRecoveryObservation Observation)> CreateCheckpointFailureRecoveryScenarioAsync()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner
+        {
+            FoundationOutcome = AzureProviderRunnerOutcome.Uncertain,
+            FoundationResourcesOverride = FoundationResources()
+        };
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+        var plan = CreatePlan();
+        var interrupted = await executor.ApplyAsync(CreateRequest(), plan);
+        var observation = new AzureProviderRecoveryObservation(
+            AzureProviderRecoveryObservationKind.Confirmed,
+            AzureProviderRunnerStep.Foundation,
+            CompleteResourcesForRecovery(),
+            AzureProviderHealth.Unknown,
+            null,
+            "azure.recovery.foundation-observed",
+            "The retained foundation postcondition was observed.");
+
+        return (store, runner, executor, plan, interrupted.Operation, observation);
+    }
+
     [Fact]
     public async Task Stable_traffic_restoration_renews_the_lease_while_running()
     {
@@ -1294,8 +1374,10 @@ public sealed class AzureProviderExecutorTests
         public AzureProviderOperationStatus? RejectCreateWithStatus { get; init; }
         public bool LoseLeaseOnHeartbeat { get; init; }
         public AzureProviderResourceReferences? LatestReconcileResources { get; init; }
-        public AzureProviderOperationStatus? ConcurrentWinnerStatus { get; init; }
+        public AzureProviderOperationStatus? ConcurrentWinnerStatus { get; set; }
         public bool OmitProviderAssignmentId { get; init; }
+        public string? ThrowCheckpointExceptionMessage { get; set; }
+        public string? ThrowFinalizeExceptionMessage { get; set; }
 
         public void Replace(AzureProviderOperation operation) => _operation = operation;
 
@@ -1428,6 +1510,8 @@ public sealed class AzureProviderExecutorTests
 
         public Task<AzureProviderOperation?> CheckpointAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderCheckpoint checkpoint, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
         {
+            if (ThrowCheckpointExceptionMessage is { } exceptionMessage)
+                throw new InvalidOperationException(exceptionMessage);
             if (_operation is not null && RejectCheckpointWithStatus is { } observedStatus)
             {
                 _operation = _operation with { Status = observedStatus, Version = _operation.Version + 1, UpdatedAt = now };
@@ -1475,6 +1559,8 @@ public sealed class AzureProviderExecutorTests
 
         public Task<AzureProviderOperation?> FinalizeAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderOperationStatus status, string code, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
         {
+            if (ThrowFinalizeExceptionMessage is { } exceptionMessage)
+                throw new InvalidOperationException(exceptionMessage);
             if (_operation is null || _operation.Status != AzureProviderOperationStatus.Running || expectedVersion.HasValue && _operation.Version != expectedVersion.Value)
                 return Task.FromResult<AzureProviderOperation?>(null);
             if (ConcurrentWinnerStatus is { } concurrentStatus)
