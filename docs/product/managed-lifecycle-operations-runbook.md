@@ -223,6 +223,15 @@ does not prove absence: the correlated assignment must be deleted, both inventor
 must contain only the retained resource-group name, and the operation must retain
 `CleanupVerified` with no endpoint.
 
+If the worker stops after persisting `CleanupVerified` but before recording success,
+explicit recovery may finish the same Delete without calling Azure again. This
+finalization-only path requires no retained attempted step, cleared inventories on
+both the operation and its exact correlated assignment, and no endpoint. The
+assignment may be `Deleted` after lease expiry or `Unknown` after explicit
+uncertainty; neither state alone grants recovery authority. Capture, claim, and
+executor assignment loading all enforce the same evidence predicate. Changed
+ownership, remaining resources, or invalid retained metadata fail closed.
+
 The recovery-authority column is nullable for existing ledger rows. Legacy absence
 of this snapshot does not grant Azure replay authority. The migration preserves
 append-only guards; SQLite rollback uses native column removal to keep those guards

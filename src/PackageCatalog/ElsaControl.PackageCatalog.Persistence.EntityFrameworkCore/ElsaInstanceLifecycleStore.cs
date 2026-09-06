@@ -2379,10 +2379,13 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 throw Conflict("Azure delete recovery assignment authority is unavailable.");
             return null;
         }
+        var verifiedCleanupFinalization =
+            AzureProviderOperationStore.IsVerifiedCleanupEligible(providerOperation, assignment);
         if (providerOperation.Status != AzureProviderOperationStatus.RecoveryRequired ||
-            assignment.State == AzureProviderAssignmentState.Deleted ||
-            providerOperation.Phase != AzureProviderOperationPhase.CleanupSubmitted ||
-            providerOperation.AttemptedStep != AzureProviderRunnerStep.Cleanup ||
+            !verifiedCleanupFinalization &&
+            (assignment.State == AzureProviderAssignmentState.Deleted ||
+             providerOperation.Phase != AzureProviderOperationPhase.CleanupSubmitted ||
+             providerOperation.AttemptedStep != AzureProviderRunnerStep.Cleanup) ||
             providerOperation.AttemptNumber < 1 || providerOperation.CheckpointSequence < 1 ||
             providerOperation.LeaseExpiresAt is { } providerLeaseExpires &&
             providerLeaseExpires > acceptedAt.ToUniversalTime())

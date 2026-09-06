@@ -100,6 +100,8 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
             var assignment = await db.AzureProviderResourceAssignments.AsNoTracking().SingleOrDefaultAsync(
                 x => x.Id == authority.ProviderAssignmentId && x.WorkspaceId == request.WorkspaceId,
                 cancellationToken);
+            var verifiedCleanupFinalization = providerOperation is not null && assignment is not null &&
+                IsVerifiedCleanupEligible(providerOperation, assignment);
 
             var lifecycleLeaseHash = Hash(request.LeaseToken);
             var nowUtc = now.ToUniversalTime();
@@ -119,15 +121,12 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
                 lifecycleOperation.LeaseTokenHash == lifecycleLeaseHash &&
                 lifecycleOperation.LeaseVersion == request.LeaseVersion &&
                 lifecycleOperation.LeaseExpiresAt is { } lifecycleLeaseExpires && lifecycleLeaseExpires > nowUtc;
-            var providerIsCurrent = providerOperation is not null &&
+            var providerIdentityIsCurrent = providerOperation is not null &&
                 providerOperation.OrganizationId == recovery.OrganizationId &&
                 providerOperation.InstanceId == request.InstanceId &&
                 providerOperation.ProviderAssignmentId == authority.ProviderAssignmentId &&
                 providerOperation.LifecycleAction == ElsaInstanceOperationAction.Delete &&
                 providerOperation.Action == AzureProviderOperationAction.Delete &&
-                providerOperation.Phase == AzureProviderOperationPhase.CleanupSubmitted &&
-                providerOperation.AttemptedStep == AzureProviderRunnerStep.Cleanup &&
-                providerOperation.Status == AzureProviderOperationStatus.RecoveryRequired &&
                 (providerOperation.LeaseExpiresAt is null || providerOperation.LeaseExpiresAt <= nowUtc) &&
                 providerOperation.AttemptNumber == authority.ProviderAttemptNumber &&
                 providerOperation.Version == authority.ProviderVersion &&
@@ -140,12 +139,18 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
                 providerOperation.TemplateFingerprint == authority.ProviderTemplateFingerprint &&
                 AzureProviderOperationValidation.IsLifecycleDeleteIdempotencyKey(
                     providerOperation.IdempotencyKey, request.LifecycleOperationId);
+            var providerIsCurrent = providerIdentityIsCurrent &&
+                providerOperation!.Status == AzureProviderOperationStatus.RecoveryRequired &&
+                (providerOperation.Phase == AzureProviderOperationPhase.CleanupSubmitted &&
+                 providerOperation.AttemptedStep == AzureProviderRunnerStep.Cleanup &&
+                 assignment is not null && assignment.State != AzureProviderAssignmentState.Deleted ||
+                 verifiedCleanupFinalization);
             var assignmentIsCurrent = assignment is not null &&
                 assignment.OrganizationId == recovery.OrganizationId && assignment.InstanceId == request.InstanceId &&
                 assignment.LastOperationId == authority.ProviderOperationId &&
                 string.Equals(assignment.WorkloadName, authority.TargetKey, StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(NormalizeProviderScope(assignment.ProviderScopeFingerprint), authority.ProviderScopeFingerprint, StringComparison.Ordinal) &&
-                assignment.State != AzureProviderAssignmentState.Deleted;
+                (assignment.State != AzureProviderAssignmentState.Deleted || verifiedCleanupFinalization);
             var competingOperation = providerOperation is not null && await db.AzureProviderOperations.AnyAsync(
                 x => x.Id != authority.ProviderOperationId && x.WorkspaceId == request.WorkspaceId &&
                      x.TargetKey == authority.TargetKey &&
@@ -195,6 +200,13 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
         placementAssignmentId == assignmentId;
 
     private static string? NormalizeProviderScope(string? value) => value?.Trim().ToLowerInvariant();
+
+    internal static bool IsVerifiedCleanupEligible(
+        AzureProviderOperationEntity operation,
+        AzureProviderResourceAssignmentEntity assignment) =>
+        AzureProviderDeleteRecoverySupport.IsVerifiedCleanupEligible(
+            ToModel(operation),
+            ToModel(assignment));
 
     async Task<AzureProviderRecoveryObservationReceipt> IAzureProviderRecoveryObservationStore.CreateOrGetAsync(
         AzureProviderRecoveryObservationRecord observation,

@@ -54,6 +54,42 @@ public sealed partial class ElsaInstanceLifecycleStoreTests
         await AssertLateFinalizationCompletedAsync(db, fixture);
     }
 
+    [PosixFact]
+    public async Task Delete_finalization_recovery_rejects_inventory_changed_after_acceptance_without_claim_or_runner_replay()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        await using var fixture = await SeedDeleteRecoveryClaimAsync(db);
+        await PrepareLateFinalizationRecoveryAsync(db, fixture, staleProviderLease: false);
+
+        db.ChangeTracker.Clear();
+        var assignment = await db.AzureProviderResourceAssignments.SingleAsync(
+            x => x.WorkspaceId == fixture.WorkspaceId && x.InstanceId == fixture.InstanceId);
+        assignment.WorkloadRevisionName = "remaining-revision";
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var before = await fixture.OperationStore.GetAsync(fixture.WorkspaceId, fixture.ProviderOperationId);
+        var beforeCommands = await fixture.Tools.ReadLogAsync();
+        var (worker, runner) = CreateLateFinalizationDeletionWorker(db, fixture);
+
+        var batch = await worker.ProcessAvailableAsync(fixture.Request.WorkerId);
+
+        Assert.Equal(ElsaInstanceLifecycleWorkerOutcome.Failed, Assert.Single(batch.Results).Outcome);
+        Assert.Equal(0, runner.Calls);
+        Assert.Equal(beforeCommands, await fixture.Tools.ReadLogAsync());
+        AssertClaimDidNotMutate(before,
+            await fixture.OperationStore.GetAsync(fixture.WorkspaceId, fixture.ProviderOperationId));
+        var lifecycle = await db.ElsaInstanceOperations.AsNoTracking()
+            .SingleAsync(x => x.Id == fixture.Request.LifecycleOperationId);
+        Assert.Equal(ElsaInstanceOperationState.RecoveryRequired, lifecycle.State);
+        var retained = await db.AzureProviderResourceAssignments.AsNoTracking()
+            .SingleAsync(x => x.Id == assignment.Id);
+        Assert.Equal("remaining-revision", retained.WorkloadRevisionName);
+        Assert.Equal(AzureProviderAssignmentState.Unknown, retained.State);
+    }
+
     private static async Task PrepareLateFinalizationRecoveryAsync(
         CatalogDbContext db,
         DeleteClaimFixture fixture,
