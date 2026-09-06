@@ -18,8 +18,8 @@ public partial class AddAzureDeleteRecoveryAuthority : Migration
 
     protected override void Down(MigrationBuilder migrationBuilder)
     {
-        migrationBuilder.DropColumn(
-            name: "AzureDeleteRecoveryAuthority",
-            table: "ElsaInstanceRecoveryRequests");
+        // Use the supported native drop, as in preview-consent rollback, to preserve the
+        // recovery ledger and its append-only triggers instead of rebuilding the table.
+        migrationBuilder.Sql("ALTER TABLE ElsaInstanceRecoveryRequests DROP COLUMN AzureDeleteRecoveryAuthority;");
     }
 }

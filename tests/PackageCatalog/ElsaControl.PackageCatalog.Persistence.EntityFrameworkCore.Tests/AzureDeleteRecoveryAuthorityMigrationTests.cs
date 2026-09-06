@@ -118,6 +118,26 @@ public sealed class AzureDeleteRecoveryAuthorityMigrationTests
         Assert.DoesNotContain(migration.DownOperations, operation => operation is DropTableOperation);
     }
 
+    [Fact]
+    public async Task Sqlite_down_migration_preserves_the_ledger_and_append_only_guards()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateSqliteContext(connection);
+        await db.Database.MigrateAsync();
+        var rowId = await InsertLegacyRecoveryRequestAsync(db);
+
+        await db.Database.MigrateAsync(PreviousSqliteMigration);
+
+        Assert.Equal(1, await db.Database.SqlQueryRaw<long>(
+            "SELECT COUNT(*) AS Value FROM ElsaInstanceRecoveryRequests").SingleAsync());
+        Assert.Equal(0, await db.Database.SqlQueryRaw<long>(
+            "SELECT COUNT(*) AS Value FROM pragma_table_info('ElsaInstanceRecoveryRequests') WHERE name = 'AzureDeleteRecoveryAuthority'").SingleAsync());
+        await Assert.ThrowsAsync<SqliteException>(() => db.Database.ExecuteSqlInterpolatedAsync($"""
+            DELETE FROM ElsaInstanceRecoveryRequests WHERE Id = {rowId}
+            """));
+    }
+
     private static CatalogDbContext CreateSqliteContext(SqliteConnection connection) =>
         new(new DbContextOptionsBuilder<CatalogDbContext>()
             .UseSqlite(connection, sqlite => sqlite.MigrationsAssembly(
