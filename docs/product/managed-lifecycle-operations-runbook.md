@@ -351,6 +351,22 @@ cutover.
   text is not an operational code and must not be copied into alerts, metrics,
   API projections, or audit history.
 
+## Authenticated telemetry rollout (#266)
+
+The separate [managed telemetry sink template](../../infra/managed-telemetry/README.md)
+prepares workspace-based Application Insights with local authentication disabled
+and an exact-resource publisher grant for the existing Control API managed
+identity. It does not modify API deployment mode, expose the Aspire dashboard,
+enable workers, or prove ingestion. The Azure service endpoints are Entra/RBAC
+protected; private-link ingestion is not implied.
+
+Treat exporter startup, actual signal ingestion, private operator dashboard access,
+and the fresh five-minute observation window as separate gates. An anonymous
+dashboard denial alone is not positive operator-access proof. Stored instance
+health alone is not a fresh endpoint sample. A missing or capped telemetry window
+remains unknown/incomplete, never healthy. Keep the metric and authorized trace
+contracts above unchanged throughout rollout.
+
 ## Controlled-fixture validation
 
 Validate this runbook against controlled persistence/API fixtures for:
