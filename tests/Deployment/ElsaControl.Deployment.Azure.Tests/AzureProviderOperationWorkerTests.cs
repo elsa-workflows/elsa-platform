@@ -112,7 +112,7 @@ public sealed class AzureProviderOperationWorkerTests
         Assert.Equal(AzureProviderOperationStatus.Failed, store.Operations[0].Status);
         Assert.Equal(AzureProviderOperationStatus.Succeeded, store.Operations[1].Status);
         Assert.Equal(1, store.Operations[1].AttemptNumber);
-        Assert.Equal(7, runner.Steps.Count);
+        Assert.Equal(9, runner.Steps.Count);
     }
 
     [Fact]
@@ -281,6 +281,9 @@ public sealed class AzureProviderOperationWorkerTests
                 AzureProviderRunnerStep.Foundation => AzureProviderOperationPhase.FoundationSubmitted,
                 AzureProviderRunnerStep.AcrPull or AzureProviderRunnerStep.SeedSecrets => AzureProviderOperationPhase.FoundationSubmitted,
                 AzureProviderRunnerStep.SqlBootstrap => AzureProviderOperationPhase.FoundationReady,
+                AzureProviderRunnerStep.SqlFirewallCreate => AzureProviderOperationPhase.SqlFirewallReady,
+                AzureProviderRunnerStep.SqlBootstrapScript => AzureProviderOperationPhase.SqlBootstrapReady,
+                AzureProviderRunnerStep.SqlFirewallCleanup => AzureProviderOperationPhase.FoundationReady,
                 AzureProviderRunnerStep.Workload => AzureProviderOperationPhase.WorkloadReady,
                 AzureProviderRunnerStep.Health => AzureProviderOperationPhase.HealthVerified,
                 AzureProviderRunnerStep.Promotion => AzureProviderOperationPhase.TrafficPromoted,
