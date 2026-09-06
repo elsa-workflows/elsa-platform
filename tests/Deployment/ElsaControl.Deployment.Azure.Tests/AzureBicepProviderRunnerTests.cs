@@ -1365,6 +1365,33 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Sql_script_failure_is_not_retried_even_when_read_observations_allow_retries()
+    {
+        using var fixture = new RunnerFixture(observationAttempts: 3);
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("-?"), "Microsoft sqlcmd --authentication-method ActiveDirectoryDefault");
+        process.Failure(args => args.Contains("-i"));
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), ExactSqlBootstrapFirewall);
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("delete"));
+        process.Success(args => args.Contains("firewall-rule") && args.Contains("list"), "[]");
+        var resources = fixture.FoundationResources with
+        {
+            RegistryResourceId = fixture.RegistryId,
+            AcrPullDeploymentId = fixture.RegistryDeploymentId,
+            AcrPullRoleAssignmentId = fixture.RegistryRoleAssignmentId
+        };
+
+        var result = await fixture.Runner(process).RunAsync(
+            fixture.Command(AzureProviderRunnerStep.SqlBootstrapScript, resources));
+
+        Assert.Equal(AzureProviderRunnerOutcome.Uncertain, result.Outcome);
+        Assert.Equal("azure.sql.bootstrap-uncertain", result.Code);
+        Assert.Single(process.Calls, call => call.Contains("-i"));
+        Assert.Single(process.Calls, call => call.Contains("firewall-rule") && call.Contains("delete"));
+        Assert.Equal(5, process.Calls.Count);
+    }
+
+    [Fact]
     public async Task Sql_bootstrap_script_stage_cleans_firewall_when_required_inputs_are_missing()
     {
         var process = new FakeCommandProcess();

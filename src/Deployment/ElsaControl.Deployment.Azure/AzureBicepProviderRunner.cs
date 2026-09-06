@@ -908,35 +908,19 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner, IAzureProvi
                 command.Plan.WorkloadName,
                 cancellationToken);
 
-            var bootstrapSucceeded = false;
-            AzureCommandProcessFailureKind? bootstrapFailureKind = null;
-            for (var attempt = 0; attempt < _options.ObservationAttempts; attempt++)
-            {
-                EnsureMutationAuthority(command);
-                var bootstrap = await ExecuteSqlCmdAsync<AzureCommandNoOutput>(command,
-                    ["-S", $"tcp:{command.Resources.SqlServerFqdn},1433", "-d", "Elsa", ..SqlAuthenticationArguments(),
-                        "-b", "-i", scriptPath],
-                    static _ => AzureCommandNoOutput.Instance,
-                    cancellationToken);
-                if (bootstrap.Succeeded)
-                {
-                    bootstrapSucceeded = true;
-                    break;
-                }
+            // A failed process may already have committed part of the SQL script. Read
+            // retries are safe, but repeating this mutation requires explicit recovery.
+            EnsureMutationAuthority(command);
+            var bootstrap = await ExecuteSqlCmdAsync<AzureCommandNoOutput>(command,
+                ["-S", $"tcp:{command.Resources.SqlServerFqdn},1433", "-d", "Elsa", ..SqlAuthenticationArguments(),
+                    "-b", "-i", scriptPath],
+                static _ => AzureCommandNoOutput.Instance,
+                cancellationToken);
 
-                bootstrapFailureKind = bootstrap.FailureKind;
-                if (bootstrap.Status == AzureCommandProcessStatus.Cancelled || cancellationToken.IsCancellationRequested ||
-                    bootstrap.Status == AzureCommandProcessStatus.TerminationUncertain ||
-                    bootstrap.FailureKind == AzureCommandProcessFailureKind.TerminationUncertain)
-                    break;
-                if (attempt + 1 < _options.ObservationAttempts)
-                    await Task.Delay(_options.ObservationDelay, cancellationToken);
-            }
-
-            if (!bootstrapSucceeded)
+            if (!bootstrap.Succeeded)
                 return cancellationToken.IsCancellationRequested
-                    ? Uncertain(command, AzureProviderOperationPhase.SqlBootstrapReady, "azure.sql.cancelled", "SQL bootstrap was interrupted before completion.", processFailureKind: bootstrapFailureKind)
-                    : Uncertain(command, AzureProviderOperationPhase.SqlBootstrapReady, "azure.sql.bootstrap-uncertain", "SQL bootstrap did not produce a confirmed result.", processFailureKind: bootstrapFailureKind);
+                    ? Uncertain(command, AzureProviderOperationPhase.SqlBootstrapReady, "azure.sql.cancelled", "SQL bootstrap was interrupted before completion.", processFailureKind: bootstrap.FailureKind)
+                    : Uncertain(command, AzureProviderOperationPhase.SqlBootstrapReady, "azure.sql.bootstrap-uncertain", "SQL bootstrap did not produce a confirmed result.", processFailureKind: bootstrap.FailureKind);
 
             scriptSucceeded = true;
             return Completed(command, AzureProviderOperationPhase.SqlBootstrapReady, command.Resources);
