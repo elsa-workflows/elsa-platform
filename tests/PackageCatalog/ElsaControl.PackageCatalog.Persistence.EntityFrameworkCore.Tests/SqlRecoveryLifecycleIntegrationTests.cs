@@ -1,5 +1,6 @@
 using System.Text;
 using System.Security.Cryptography;
+using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Azure;
 using ElsaControl.Deployment.Core.Instances;
 using ElsaControl.Deployment.Core.Workspace;
@@ -33,7 +34,8 @@ public sealed partial class AzureProviderRecoveryObservationPersistenceTests
             var azPath = Path.Combine(root, "az");
             var sqlCmdPath = Path.Combine(root, "sqlcmd");
             var curlPath = Path.Combine(root, "curl");
-            await WriteExecutableAsync(azPath, $$"""#!/bin/sh
+            await WriteExecutableAsync(azPath, $$"""
+#!/bin/sh
 set -eu
 state={{ShellQuote(firewallDeleted)}}
 case " $* " in
@@ -45,7 +47,8 @@ case " $* " in
   *) printf '%s' '[]'; exit 0 ;;
 esac
 """);
-            await WriteExecutableAsync(sqlCmdPath, $"""#!/bin/sh
+            await WriteExecutableAsync(sqlCmdPath, $"""
+#!/bin/sh
 set -eu
 printf x >> {ShellQuote(sqlObservations)}
 printf '%s' 'complete'
@@ -270,7 +273,8 @@ printf '%s' 'complete'
             Assert.Equal(2, await CountAsync(sqlObservations));
             var persisted = Assert.IsType<AzureProviderOperation>(await providerStore.GetAsync(workspace.Id, operation.Id));
             Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, persisted.Status);
-            Assert.Equal(AzureProviderOperationPhase.WorkloadReady, persisted.Phase);
+            // The failed workload observation cannot advance the last confirmed checkpoint.
+            Assert.Equal(AzureProviderOperationPhase.FoundationReady, persisted.Phase);
             Assert.Equal(AzureProviderRunnerStep.Workload, persisted.AttemptedStep);
             var lifecycle = await providerDb.ElsaInstanceOperations
                 .AsNoTracking()
