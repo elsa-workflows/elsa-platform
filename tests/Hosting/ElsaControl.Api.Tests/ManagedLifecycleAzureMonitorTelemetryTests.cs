@@ -93,6 +93,22 @@ public sealed class ManagedLifecycleAzureMonitorTelemetryTests : IDisposable
     }
 
     [Fact]
+    public void Guid_metadata_accepts_hex_casing_and_normalizes_the_exporter_key()
+    {
+        var options = new ManagedLifecycleAzureMonitorTelemetryOptions
+        {
+            Enabled = true,
+            ConnectionString = "InstrumentationKey=ABCDEF12-3456-7890-ABCD-EF1234567890;IngestionEndpoint=https://westeurope-1.in.applicationinsights.azure.com/;ApplicationId=FEDCBA98-7654-3210-FEDC-BA9876543210",
+            ManagedIdentityClientId = "ABCDEF12-3456-7890-abcd-ef1234567890"
+        };
+
+        options.Validate();
+
+        Assert.Equal("InstrumentationKey=abcdef12-3456-7890-abcd-ef1234567890;IngestionEndpoint=https://westeurope-1.in.applicationinsights.azure.com/", options.GetExporterConnectionString());
+        Assert.IsType<ManagedIdentityCredential>(ManagedLifecycleAzureMonitorTelemetryCredentialFactory.Create(options));
+    }
+
+    [Fact]
     public void Enabled_configuration_without_identity_fails_closed_without_echoing_values()
     {
         var secretLikeConnectionString =

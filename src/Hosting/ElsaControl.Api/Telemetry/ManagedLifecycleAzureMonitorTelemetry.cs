@@ -97,14 +97,14 @@ public sealed class ManagedLifecycleAzureMonitorTelemetryOptions
             throw Invalid("connection_string_invalid");
         if (!Guid.TryParseExact(ManagedIdentityClientId, "D", out var clientId) ||
             clientId == Guid.Empty ||
-            !string.Equals(ManagedIdentityClientId, clientId.ToString("D"), StringComparison.Ordinal))
+            !string.Equals(ManagedIdentityClientId, clientId.ToString("D"), StringComparison.OrdinalIgnoreCase))
             throw Invalid("managed_identity_client_id_required");
 
         var values = ParseConnectionString(ConnectionString);
         if (!values.TryGetValue("InstrumentationKey", out var instrumentationKey) ||
             !Guid.TryParseExact(instrumentationKey, "D", out var key) ||
             key == Guid.Empty ||
-            !string.Equals(instrumentationKey, key.ToString("D"), StringComparison.Ordinal))
+            !string.Equals(instrumentationKey, key.ToString("D"), StringComparison.OrdinalIgnoreCase))
             throw Invalid("instrumentation_key_invalid");
 
         if (!values.TryGetValue("IngestionEndpoint", out var ingestionEndpoint) ||
@@ -126,7 +126,8 @@ public sealed class ManagedLifecycleAzureMonitorTelemetryOptions
     {
         Validate();
         var values = ParseConnectionString(ConnectionString!);
-        return $"InstrumentationKey={values["InstrumentationKey"]};IngestionEndpoint={values["IngestionEndpoint"]}";
+        var key = Guid.ParseExact(values["InstrumentationKey"], "D").ToString("D");
+        return $"InstrumentationKey={key};IngestionEndpoint={values["IngestionEndpoint"]}";
     }
 
     private static Dictionary<string, string> ParseConnectionString(string value)
@@ -183,7 +184,7 @@ internal static class ManagedLifecycleAzureMonitorTelemetryCredentialFactory
     {
         options.Validate();
         return new ManagedIdentityCredential(
-            ManagedIdentityId.FromUserAssignedClientId(options.ManagedIdentityClientId!));
+            ManagedIdentityId.FromUserAssignedClientId(Guid.ParseExact(options.ManagedIdentityClientId!, "D").ToString("D")));
     }
 }
 
