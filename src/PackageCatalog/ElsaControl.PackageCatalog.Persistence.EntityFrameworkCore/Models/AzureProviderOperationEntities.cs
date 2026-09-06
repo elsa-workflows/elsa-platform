@@ -38,6 +38,7 @@ internal sealed class AzureProviderOperationEntity
     public string SecretReferencesJson { get; set; } = "{}";
     public AzureProviderOperationStatus Status { get; set; }
     public AzureProviderOperationPhase Phase { get; set; }
+    public AzureProviderRunnerStep? AttemptedStep { get; set; }
     public long CheckpointSequence { get; set; }
     public int AttemptNumber { get; set; }
     public long Version { get; set; }
@@ -128,4 +129,74 @@ internal sealed class AzureProviderOperationTransitionEntity
     public string Code { get; set; } = "";
     public string Message { get; set; } = "";
     public DateTimeOffset OccurredAt { get; set; }
+}
+
+/// <summary>
+/// Append-only, provider-specific recovery proof. Only typed correlation and
+/// digest metadata is retained; provider payloads and secrets are not representable.
+/// </summary>
+internal sealed class AzureProviderRecoveryObservationEntity
+{
+    public Guid Id { get; set; }
+    public Guid OrganizationId { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public Guid InstanceId { get; set; }
+    public Guid LifecycleOperationId { get; set; }
+    public ElsaInstanceOperationAction LifecycleAction { get; set; }
+    public int ObservedLifecycleAttemptNumber { get; set; }
+    public int ObservedInstanceVersion { get; set; }
+    public Guid ProviderOperationId { get; set; }
+    public Guid ProviderAssignmentId { get; set; }
+    public string ProviderOperationIdentity { get; set; } = "";
+    public string ProviderRequestHash { get; set; } = "";
+    public int ProviderAttemptNumber { get; set; }
+    public long ProviderVersion { get; set; }
+    public long ProviderCheckpointSequence { get; set; }
+    public string TargetKey { get; set; } = "";
+    public string? ProviderScopeFingerprint { get; set; }
+    public string ResolvedPlanId { get; set; } = "";
+    public int ResolvedPlanSchemaVersion { get; set; }
+    public string ResolvedPlanUri { get; set; } = "";
+    public string ResolvedPlanContentHash { get; set; } = "";
+    public string ProviderPlanFingerprint { get; set; } = "";
+    public string ProviderTemplateFingerprint { get; set; } = "";
+    public AzureProviderRunnerStep CompletedStep { get; set; }
+    public AzureProviderOperationPhase ObservedPhase { get; set; }
+    public AzureProviderHealth ObservedHealth { get; set; }
+    public string ResourceFingerprint { get; set; } = "";
+    public string PostconditionFingerprint { get; set; } = "";
+    public string NaturalKey { get; set; } = "";
+    public string RecordDigest { get; set; } = "";
+    public DateTimeOffset ObservedAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+
+    public AzureProviderRecoveryObservationRecord ToRecord() => new(
+        OrganizationId,
+        WorkspaceId,
+        InstanceId,
+        LifecycleOperationId,
+        LifecycleAction,
+        ObservedLifecycleAttemptNumber,
+        ObservedInstanceVersion,
+        ProviderOperationId,
+        ProviderOperationIdentity,
+        ProviderRequestHash,
+        ProviderAttemptNumber,
+        ProviderVersion,
+        ProviderCheckpointSequence,
+        ProviderAssignmentId,
+        TargetKey,
+        ProviderScopeFingerprint,
+        ResolvedPlanId,
+        ResolvedPlanSchemaVersion,
+        ResolvedPlanUri,
+        ResolvedPlanContentHash,
+        ProviderPlanFingerprint,
+        ProviderTemplateFingerprint,
+        CompletedStep,
+        ObservedPhase,
+        ObservedHealth,
+        ResourceFingerprint,
+        PostconditionFingerprint,
+        ObservedAt);
 }

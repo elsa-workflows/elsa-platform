@@ -547,8 +547,6 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasAlternateKey("OrganizationId", "Id");
-
                     b.HasIndex("OrganizationId")
                         .IsUnique();
 
@@ -1194,6 +1192,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.Property<int>("AttemptNumber")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("AttemptedStep")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<long>("CheckpointSequence")
                         .HasColumnType("INTEGER");
 
@@ -1495,6 +1497,154 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .IsUnique();
 
                     b.ToTable("AzureProviderOperationTransitions");
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.AzureProviderRecoveryObservationEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CompletedStep")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("InstanceId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LifecycleAction")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("LifecycleOperationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NaturalKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("ObservedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ObservedHealth")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ObservedInstanceVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ObservedLifecycleAttemptNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ObservedPhase")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PostconditionFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ProviderAssignmentId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ProviderAttemptNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("ProviderCheckpointSequence")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("ProviderOperationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProviderOperationIdentity")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProviderPlanFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProviderRequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProviderScopeFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProviderTemplateFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("ProviderVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RecordDigest")
+                        .IsRequired()
+                        .HasMaxLength(71)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ResolvedPlanContentHash")
+                        .IsRequired()
+                        .HasMaxLength(71)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ResolvedPlanId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ResolvedPlanSchemaVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ResolvedPlanUri")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ResourceFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TargetKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LifecycleOperationId");
+
+                    b.HasIndex("ProviderAssignmentId");
+
+                    b.HasIndex("ProviderOperationId");
+
+                    b.HasIndex("WorkspaceId", "NaturalKey")
+                        .IsUnique();
+
+                    b.HasIndex("WorkspaceId", "LifecycleOperationId", "ObservedAt");
+
+                    b.ToTable("AzureProviderRecoveryObservations");
                 });
 
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.AzureProviderResourceAssignmentEntity", b =>
@@ -3321,10 +3471,24 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                     b.Property<Guid>("InstanceId")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("ObservedInstanceVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("ObservedLifecycleAttemptNumber")
+                        .HasColumnType("INTEGER");
+
                     b.Property<Guid>("OperationId")
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("OrganizationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RecoveryObservationDigest")
+                        .HasMaxLength(71)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RecoveryObservationReference")
+                        .HasMaxLength(2048)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RequestHash")
@@ -5241,6 +5405,33 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .IsRequired();
 
                     b.Navigation("Operation");
+                });
+
+            modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.AzureProviderRecoveryObservationEntity", b =>
+                {
+                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.ElsaInstanceOperationEntity", null)
+                        .WithMany()
+                        .HasForeignKey("LifecycleOperationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.AzureProviderResourceAssignmentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ProviderAssignmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.AzureProviderOperationEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ProviderOperationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ElsaControl.PackageCatalog.Core.Accounts.Workspace", null)
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models.AzureProviderResourceAssignmentEntity", b =>

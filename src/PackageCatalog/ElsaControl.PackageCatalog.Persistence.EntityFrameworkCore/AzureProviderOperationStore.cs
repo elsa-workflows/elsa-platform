@@ -8,17 +8,158 @@ using ElsaControl.Deployment.Azure;
 using ElsaControl.Deployment.Core.Instances;
 using ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Models;
 using Microsoft.EntityFrameworkCore;
+using ElsaControl.RuntimeBuilder.Abstractions.Plans;
 
 namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore;
 
 public sealed class AzureProviderOperationStore(CatalogDbContext db) :
     IAzureProviderOperationStore,
     IAzureProviderOperationAuthorizationStore,
-    IAzureProviderResourceAssignmentStore
+    IAzureProviderResourceAssignmentStore,
+    IAzureProviderRecoveryObservationStore
 {
     private static readonly IReadOnlyDictionary<string, string> EmptySecretReferences =
         new ReadOnlyDictionary<string, string>(
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+
+    async Task<AzureProviderRecoveryObservationReceipt> IAzureProviderRecoveryObservationStore.CreateOrGetAsync(
+        AzureProviderRecoveryObservationRecord observation,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+        observation.Validate();
+        await ValidateRecoveryObservationRecordAuthorityAsync(observation, cancellationToken);
+
+        var existing = await FindRecoveryObservationAsync(observation, cancellationToken);
+        if (existing is not null)
+            return ToRecoveryObservationReceipt(existing);
+
+        var now = observation.ObservedAt.ToUniversalTime();
+        var entity = ToRecoveryObservationEntity(observation, now);
+        db.AzureProviderRecoveryObservations.Add(entity);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            return ToRecoveryObservationReceipt(entity);
+        }
+        catch (DbUpdateException)
+        {
+            // The unique natural key is the concurrency boundary. A losing
+            // writer rereads the winner and returns the original immutable row;
+            // it must never create a second audit record for an unchanged poll.
+            db.ChangeTracker.Clear();
+            existing = await FindRecoveryObservationAsync(observation, cancellationToken);
+            if (existing is not null)
+                return ToRecoveryObservationReceipt(existing);
+            throw;
+        }
+    }
+
+    async Task<AzureProviderRecoveryObservationRecord?> IAzureProviderRecoveryObservationStore.GetAndValidateRecordedAsync(
+        Guid organizationId,
+        Guid workspaceId,
+        Guid instanceId,
+        Guid lifecycleOperationId,
+        int observedLifecycleAttemptNumber,
+        string reference,
+        string digest,
+        CancellationToken cancellationToken)
+    {
+        if (organizationId == Guid.Empty || workspaceId == Guid.Empty || instanceId == Guid.Empty ||
+            lifecycleOperationId == Guid.Empty || observedLifecycleAttemptNumber < 1 ||
+            !ElsaInstanceProviderRecoveryObservationReference.TryParse(reference, out var recordId, out var referenceDigest) ||
+            !string.Equals(referenceDigest, digest, StringComparison.Ordinal))
+            return null;
+
+        var entity = await db.AzureProviderRecoveryObservations.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == recordId &&
+                                       x.OrganizationId == organizationId &&
+                                       x.WorkspaceId == workspaceId &&
+                                       x.InstanceId == instanceId &&
+                                       x.LifecycleOperationId == lifecycleOperationId &&
+                                       x.ObservedLifecycleAttemptNumber == observedLifecycleAttemptNumber,
+                cancellationToken);
+        if (entity is null)
+            return null;
+
+        var model = ToRecoveryObservation(entity);
+        model.Validate();
+        if (!string.Equals(model.ComputeRecordDigest(recordId), digest, StringComparison.Ordinal))
+            return null;
+        await ValidateRecoveryObservationStoredIntegrityAsync(model, cancellationToken);
+        return model;
+    }
+
+    async Task<AzureProviderRecoveryObservationRecord?> IAzureProviderRecoveryObservationStore.GetAndValidateForAcceptedRecoveryAsync(
+        AzureProviderRecoveryObservationBinding binding,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+        binding.Validate();
+        if (!ElsaInstanceProviderRecoveryObservationReference.TryParse(
+                binding.Reference, out var recordId, out var referenceDigest))
+            return null;
+
+        var recovery = await db.ElsaInstanceRecoveryRequests.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == binding.RecoveryRequestId, cancellationToken);
+        if (recovery is null ||
+            recovery.OrganizationId != binding.OrganizationId ||
+            recovery.WorkspaceId != binding.WorkspaceId ||
+            recovery.InstanceId != binding.InstanceId ||
+            recovery.OperationId != binding.LifecycleOperationId ||
+            recovery.AttemptNumber != binding.AcceptedLifecycleAttemptNumber ||
+            !string.Equals(recovery.IdempotencyScope, binding.IdempotencyScope, StringComparison.Ordinal) ||
+            !string.Equals(recovery.IdempotencyKey, binding.IdempotencyKey, StringComparison.Ordinal) ||
+            !string.Equals(recovery.RequestHash, binding.RequestHash, StringComparison.Ordinal) ||
+            !string.Equals(recovery.RecoveryObservationReference, binding.Reference, StringComparison.Ordinal) ||
+            !string.Equals(recovery.RecoveryObservationDigest, binding.Digest, StringComparison.Ordinal) ||
+            recovery.ObservedLifecycleAttemptNumber != binding.ObservedLifecycleAttemptNumber ||
+            recovery.ObservedInstanceVersion != binding.ObservedInstanceVersion)
+            return null;
+
+        var entity = await db.AzureProviderRecoveryObservations.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == recordId &&
+                                       x.OrganizationId == binding.OrganizationId &&
+                                       x.WorkspaceId == binding.WorkspaceId &&
+                                       x.InstanceId == binding.InstanceId &&
+                                       x.LifecycleOperationId == binding.LifecycleOperationId &&
+                                       x.ObservedLifecycleAttemptNumber == binding.ObservedLifecycleAttemptNumber,
+                cancellationToken);
+        if (entity is null)
+            return null;
+
+        var model = ToRecoveryObservation(entity);
+        model.Validate();
+        if (!string.Equals(referenceDigest, binding.Digest, StringComparison.Ordinal) ||
+            !string.Equals(model.ComputeRecordDigest(recordId), binding.Digest, StringComparison.Ordinal) ||
+            model.ObservedInstanceVersion == int.MaxValue ||
+            binding.ObservedInstanceVersion != model.ObservedInstanceVersion + 1)
+            return null;
+
+        var lifecycleOperation = await db.ElsaInstanceOperations.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == binding.LifecycleOperationId &&
+                                       x.OrganizationId == binding.OrganizationId &&
+                                       x.WorkspaceId == binding.WorkspaceId &&
+                                       x.InstanceId == binding.InstanceId,
+                cancellationToken);
+        var instance = await db.ElsaInstances.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == binding.InstanceId &&
+                                       x.OrganizationId == binding.OrganizationId &&
+                                       x.WorkspaceId == binding.WorkspaceId,
+                cancellationToken);
+        if (lifecycleOperation is null || instance is null ||
+            lifecycleOperation.Action != model.LifecycleAction ||
+            lifecycleOperation.AttemptNumber != binding.AcceptedLifecycleAttemptNumber ||
+            lifecycleOperation.State is not (ElsaInstanceOperationState.Queued or ElsaInstanceOperationState.Running) ||
+            !string.Equals(lifecycleOperation.RecoveryIdempotencyScope, binding.IdempotencyScope, StringComparison.Ordinal) ||
+            !string.Equals(lifecycleOperation.RecoveryIdempotencyKey, binding.IdempotencyKey, StringComparison.Ordinal) ||
+            !string.Equals(lifecycleOperation.RecoveryRequestHash, binding.RequestHash, StringComparison.Ordinal) ||
+            instance.Version != binding.AcceptedInstanceVersion)
+            return null;
+
+        await ValidateRecoveryObservationStoredIntegrityAsync(model, cancellationToken);
+        return model;
+    }
 
     public async Task<AzureProviderOperation> CreateOrGetAsync(
         AzureProviderOperationRequest request,
@@ -531,7 +672,8 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
         AzureProviderOperationValidation.ValidateCheckpoint(checkpoint);
         var entity = await db.AzureProviderOperations.SingleOrDefaultAsync(x => x.WorkspaceId == workspaceId && x.Id == operationId, cancellationToken);
         if (entity is null || entity.Status != AzureProviderOperationStatus.Running || !LeaseMatches(entity, leaseToken, now) || expectedVersion.HasValue && entity.Version != expectedVersion.Value) return null;
-        if ((long)checkpoint.Phase < (long)entity.Phase) throw new InvalidOperationException("Checkpoint phase cannot move backwards.");
+        if (AzureProviderOperationPhaseOrdering.Compare(checkpoint.Phase, entity.Phase) < 0)
+            throw new InvalidOperationException("Checkpoint phase cannot move backwards.");
         AzureProviderResourceAssignmentEntity? assignment = null;
         if (entity.ProviderAssignmentId is { } assignmentId)
         {
@@ -569,9 +711,11 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
         var health = checkpoint.Health == AzureProviderHealth.Unknown ? entity.Health : checkpoint.Health;
         if (entity.Phase == checkpoint.Phase && entity.Endpoint == endpoint && entity.Health == health &&
             entity.DiagnosticsJson == diagnosticsJson && ResourcesEqual(entity, resources) &&
+            entity.AttemptedStep == checkpoint.AttemptedStep &&
             lastTransitionCode == checkpoint.Code)
             return ToModel(entity);
-        entity.Phase = checkpoint.Phase; entity.CheckpointSequence++; entity.Version++; entity.UpdatedAt = now;
+        entity.Phase = checkpoint.Phase; entity.AttemptedStep = checkpoint.AttemptedStep;
+        entity.CheckpointSequence++; entity.Version++; entity.UpdatedAt = now;
         entity.ResourceGroupName = resources.ResourceGroupName; entity.FoundationDeploymentId = resources.FoundationDeploymentId;
         entity.WorkloadDeploymentId = resources.WorkloadDeploymentId; entity.WorkloadResourceId = resources.WorkloadResourceId;
         entity.WorkloadRevisionName = resources.WorkloadRevisionName; entity.StableTrafficRevisionName = resources.StableTrafficRevisionName;
@@ -698,6 +842,264 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
     private async Task<AzureProviderOperation?> FindByKeyAsync(AzureProviderOperationRequest request, CancellationToken cancellationToken) =>
         await db.AzureProviderOperations.AsNoTracking().SingleOrDefaultAsync(x => x.WorkspaceId == request.WorkspaceId && x.TargetKey == request.TargetKey && x.IdempotencyKey == request.IdempotencyKey, cancellationToken) is { } entity ? ToModel(entity) : null;
 
+    private async Task ValidateRecoveryObservationRecordAuthorityAsync(
+        AzureProviderRecoveryObservationRecord observation,
+        CancellationToken cancellationToken)
+    {
+        var providerOperation = await LoadAndValidateRecoveryProviderOperationAsync(observation, cancellationToken);
+        if (providerOperation.Status != AzureProviderOperationStatus.RecoveryRequired ||
+            providerOperation.AttemptNumber != observation.ProviderAttemptNumber ||
+            providerOperation.Version != observation.ProviderVersion ||
+            providerOperation.CheckpointSequence != observation.ProviderCheckpointSequence ||
+            providerOperation.IdempotencyKey != $"elsa-instance-operation:{observation.LifecycleOperationId:D}")
+            throw new InvalidOperationException("Recovery observation provider state is stale.");
+        ValidateRecoveryObservationProviderRequest(providerOperation);
+
+        await ValidateRecoveryObservationAssignmentAsync(observation, cancellationToken);
+
+        var lifecycleOperation = await db.ElsaInstanceOperations.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == observation.LifecycleOperationId &&
+                                       x.OrganizationId == observation.OrganizationId &&
+                                       x.WorkspaceId == observation.WorkspaceId &&
+                                       x.InstanceId == observation.InstanceId,
+                cancellationToken);
+        if (lifecycleOperation is null || lifecycleOperation.Action != observation.LifecycleAction ||
+            lifecycleOperation.State != ElsaInstanceOperationState.RecoveryRequired ||
+            lifecycleOperation.AttemptNumber != observation.ObservedLifecycleAttemptNumber ||
+            !string.Equals(lifecycleOperation.ResolvedPlanId, observation.ResolvedPlanId, StringComparison.Ordinal))
+            throw new InvalidOperationException("Recovery observation is not bound to the retained lifecycle operation.");
+
+        var instance = await db.ElsaInstances.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == observation.InstanceId &&
+                                       x.OrganizationId == observation.OrganizationId &&
+                                       x.WorkspaceId == observation.WorkspaceId,
+                cancellationToken);
+        if (instance is null || instance.Version != observation.ObservedInstanceVersion ||
+            !string.Equals(instance.ResolvedPlanId, observation.ResolvedPlanId, StringComparison.Ordinal) ||
+            !string.Equals(instance.ResolvedPlanUri, observation.ResolvedPlanUri, StringComparison.Ordinal) ||
+            !string.Equals(instance.ResolvedPlanContentHash, observation.ResolvedPlanContentHash, StringComparison.Ordinal))
+            throw new InvalidOperationException("Recovery observation instance state is stale.");
+
+        await ValidateRecoveryObservationPlanAuthorityAsync(observation, cancellationToken);
+    }
+
+    private async Task ValidateRecoveryObservationStoredIntegrityAsync(
+        AzureProviderRecoveryObservationRecord observation,
+        CancellationToken cancellationToken)
+    {
+        var providerOperation = await LoadAndValidateRecoveryProviderOperationAsync(observation, cancellationToken);
+        if (providerOperation.Status != AzureProviderOperationStatus.RecoveryRequired ||
+            providerOperation.AttemptNumber != observation.ProviderAttemptNumber ||
+            providerOperation.Version != observation.ProviderVersion ||
+            providerOperation.CheckpointSequence != observation.ProviderCheckpointSequence)
+            throw new InvalidOperationException("Recovery observation provider state is stale.");
+        ValidateRecoveryObservationProviderRequest(providerOperation);
+
+        await ValidateRecoveryObservationAssignmentAsync(observation, cancellationToken);
+
+        await ValidateRecoveryObservationPlanAuthorityAsync(observation, cancellationToken);
+    }
+
+    private async Task<AzureProviderOperationEntity> LoadAndValidateRecoveryProviderOperationAsync(
+        AzureProviderRecoveryObservationRecord observation,
+        CancellationToken cancellationToken)
+    {
+        var providerOperation = await db.AzureProviderOperations.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == observation.ProviderOperationId &&
+                                       x.WorkspaceId == observation.WorkspaceId,
+                cancellationToken);
+        if (providerOperation is null ||
+            providerOperation.OrganizationId != observation.OrganizationId ||
+            providerOperation.InstanceId != observation.InstanceId ||
+            providerOperation.ProviderAssignmentId != observation.ProviderAssignmentId ||
+            providerOperation.LifecycleAction != observation.LifecycleAction ||
+            !string.Equals(providerOperation.OperationIdentity, observation.ProviderOperationIdentity, StringComparison.Ordinal) ||
+            !string.Equals(providerOperation.RequestHash, observation.ProviderRequestHash, StringComparison.Ordinal) ||
+            !string.Equals(providerOperation.TargetKey, observation.TargetKey, StringComparison.Ordinal) ||
+            !string.Equals(providerOperation.ProviderScopeFingerprint, observation.ProviderScopeFingerprint, StringComparison.Ordinal) ||
+            !string.Equals(providerOperation.PlanFingerprint, observation.ProviderPlanFingerprint, StringComparison.Ordinal) ||
+            !string.Equals(providerOperation.TemplateFingerprint, observation.ProviderTemplateFingerprint, StringComparison.Ordinal) ||
+            providerOperation.IdempotencyKey != $"elsa-instance-operation:{observation.LifecycleOperationId:D}")
+            throw new InvalidOperationException("Recovery observation is not bound to the retained provider operation.");
+        return providerOperation;
+    }
+
+    private async Task ValidateRecoveryObservationAssignmentAsync(
+        AzureProviderRecoveryObservationRecord observation,
+        CancellationToken cancellationToken)
+    {
+        var assignment = await db.AzureProviderResourceAssignments.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == observation.ProviderAssignmentId &&
+                                       x.WorkspaceId == observation.WorkspaceId,
+                cancellationToken);
+        if (assignment is null || assignment.OrganizationId != observation.OrganizationId ||
+            assignment.InstanceId != observation.InstanceId ||
+            assignment.LastOperationId != observation.ProviderOperationId ||
+            !string.Equals(assignment.ProviderScopeFingerprint, observation.ProviderScopeFingerprint, StringComparison.Ordinal) ||
+            !string.Equals(assignment.WorkloadName, observation.TargetKey, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Recovery observation is not bound to the retained provider assignment.");
+    }
+
+    private static void ValidateRecoveryObservationProviderRequest(AzureProviderOperationEntity operation)
+    {
+        AzureProviderOperationRequest request;
+        try
+        {
+            request = new(
+                operation.WorkspaceId,
+                operation.TargetKey,
+                operation.Action,
+                operation.IdempotencyKey,
+                operation.PlanFingerprint,
+                operation.TemplateFingerprint,
+                operation.ElsaVersion,
+                operation.ReleaseLine,
+                operation.Topology,
+                operation.Isolation,
+                operation.Location,
+                operation.ImageRepository,
+                operation.ImageDigest,
+                operation.ReleaseManifestDigest,
+                operation.ReleaseManifestSignatureDigest,
+                operation.ReleaseManifestReference,
+                operation.ReleaseManifestSignatureReference,
+                operation.SecretReferencesJson is null
+                    ? null
+                    : JsonSerializer.Deserialize<Dictionary<string, string>>(operation.SecretReferencesJson),
+                operation.ProviderScopeFingerprint,
+                operation.SqlWorkflowPackageVersion,
+                operation.SqlQuartzPackageVersion,
+                operation.OrganizationId,
+                operation.InstanceId,
+                operation.LifecycleAction,
+                operation.ProviderAssignmentId);
+            if (!string.Equals(
+                    AzureProviderOperationValidation.ComputeRequestHash(request),
+                    operation.RequestHash,
+                    StringComparison.Ordinal))
+                throw new InvalidOperationException();
+        }
+        catch (Exception exception) when (exception is JsonException or ArgumentException or InvalidOperationException)
+        {
+            throw new InvalidOperationException("Recovery observation provider request authority is invalid.");
+        }
+    }
+
+    private async Task ValidateRecoveryObservationPlanAuthorityAsync(
+        AzureProviderRecoveryObservationRecord observation,
+        CancellationToken cancellationToken)
+    {
+        var lifecycleOperation = await db.ElsaInstanceOperations.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == observation.LifecycleOperationId &&
+                                       x.OrganizationId == observation.OrganizationId &&
+                                       x.WorkspaceId == observation.WorkspaceId &&
+                                       x.InstanceId == observation.InstanceId,
+                cancellationToken);
+        if (lifecycleOperation is null || lifecycleOperation.Action != observation.LifecycleAction ||
+            !string.Equals(lifecycleOperation.ResolvedPlanId, observation.ResolvedPlanId, StringComparison.Ordinal))
+            throw new InvalidOperationException("Recovery observation is not bound to the retained lifecycle operation.");
+
+        var resolvedPlan = await db.ElsaInstanceResolvedPlans.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.PlanId == lifecycleOperation.ResolvedPlanId &&
+                                       x.OrganizationId == observation.OrganizationId &&
+                                       x.WorkspaceId == observation.WorkspaceId &&
+                                       x.InstanceId == observation.InstanceId,
+                cancellationToken);
+        if (resolvedPlan is null || resolvedPlan.SchemaVersion != observation.ResolvedPlanSchemaVersion ||
+            !string.Equals(resolvedPlan.PlanUri, observation.ResolvedPlanUri, StringComparison.Ordinal) ||
+            !string.Equals(resolvedPlan.ContentHash, observation.ResolvedPlanContentHash, StringComparison.Ordinal))
+            throw new InvalidOperationException("Recovery observation is not bound to the retained resolved plan.");
+
+        ResolvedElsaApplicationPlan typedPlan;
+        try
+        {
+            typedPlan = ResolvedElsaApplicationPlanSerialization.Deserialize(resolvedPlan.SerializedPlan);
+            if (!string.Equals(ResolvedElsaApplicationPlanSerialization.Serialize(typedPlan), resolvedPlan.SerializedPlan, StringComparison.Ordinal) ||
+                !string.Equals(ResolvedElsaApplicationPlanSerialization.ComputeContentHash(typedPlan), resolvedPlan.ContentHash, StringComparison.Ordinal))
+                throw new InvalidOperationException();
+        }
+        catch (Exception exception) when (exception is JsonException or ArgumentException or InvalidOperationException)
+        {
+            throw new InvalidOperationException("Recovery observation resolved-plan authority is invalid.");
+        }
+
+        var translation = AzureWorkloadPlanTranslator.Translate(
+            typedPlan,
+            new AzureWorkloadTarget(observation.TargetKey, (await db.AzureProviderOperations.AsNoTracking()
+                .SingleAsync(x => x.Id == observation.ProviderOperationId, cancellationToken)).Location));
+        if (!translation.IsAccepted || translation.Plan is null ||
+            !string.Equals(translation.Plan.Fingerprint, observation.ProviderPlanFingerprint, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Recovery observation provider plan does not match the retained resolved plan.");
+    }
+
+    private async Task<AzureProviderRecoveryObservationEntity?> FindRecoveryObservationAsync(
+        AzureProviderRecoveryObservationRecord observation,
+        CancellationToken cancellationToken)
+    {
+        var naturalKey = observation.ComputeNaturalKey();
+        return await db.AzureProviderRecoveryObservations.AsNoTracking().SingleOrDefaultAsync(x =>
+            x.WorkspaceId == observation.WorkspaceId && x.NaturalKey == naturalKey,
+            cancellationToken);
+    }
+
+    private static AzureProviderRecoveryObservationEntity ToRecoveryObservationEntity(
+        AzureProviderRecoveryObservationRecord observation,
+        DateTimeOffset now)
+    {
+        var id = Guid.NewGuid();
+        var naturalKey = observation.ComputeNaturalKey();
+        return new()
+        {
+            Id = id,
+            OrganizationId = observation.OrganizationId,
+            WorkspaceId = observation.WorkspaceId,
+            InstanceId = observation.InstanceId,
+            LifecycleOperationId = observation.LifecycleOperationId,
+            LifecycleAction = observation.LifecycleAction,
+            ObservedLifecycleAttemptNumber = observation.ObservedLifecycleAttemptNumber,
+            ObservedInstanceVersion = observation.ObservedInstanceVersion,
+            ProviderOperationId = observation.ProviderOperationId,
+            ProviderAssignmentId = observation.ProviderAssignmentId,
+            ProviderOperationIdentity = observation.ProviderOperationIdentity,
+            ProviderRequestHash = observation.ProviderRequestHash,
+            ProviderAttemptNumber = observation.ProviderAttemptNumber,
+            ProviderVersion = observation.ProviderVersion,
+            ProviderCheckpointSequence = observation.ProviderCheckpointSequence,
+            TargetKey = observation.TargetKey,
+            ProviderScopeFingerprint = observation.ProviderScopeFingerprint,
+            ResolvedPlanId = observation.ResolvedPlanId,
+            ResolvedPlanSchemaVersion = observation.ResolvedPlanSchemaVersion,
+            ResolvedPlanUri = observation.ResolvedPlanUri,
+            ResolvedPlanContentHash = observation.ResolvedPlanContentHash,
+            ProviderPlanFingerprint = observation.ProviderPlanFingerprint,
+            ProviderTemplateFingerprint = observation.ProviderTemplateFingerprint,
+            CompletedStep = observation.CompletedStep,
+            ObservedPhase = observation.ObservedPhase,
+            ObservedHealth = observation.ObservedHealth,
+            ResourceFingerprint = observation.ResourceFingerprint,
+            PostconditionFingerprint = observation.PostconditionFingerprint,
+            NaturalKey = naturalKey,
+            RecordDigest = observation.ComputeRecordDigest(id),
+            ObservedAt = observation.ObservedAt.ToUniversalTime(),
+            CreatedAt = now
+        };
+    }
+
+    private static AzureProviderRecoveryObservationReceipt ToRecoveryObservationReceipt(
+        AzureProviderRecoveryObservationEntity entity)
+    {
+        var observation = entity.ToRecord();
+        var digest = entity.RecordDigest;
+        if (!string.Equals(entity.NaturalKey, observation.ComputeNaturalKey(), StringComparison.Ordinal) ||
+            !string.Equals(digest, observation.ComputeRecordDigest(entity.Id), StringComparison.Ordinal))
+            throw new InvalidOperationException("Recovery observation derived integrity fields are invalid.");
+        return new(entity.Id, ElsaInstanceProviderRecoveryObservationReference.Create(entity.Id, digest), digest, observation);
+    }
+
+    private static AzureProviderRecoveryObservationRecord ToRecoveryObservation(
+        AzureProviderRecoveryObservationEntity entity) =>
+        ToRecoveryObservationReceipt(entity).Observation;
+
     private async Task<AzureProviderOperationEntity?> FindActiveTargetAsync(
         AzureProviderOperationRequest request,
         Guid? excludedOperationId,
@@ -808,7 +1210,8 @@ public sealed class AzureProviderOperationStore(CatalogDbContext db) :
             x.OrganizationId,
             x.InstanceId,
             x.LifecycleAction,
-            x.ProviderAssignmentId);
+            x.ProviderAssignmentId,
+            x.AttemptedStep);
     }
 
     private static AzureProviderResourceAssignment ToModel(AzureProviderResourceAssignmentEntity x) => new(
