@@ -20,6 +20,54 @@ public enum ElsaInstanceProviderHealthGate
 }
 
 /// <summary>
+/// Platform-owned, opaque reference to a persisted provider recovery observation.
+/// The control plane resolves the record through its scoped store and verifies its
+/// digest before it can satisfy the retry-safety gate.
+/// </summary>
+public static class ElsaInstanceProviderRecoveryObservationReference
+{
+    private const string Prefix = "urn:elsa-control:provider-recovery-observation:v1:";
+
+    public static string Create(Guid recordId, string digest)
+    {
+        if (recordId == Guid.Empty)
+            throw new ArgumentException("Recovery observation record ID is required.", nameof(recordId));
+        if (!IsSha256Digest(digest))
+            throw new ArgumentException("Recovery observation digest is invalid.", nameof(digest));
+
+        return $"{Prefix}{recordId:N}:sha256:{digest[7..]}";
+    }
+
+    public static bool TryParse(string? reference, out Guid recordId, out string digest)
+    {
+        recordId = Guid.Empty;
+        digest = "";
+        if (reference is null || reference.Length != Prefix.Length + 32 + 8 + 64 ||
+            !reference.StartsWith(Prefix, StringComparison.Ordinal))
+            return false;
+
+        var remainder = reference[Prefix.Length..];
+        if (!remainder.AsSpan(32, 8).SequenceEqual(":sha256:"))
+            return false;
+        var idText = remainder[..32];
+        var digestText = remainder[40..];
+        var valid = Guid.TryParseExact(idText, "N", out recordId) &&
+                    recordId != Guid.Empty &&
+                    idText.SequenceEqual(recordId.ToString("N")) &&
+                    digestText.Length == 64 &&
+                    digestText.AsSpan().ContainsAnyExcept("0123456789abcdef") is false;
+        if (valid)
+            digest = "sha256:" + digestText;
+        return valid;
+    }
+
+    private static bool IsSha256Digest(string? value) =>
+        value is not null && value.Length == 71 &&
+        value.StartsWith("sha256:", StringComparison.Ordinal) &&
+        value[7..].AsSpan().ContainsAnyExcept("0123456789abcdef") is false;
+}
+
+/// <summary>
 /// Opaque, safe evidence that a new provider apply would not duplicate uncertain
 /// work. Its presence is advisory to a later retry decision; reconciliation never
 /// turns it into an automatic retry.
@@ -28,8 +76,14 @@ public sealed record ElsaInstanceProviderRetryEvidence
 {
     public ElsaInstanceProviderRetryEvidence(string reference, string digest)
     {
-        Reference = RequireToken(reference, nameof(reference));
+        var isOpaqueObservation = ElsaInstanceProviderRecoveryObservationReference.TryParse(
+            reference, out _, out var referenceDigest);
+        Reference = isOpaqueObservation
+            ? reference
+            : RequireToken(reference, nameof(reference));
         Digest = RequireDigest(digest);
+        if (isOpaqueObservation && !string.Equals(referenceDigest, Digest, StringComparison.Ordinal))
+            throw new ArgumentException("Retry evidence digest does not match the observation reference.", nameof(digest));
     }
 
     public string Reference { get; }
@@ -186,7 +240,8 @@ public sealed record ElsaInstanceProviderReconciliationRequest(
     int AttemptNumber,
     ElsaDesiredLifecycle DesiredLifecycle,
     ElsaResolvedPlanReference? ResolvedPlanReference,
-    ElsaCurrentDeploymentReference? CurrentDeploymentReference);
+    ElsaCurrentDeploymentReference? CurrentDeploymentReference,
+    int InstanceVersion = 0);
 
 public sealed record ElsaInstanceProviderReconciliationTarget(
     ElsaInstance Instance,
