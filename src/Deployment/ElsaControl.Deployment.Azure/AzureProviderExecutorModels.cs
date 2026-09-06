@@ -105,6 +105,105 @@ public sealed record AzureProviderExecutionResult(
 }
 
 /// <summary>
+/// A read-only observation made for an explicitly accepted lifecycle recovery. The
+/// observation identifies at most one completed provider step; it is never a whole
+/// operation result. Later lifecycle steps still run through the normal executor
+/// checkpoints and health/traffic gates.
+/// </summary>
+public enum AzureProviderRecoveryObservationKind
+{
+    Confirmed,
+    InProgress,
+    Unknown,
+    Ambiguous
+}
+
+public sealed record AzureProviderRecoveryObservation(
+    AzureProviderRecoveryObservationKind Kind,
+    AzureProviderRunnerStep? CompletedStep,
+    AzureProviderResourceReferences Resources,
+    AzureProviderHealth Health,
+    string? Endpoint,
+    string Code,
+    string Message)
+{
+    public void Validate()
+    {
+        if (!Enum.IsDefined(Kind) || !Enum.IsDefined(Health) || Resources is null)
+            throw new ArgumentException("The Azure recovery observation is invalid.");
+        AzureProviderOperationValidation.ValidateCode(Code);
+        AzureProviderOperationValidation.ValidateMessage(Message);
+        AzureProviderOperationValidation.ValidateReferences(Resources);
+        AzureProviderOperationValidation.ValidateEndpoint(Endpoint);
+        if (Kind == AzureProviderRecoveryObservationKind.Confirmed && CompletedStep is null)
+            throw new ArgumentException("A confirmed recovery observation must identify a completed step.", nameof(CompletedStep));
+        if (CompletedStep is { } completedStep &&
+            !AzureProviderRecoveryObservationSupport.IsSupportedCompletedStep(completedStep))
+            throw new ArgumentException("The observed recovery step cannot be resumed.", nameof(CompletedStep));
+        if (Kind != AzureProviderRecoveryObservationKind.Confirmed && CompletedStep is not null)
+            throw new ArgumentException("An uncertain recovery observation cannot identify a completed step.", nameof(CompletedStep));
+        if (Kind != AzureProviderRecoveryObservationKind.Confirmed &&
+            (Health != AzureProviderHealth.Unknown || Endpoint is not null))
+            throw new ArgumentException("An uncertain recovery observation must remain value-free and unknown.", nameof(Health));
+    }
+}
+
+/// <summary>
+/// Exact provider identity and retained plan supplied after lifecycle acceptance.
+/// Provider adapters must reject a mismatch before making any remote observation.
+/// </summary>
+public sealed record AzureProviderRecoveryRequest(
+    AzureProviderOperation Operation,
+    AzureWorkloadPlan Plan,
+    AzureProviderResourceAssignment? Assignment = null)
+{
+    public void Validate()
+    {
+        ArgumentNullException.ThrowIfNull(Operation);
+        ArgumentNullException.ThrowIfNull(Plan);
+        if (Operation.Id == Guid.Empty || Operation.WorkspaceId == Guid.Empty ||
+            Operation.Action != AzureProviderOperationAction.Reconcile ||
+            Operation.Status is not (AzureProviderOperationStatus.RecoveryRequired or AzureProviderOperationStatus.Running or AzureProviderOperationStatus.Succeeded))
+            throw new InvalidOperationException("The Azure recovery operation identity is invalid.");
+        if (Operation.OrganizationId is null || Operation.InstanceId is null ||
+            Operation.LifecycleAction is null || Operation.ProviderAssignmentId is null ||
+            !string.Equals(Operation.TargetKey, Plan.WorkloadName, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(Operation.PlanFingerprint, Plan.Fingerprint, StringComparison.Ordinal))
+            throw new InvalidOperationException("The Azure recovery operation is not bound to its retained plan.");
+        try
+        {
+            AzureProviderRecoveryObservationRecord.RequireFingerprint(
+                Operation.PlanFingerprint, nameof(Operation.PlanFingerprint));
+        }
+        catch (ArgumentException)
+        {
+            throw new InvalidOperationException("The Azure recovery operation is not bound to its retained plan.");
+        }
+        if (Assignment is { } assignment &&
+            (assignment.Id != Operation.ProviderAssignmentId ||
+             assignment.OrganizationId != Operation.OrganizationId ||
+             assignment.WorkspaceId != Operation.WorkspaceId ||
+             assignment.InstanceId != Operation.InstanceId ||
+             assignment.LastOperationId != Operation.Id ||
+             !string.Equals(assignment.WorkloadName, Operation.TargetKey, StringComparison.OrdinalIgnoreCase) ||
+             !string.Equals(assignment.ProviderScopeFingerprint, Operation.ProviderScopeFingerprint, StringComparison.Ordinal)))
+            throw new InvalidOperationException("The Azure recovery assignment is not bound to its retained operation.");
+        AzureProviderOperationValidation.ValidateReferences(Operation.Resources);
+    }
+}
+
+/// <summary>
+/// Read-only remote observation authority for explicit recovery. Implementations
+/// must not apply, retry, delete, or otherwise mutate Azure resources.
+/// </summary>
+public interface IAzureProviderRecoveryObserver
+{
+    Task<AzureProviderRecoveryObservation> ObserveAsync(
+        AzureProviderRecoveryRequest request,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
 /// Adapter over the checked-in Azure Bicep/runbook lifecycle. Implementations may use Azure CLI,
 /// an SDK or a remote worker, but they must return only the safe result contract above.
 /// </summary>
