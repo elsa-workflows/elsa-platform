@@ -21,7 +21,8 @@ public sealed class AzureElsaInstanceProvider(
     IElsaInstanceProviderSubmissionPort,
     IElsaInstanceProviderReconciliationPort,
     IElsaInstanceProviderCleanupPort,
-    IElsaInstanceProviderRecoveryPort
+    IElsaInstanceProviderRecoveryPort,
+    IElsaInstanceProviderDeleteRecoveryPort
 {
     private readonly AzureElsaInstanceProviderOptions _options = options ?? new();
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
@@ -588,6 +589,60 @@ public sealed class AzureElsaInstanceProvider(
                         : ElsaInstanceCleanupObservationKind.Unknown);
             }
         }
+    }
+
+    public async Task<ElsaInstanceCleanupObservation> RecoverDeleteAsync(
+        ElsaInstanceDeleteRecoveryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        request.Validate();
+        EnsureEnabled();
+
+        if (_executor is null || _operationStore is not IAzureProviderDeleteRecoveryStore recoveryStore)
+            return CleanupUnknown(request.Cleanup, "deletion.recovery.capability-unavailable", ElsaInstanceCleanupObservationKind.Unavailable);
+
+        var authority = await recoveryStore.GetDeleteRecoveryAuthorityAsync(
+            request.Cleanup.WorkspaceId,
+            request.RecoveryRequestId,
+            request.Cleanup.InstanceId,
+            request.Cleanup.OperationId,
+            cancellationToken);
+        if (authority is null)
+            return CleanupUnknown(request.Cleanup, "deletion.recovery.authority-unavailable", ElsaInstanceCleanupObservationKind.Ambiguous);
+
+        var operation = await _operationStore.GetAsync(
+            request.Cleanup.WorkspaceId,
+            authority.ProviderOperationId,
+            cancellationToken);
+        var plan = operation is null ? null : AzureProviderOperationService.TryRestorePlan(operation);
+        if (plan is null)
+            return CleanupUnknown(request.Cleanup, "deletion.recovery.plan-unavailable", ElsaInstanceCleanupObservationKind.Ambiguous);
+
+        var result = await _executor.RecoverDeleteAsync(
+            new AzureProviderDeleteRecoveryClaimRequest(
+                request.RecoveryRequestId,
+                request.Cleanup.WorkspaceId,
+                request.Cleanup.InstanceId,
+                request.Cleanup.OperationId,
+                request.Cleanup.AttemptNumber,
+                request.InstanceVersion,
+                request.WorkerId,
+                request.LeaseToken,
+                request.LeaseVersion),
+            plan,
+            cancellationToken);
+        if (result is null)
+            return CleanupUnknown(request.Cleanup, "deletion.recovery.claim-lost", ElsaInstanceCleanupObservationKind.Ambiguous);
+
+        return result.Operation.Status == AzureProviderOperationStatus.Succeeded &&
+               result.Outcome is AzureProviderExecutionOutcome.Succeeded or AzureProviderExecutionOutcome.NoOp
+            ? new(ElsaInstanceCleanupObservationKind.ConfirmedAbsent, request.Cleanup.OperationId,
+                request.Cleanup.AttemptNumber, "deletion.provider.recovered")
+            : result.Outcome == AzureProviderExecutionOutcome.InProgress
+                ? new(ElsaInstanceCleanupObservationKind.InProgress, request.Cleanup.OperationId,
+                    request.Cleanup.AttemptNumber, "deletion.provider.pending")
+                : CleanupUnknown(request.Cleanup, "deletion.recovery.incomplete", ElsaInstanceCleanupObservationKind.Unknown);
     }
 
     private void EnsureEnabled()

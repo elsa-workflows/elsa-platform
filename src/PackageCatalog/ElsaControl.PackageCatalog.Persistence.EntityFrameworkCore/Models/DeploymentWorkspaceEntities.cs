@@ -253,6 +253,11 @@ internal sealed class ElsaInstanceRecoveryRequestEntity
     public string? RecoveryObservationDigest { get; set; }
     public int? ObservedLifecycleAttemptNumber { get; set; }
     public int? ObservedInstanceVersion { get; set; }
+    /// <summary>
+    /// Canonical value-free provider authority for an explicit Azure Delete recovery. It is
+    /// nullable so existing local and non-Azure recovery rows retain their legacy shape.
+    /// </summary>
+    public string? AzureDeleteRecoveryAuthority { get; set; }
     public DateTimeOffset AcceptedAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }

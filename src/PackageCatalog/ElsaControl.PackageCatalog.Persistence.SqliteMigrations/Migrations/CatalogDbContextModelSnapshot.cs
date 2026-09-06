@@ -3264,6 +3264,10 @@ namespace ElsaControl.PackageCatalog.Persistence.SqliteMigrations.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("AzureDeleteRecoveryAuthority")
+                        .HasMaxLength(4096)
+                        .HasColumnType("TEXT");
+
                     b.Property<long>("AcceptedAt")
                         .HasColumnType("INTEGER");
 

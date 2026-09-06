@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ElsaControl.Deployment.Abstractions.Instances;
+using ElsaControl.Deployment.Azure;
 using ElsaControl.Deployment.Core.Workspace;
 using ElsaControl.PackageCatalog.Core.Manifests;
 using ElsaControl.PackageCatalog.Core.Accounts;
@@ -921,6 +922,11 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
                 if (recovery.ObservedLifecycleAttemptNumber < 1 || recovery.ObservedInstanceVersion < 1)
                     throw new InvalidOperationException("Recovery observation versions are invalid.");
             }
+            if (recovery.AzureDeleteRecoveryAuthority is not null &&
+                (!AzureProviderDeleteRecoveryAuthority.TryParse(
+                    recovery.AzureDeleteRecoveryAuthority, out var authority) || authority is null ||
+                 authority.LifecycleAttemptNumber != recovery.AttemptNumber))
+                throw new InvalidOperationException("Azure delete recovery authority is invalid.");
             recovery.AcceptedAt = recovery.AcceptedAt.ToUniversalTime();
             recovery.CreatedAt = recovery.CreatedAt.ToUniversalTime();
             if (recovery.AcceptedAt == default || recovery.CreatedAt == default || recovery.CreatedAt < recovery.AcceptedAt)

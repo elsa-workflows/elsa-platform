@@ -1222,15 +1222,32 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 .OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.Id)
                 .Select(x => (Guid?)x.Id)
                 .FirstOrDefaultAsync(cancellationToken);
+            var currentRecoveryRows = await dbContext.ElsaInstanceRecoveryRequests
+                .AsNoTracking()
+                .Where(x => x.WorkspaceId == operation.WorkspaceId &&
+                            x.InstanceId == instance.Id &&
+                            x.OperationId == operation.Id &&
+                            x.AttemptNumber == operation.AttemptNumber)
+                .ToListAsync(cancellationToken);
+            if (currentRecoveryRows.Count > 1)
+                throw Conflict("Deletion recovery authority is ambiguous.");
+            var recoveryRequestId = currentRecoveryRows.Count == 1 &&
+                                    currentRecoveryRows[0].AzureDeleteRecoveryAuthority is not null
+                ? currentRecoveryRows[0].Id
+                : (Guid?)null;
             var mappedInstance = MapInstance(instance);
-            var local = mappedInstance.ObservedLifecycle != ElsaObservedLifecycle.Unknown &&
+            var local = recoveryRequestId is null &&
+                mappedInstance.ObservedLifecycle != ElsaObservedLifecycle.Unknown &&
                 mappedInstance.CurrentDeploymentReference is null && mappedInstance.PlacementAssignmentReference is null &&
                 mappedInstance.ElsaTenantReference is null;
 
             await dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return new ElsaInstanceDeletionWorkItem(MapOutbox(candidate), MapOperation(operation), mappedInstance,
-                local, latestRunId, leaseToken, leaseVersion);
+                local, latestRunId, leaseToken, leaseVersion)
+            {
+                RecoveryRequestId = recoveryRequestId
+            };
         }
         catch (ElsaInstanceLifecycleConflictException)
         {
@@ -2212,6 +2229,10 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         existingOperation.RecoveryRequestHash = requestedOperation.RecoveryRequestHash;
         if (isRecoveryResume)
         {
+            var deleteAuthority = existingOperation.Action == ElsaInstanceOperationAction.Delete
+                ? await CaptureAzureDeleteRecoveryAuthorityAsync(
+                    existingInstance, existingOperation, requestedOperation.AttemptNumber, requestedAt, cancellationToken)
+                : null;
             recovery = new ElsaInstanceRecoveryRequestEntity
             {
                 Id = Guid.NewGuid(),
@@ -2227,6 +2248,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 RecoveryObservationDigest = hasAzureRecoveryObservation ? existingOperation.ReconciliationRetryEvidenceDigest : null,
                 ObservedLifecycleAttemptNumber = hasAzureRecoveryObservation ? observedLifecycleAttemptNumber : null,
                 ObservedInstanceVersion = hasAzureRecoveryObservation ? observedInstanceVersion : null,
+                AzureDeleteRecoveryAuthority = deleteAuthority?.Serialize(),
                 AcceptedAt = requestedAt.ToUniversalTime(),
                 CreatedAt = requestedAt.ToUniversalTime()
             };
@@ -2287,6 +2309,102 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             MapOutbox(existingOutbox),
             Replayed: false);
     }
+
+    private async Task<AzureProviderDeleteRecoveryAuthority?> CaptureAzureDeleteRecoveryAuthorityAsync(
+        ElsaInstanceEntity instance,
+        ElsaInstanceOperationEntity lifecycleOperation,
+        int acceptedLifecycleAttemptNumber,
+        DateTimeOffset acceptedAt,
+        CancellationToken cancellationToken)
+    {
+        // A missing placement assignment is the existing local/non-Azure delete path. Preserve
+        // that compatibility; once an assignment is present, an uncertain provider delete must
+        // bind to its exact durable operation rather than selecting a latest row.
+        if (string.IsNullOrWhiteSpace(instance.PlacementAssignmentId))
+            return null;
+        if (lifecycleOperation.Action != ElsaInstanceOperationAction.Delete ||
+            lifecycleOperation.State != ElsaInstanceOperationState.Queued ||
+            instance.DesiredLifecycle != ElsaDesiredLifecycle.Deleting)
+            throw Conflict("Azure delete recovery lifecycle authority is unavailable.");
+        if (!Guid.TryParseExact(instance.PlacementAssignmentId, "D", out var assignmentId))
+            throw Conflict("Azure delete recovery assignment authority is invalid.");
+
+        var assignment = await dbContext.AzureProviderResourceAssignments.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == assignmentId &&
+                                       x.OrganizationId == lifecycleOperation.OrganizationId &&
+                                       x.WorkspaceId == lifecycleOperation.WorkspaceId &&
+                                       x.InstanceId == instance.Id,
+                cancellationToken);
+        if (assignment is null || assignment.LastOperationId is not { } providerOperationId)
+            throw Conflict("Azure delete recovery assignment authority is unavailable.");
+
+        var providerOperation = await dbContext.AzureProviderOperations.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == providerOperationId &&
+                                       x.WorkspaceId == lifecycleOperation.WorkspaceId,
+                cancellationToken);
+        if (providerOperation is null ||
+            providerOperation.Action != AzureProviderOperationAction.Delete ||
+            providerOperation.OrganizationId != lifecycleOperation.OrganizationId ||
+            providerOperation.InstanceId != instance.Id ||
+            providerOperation.LifecycleAction != ElsaInstanceOperationAction.Delete ||
+            providerOperation.ProviderAssignmentId != assignment.Id ||
+            !string.Equals(providerOperation.TargetKey, assignment.WorkloadName, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(NormalizeProviderScope(providerOperation.ProviderScopeFingerprint),
+                NormalizeProviderScope(assignment.ProviderScopeFingerprint), StringComparison.Ordinal) ||
+            !AzureProviderOperationValidation.IsLifecycleDeleteIdempotencyKey(
+                providerOperation.IdempotencyKey, lifecycleOperation.Id))
+            throw Conflict("Azure delete recovery provider authority is unavailable.");
+
+        // A terminal provider delete has no uncertain remote action to replay. Preserve the
+        // existing cleanup/finalization paths for that known outcome, while never downgrading a
+        // malformed or still-active Azure binding to ordinary cleanup.
+        if (providerOperation.Status == AzureProviderOperationStatus.Succeeded)
+        {
+            if (assignment.State != AzureProviderAssignmentState.Deleted)
+                throw Conflict("Azure delete recovery assignment authority is unavailable.");
+            return null;
+        }
+        if (providerOperation.Status is AzureProviderOperationStatus.Failed or AzureProviderOperationStatus.Cancelled)
+        {
+            if (assignment.State == AzureProviderAssignmentState.Deleted)
+                throw Conflict("Azure delete recovery assignment authority is unavailable.");
+            return null;
+        }
+        if (providerOperation.Status != AzureProviderOperationStatus.RecoveryRequired ||
+            assignment.State == AzureProviderAssignmentState.Deleted ||
+            providerOperation.Phase != AzureProviderOperationPhase.CleanupSubmitted ||
+            providerOperation.AttemptedStep != AzureProviderRunnerStep.Cleanup ||
+            providerOperation.AttemptNumber < 1 || providerOperation.CheckpointSequence < 1 ||
+            providerOperation.LeaseExpiresAt is { } providerLeaseExpires &&
+            providerLeaseExpires > acceptedAt.ToUniversalTime())
+            throw Conflict("Azure delete recovery provider authority is unavailable.");
+
+        try
+        {
+            var authority = new AzureProviderDeleteRecoveryAuthority(
+                providerOperation.Id,
+                assignment.Id,
+                acceptedLifecycleAttemptNumber,
+                instance.Version,
+                providerOperation.AttemptNumber,
+                providerOperation.Version,
+                providerOperation.CheckpointSequence,
+                providerOperation.OperationIdentity,
+                providerOperation.RequestHash,
+                providerOperation.TargetKey,
+                NormalizeProviderScope(providerOperation.ProviderScopeFingerprint)!,
+                providerOperation.PlanFingerprint,
+                providerOperation.TemplateFingerprint);
+            authority.Validate();
+            return authority;
+        }
+        catch (ArgumentException)
+        {
+            throw Conflict("Azure delete recovery provider authority is invalid.");
+        }
+    }
+
+    private static string? NormalizeProviderScope(string? value) => value?.Trim().ToLowerInvariant();
 
     private async Task<ElsaInstanceLifecycleAcceptance> ReplayAsync(
         IDbContextTransaction transaction,

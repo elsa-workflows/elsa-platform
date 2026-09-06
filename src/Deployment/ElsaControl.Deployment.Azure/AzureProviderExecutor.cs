@@ -82,6 +82,33 @@ public sealed class AzureProviderExecutor
         return ExecuteAsync(new AzureProviderExecutionRequest(operationRequest, plan), cancellationToken);
     }
 
+    /// <summary>
+    /// Claims and executes one explicitly accepted Azure Delete recovery. This entrypoint is
+    /// deliberately separate from <see cref="ExecuteAsync"/>: it never selects a latest
+    /// RecoveryRequired row or performs an automatic recovery claim.
+    /// </summary>
+    public async Task<AzureProviderExecutionResult?> RecoverDeleteAsync(
+        AzureProviderDeleteRecoveryClaimRequest request,
+        AzureWorkloadPlan plan,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(plan);
+        request.Validate();
+        if (_store is not IAzureProviderDeleteRecoveryStore recoveryStore)
+            return null;
+
+        var claimed = await recoveryStore.ClaimDeleteRecoveryAsync(
+            request,
+            _leaseDuration,
+            _timeProvider.GetUtcNow(),
+            cancellationToken);
+        if (claimed is null)
+            return null;
+
+        return await ExecuteClaimedAsync(CopySafePlan(plan), claimed, request.LeaseToken, cancellationToken);
+    }
+
     public Task<AzureProviderExecutionResult> ExecuteAsync(
         AzureProviderExecutionRequest request,
         CancellationToken cancellationToken = default)
