@@ -54,4 +54,15 @@ if new_identity not in content:
         raise SystemExit("Cannot find the generated API identity block to patch.")
     content = content.replace(old_identity, new_identity, 1)
 
+# Aspire generates Default authentication. Pin Catalog to the API identity instead of
+# allowing a credential chain to select a different attached or developer identity.
+old_catalog = 'Server=tcp:${control_sql_outputs_sqlserverfqdn},1433;Encrypt=True;Authentication="Active Directory Default";Database=Catalog'
+new_catalog = 'Server=tcp:${control_sql_outputs_sqlserverfqdn},1433;Encrypt=True;TrustServerCertificate=False;Authentication=Active Directory Managed Identity;User Id=${api_identity_outputs_clientid};Database=Catalog'
+if new_catalog not in content:
+    if content.count(old_catalog) != 1:
+        raise SystemExit("Cannot find the generated Catalog authentication setting to patch.")
+    content = content.replace(old_catalog, new_catalog, 1)
+if content.count(new_catalog) != 1 or old_catalog in content:
+    raise SystemExit("Generated Catalog authentication setting is ambiguous.")
+
 path.write_text(content)

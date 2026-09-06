@@ -234,6 +234,40 @@ The API supports two EF Core providers:
 Local development defaults to SQLite. Aspire publish mode provisions Azure SQL,
 injects `ConnectionStrings__Catalog`, and sets `Database__Provider=SqlServer`.
 
+The checked-in Azure template and regeneration patch explicitly select
+`Authentication=Active Directory Managed Identity;User Id=<API identity client ID>`
+with `Encrypt=True;TrustServerCertificate=False`. Catalog authentication must use
+the API identity, not the optional customer-workload provisioner or ACR identity.
+There is no credential-chain fallback on this path. Other explicitly configured
+SQL authentication modes and SQLite keep their existing behavior; an explicit
+managed-identity connection without a User Id selects the system-assigned identity.
+
+For explicit managed-identity Catalog connections, the host supplies a stable
+SqlClient token callback while EF owns each connection. The callback validates
+the configured identity and public Azure SQL resource, acquires tokens only in
+memory, and supports cancellation and token refresh. Before EF opens a tracked
+connection, the interceptor rejects changes to its callback or connection string
+(including target and TLS settings). SQL connection and EF execution retries
+remain enabled.
+
+The credential policy preserves Azure.Core 1.60.0 managed-identity retry behavior,
+including token 404/410 handling and the extended 410 delay, except that a 404 from
+the optional IMDS capability probe is not retried. Retrying that unsupported
+endpoint delayed token acquisition in the candidate rehearsal. Do not replace
+this with globally disabled retries, a dependency downgrade or weaker TLS. Recheck
+the policy tests when upgrading Azure.Core; see [its versioned policy source](https://github.com/Azure/azure-sdk-for-net/tree/Azure.Core_1.60.0/sdk/core/Azure.Core/src/Identity/Policies).
+
+**Existing installations:** app-only immutable promotion does not update app
+settings. A deployment still using `Active Directory Default` must explicitly
+align its Catalog setting to the reviewed API identity as part of the controlled
+rollout. First prove the candidate's full startup/migration on a Catalog clone
+and the retained prior image against the migrated clone using the intended MI
+configuration. Capture the prior image and settings for rollback, preserve the
+server/database and retry/TLS values, and change only the intended authentication
+selection. Do not deploy the entire infrastructure merely to change this setting.
+An image rollback cannot undo schema migrations; token-only or SQL-open tests do
+not satisfy the full rehearsal gate. No live rollout is claimed by these instructions.
+
 Each provider has its own EF Core migration assembly:
 
 - SQLite: `ElsaControl.PackageCatalog.Persistence.SqliteMigrations`

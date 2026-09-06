@@ -78,11 +78,23 @@ def parameter_file(module_path: Path, parameter_directory: Path, provisioner_id:
 
 
 class ApiInfrastructureTests(unittest.TestCase):
+    def test_catalog_sql_pins_api_identity_without_credential_chain_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            webapp = self.webapp(self.snapshot(Path(temporary), PROVISIONER_ID))
+        settings = {setting["name"]: setting["value"] for setting in webapp["properties"]["siteConfig"]["appSettings"]}
+        self.assertEqual(
+            settings["ConnectionStrings__Catalog"],
+            f"Server=tcp:sql.example,1433;Encrypt=True;TrustServerCertificate=False;Authentication=Active Directory Managed Identity;User Id={API_CLIENT_ID};Database=Catalog",
+        )
+
     @staticmethod
     def generated_api_module() -> str:
         """Build the module shape emitted before the regeneration patch runs."""
 
-        module = API_MODULE.read_text()
+        module = API_MODULE.read_text().replace(
+            'TrustServerCertificate=False;Authentication=Active Directory Managed Identity;User Id=${api_identity_outputs_clientid}',
+            'Authentication="Active Directory Default"',
+        )
         optional_parameter = re.compile(
             r"\n@description\('Optional full resource ID of the dedicated Azure provider provisioner identity\..*?"
             r"\nparam provisioner_identity_outputs_id string = ''\n",
@@ -224,6 +236,16 @@ class ApiInfrastructureTests(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, "identity patch helper should be idempotent")
             self.assertEqual(fixture.read_text(), module)
+
+    def test_regeneration_rejects_unknown_catalog_authentication_without_partial_write(self) -> None:
+        generated = self.generated_api_module().replace("Active Directory Default", "Unexpected Authentication")
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = Path(temporary) / "infra" / "api" / "api-website.module.bicep"
+            fixture.parent.mkdir(parents=True)
+            fixture.write_text(generated)
+            result = subprocess.run([sys.executable, str(PATCH_API_IDENTITY)], cwd=temporary, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(fixture.read_text(), generated)
 
     def run_regeneration_fixture(self, mode: str) -> tuple[subprocess.CompletedProcess[str], Path]:
         """Run regeneration in a disposable project with a fake azd/az pair."""
