@@ -304,6 +304,101 @@ public sealed class AzureProviderExecutorTests
     }
 
     [Fact]
+    public async Task Recovery_observation_claims_once_and_resumes_the_same_operation_after_foundation()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner
+        {
+            FoundationOutcome = AzureProviderRunnerOutcome.Uncertain,
+            FoundationResourcesOverride = FoundationResources()
+        };
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+        var plan = CreatePlan();
+
+        var interrupted = await executor.ApplyAsync(CreateRequest(), plan);
+        var observed = new AzureProviderRecoveryObservation(
+            AzureProviderRecoveryObservationKind.Confirmed,
+            AzureProviderRunnerStep.Foundation,
+            CompleteResourcesForRecovery(),
+            AzureProviderHealth.Unknown,
+            null,
+            "azure.recovery.foundation-observed",
+            "The retained foundation postcondition was observed.");
+
+        var resumed = await executor.RecoverAsync(interrupted.Operation, plan, observed);
+
+        Assert.Equal(AzureProviderExecutionOutcome.Succeeded, resumed.Outcome);
+        Assert.Equal(AzureProviderOperationStatus.Succeeded, resumed.Operation.Status);
+        Assert.Equal(1, store.RecoveryClaimCount);
+        Assert.Equal(AzureProviderRunnerStep.Foundation, runner.Steps[0]);
+        Assert.DoesNotContain(AzureProviderRunnerStep.Foundation, runner.Steps.Skip(1));
+        Assert.Contains(AzureProviderRunnerStep.AcrPull, runner.Steps);
+        Assert.Contains(AzureProviderRunnerStep.SeedSecrets, runner.Steps);
+        Assert.Contains(AzureProviderRunnerStep.SqlBootstrap, runner.Steps);
+        Assert.Contains(AzureProviderRunnerStep.Health, runner.Steps);
+        Assert.Contains(AzureProviderRunnerStep.Promotion, runner.Steps);
+    }
+
+    [Fact]
+    public async Task Sql_bootstrap_observation_is_not_claimed_without_a_proven_sql_postcondition()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner { FoundationOutcome = AzureProviderRunnerOutcome.Uncertain };
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+        var interrupted = await executor.ApplyAsync(CreateRequest(), CreatePlan());
+        var sqlOperation = interrupted.Operation with
+        {
+            AttemptedStep = AzureProviderRunnerStep.SqlBootstrap,
+            Phase = AzureProviderOperationPhase.FoundationReady
+        };
+        store.Replace(sqlOperation);
+        var observed = new AzureProviderRecoveryObservation(
+            AzureProviderRecoveryObservationKind.Confirmed,
+            AzureProviderRunnerStep.SqlBootstrap,
+            CompleteResourcesForRecovery(),
+            AzureProviderHealth.Unknown,
+            null,
+            "azure.recovery.sql-observed",
+            "The retained SQL postcondition was observed.");
+
+        var resumed = await executor.RecoverAsync(sqlOperation, CreatePlan(), observed);
+
+        Assert.Equal(AzureProviderExecutionOutcome.RecoveryRequired, resumed.Outcome);
+        Assert.Equal(AzureProviderOperationStatus.RecoveryRequired, resumed.Operation.Status);
+        Assert.Equal(0, store.RecoveryClaimCount);
+        Assert.Single(runner.Steps);
+    }
+
+    [Fact]
+    public async Task Foundation_observation_is_rejected_before_claim_when_a_later_handle_is_retained()
+    {
+        var store = new FakeOperationStore();
+        var runner = new RecordingRunner { FoundationOutcome = AzureProviderRunnerOutcome.Uncertain };
+        var executor = new AzureProviderExecutor(store, runner, new StaticTimeProvider(Now), TimeSpan.FromMinutes(5));
+        var interrupted = await executor.ApplyAsync(CreateRequest(), CreatePlan());
+        var laterOperation = interrupted.Operation with
+        {
+            Resources = CompleteResourcesForRecovery(),
+            AttemptedStep = AzureProviderRunnerStep.SeedSecrets
+        };
+        store.Replace(laterOperation);
+        var observed = new AzureProviderRecoveryObservation(
+            AzureProviderRecoveryObservationKind.Confirmed,
+            AzureProviderRunnerStep.Foundation,
+            CompleteResourcesForRecovery(),
+            AzureProviderHealth.Unknown,
+            null,
+            "azure.recovery.foundation-observed",
+            "The retained foundation postcondition was observed.");
+
+        var resumed = await executor.RecoverAsync(laterOperation, CreatePlan(), observed);
+
+        Assert.Equal(AzureProviderExecutionOutcome.RecoveryRequired, resumed.Outcome);
+        Assert.Equal(0, store.RecoveryClaimCount);
+        Assert.Single(runner.Steps);
+    }
+
+    [Fact]
     public async Task Cancellation_after_a_completed_remote_step_is_durably_recoverable()
     {
         var store = new FakeOperationStore();
@@ -952,6 +1047,28 @@ public sealed class AzureProviderExecutorTests
         "3.8.0-preview.5413",
         "3.8.0-preview.5413");
 
+    private static AzureProviderResourceReferences FoundationResources() => new(
+        ResourceGroupName: "proof-rg",
+        FoundationDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.Resources/deployments/foundation",
+        WorkloadIdentityResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/identity",
+        WorkloadIdentityClientId: "22222222-2222-2222-2222-222222222222",
+        WorkloadIdentityPrincipalId: "33333333-3333-3333-3333-333333333333",
+        KeyVaultResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.KeyVault/vaults/vault",
+        KeyVaultUri: "https://vault.vault.azure.net/",
+        SqlServerResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.Sql/servers/sql",
+        SqlServerFqdn: "sql.database.windows.net",
+        ContainerAppsEnvironmentResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.App/managedEnvironments/environment");
+
+    private static AzureProviderResourceReferences CompleteResourcesForRecovery() => FoundationResources() with
+    {
+        WorkloadDeploymentId = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.Resources/deployments/workload",
+        WorkloadResourceId = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.App/containerApps/app",
+        WorkloadRevisionName = "app--candidate",
+        RegistryResourceId = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/registry",
+        AcrPullDeploymentId = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry-rg/providers/Microsoft.Resources/deployments/acr-pull",
+        AcrPullRoleAssignmentId = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/registry/providers/Microsoft.Authorization/roleAssignments/44444444-4444-4444-4444-444444444444"
+    };
+
     private sealed class StaticTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
@@ -1021,6 +1138,7 @@ public sealed class AzureProviderExecutorTests
         public CancellationTokenSource? CancelSource { get; init; }
         public AzureProviderRunnerStep? CancelAfterStep { get; init; }
         public AzureProviderRunnerStep? IncompleteNoOpStep { get; init; }
+        public AzureProviderResourceReferences? FoundationResourcesOverride { get; init; }
 
         public Task<AzureProviderRunnerResult> RunAsync(AzureProviderRunnerCommand command, CancellationToken cancellationToken = default)
         {
@@ -1106,7 +1224,7 @@ public sealed class AzureProviderExecutorTests
             if (command.Step == AzureProviderRunnerStep.Health)
                 return Result(AzureProviderRunnerOutcome.Completed, AzureProviderOperationPhase.HealthVerified, health: Health);
             if (command.Step == AzureProviderRunnerStep.Foundation)
-                return Result(FoundationOutcome, AzureProviderOperationPhase.FoundationSubmitted);
+                return Result(FoundationOutcome, AzureProviderOperationPhase.FoundationSubmitted, FoundationResourcesOverride);
             return Result(
                 AzureProviderRunnerOutcome.Completed,
                 command.Step is AzureProviderRunnerStep.Foundation or AzureProviderRunnerStep.AcrPull or AzureProviderRunnerStep.SeedSecrets
@@ -1170,6 +1288,7 @@ public sealed class AzureProviderExecutorTests
         private AzureProviderOperation? _operation;
         private readonly List<AzureProviderOperationTransition> _transitions = [];
         public int HeartbeatCount { get; private set; }
+        public int RecoveryClaimCount { get; private set; }
         public AzureProviderOperationStatus? RejectClaimWithStatus { get; init; }
         public AzureProviderOperationStatus? RejectCheckpointWithStatus { get; init; }
         public AzureProviderOperationStatus? RejectCreateWithStatus { get; init; }
@@ -1177,6 +1296,8 @@ public sealed class AzureProviderExecutorTests
         public AzureProviderResourceReferences? LatestReconcileResources { get; init; }
         public AzureProviderOperationStatus? ConcurrentWinnerStatus { get; init; }
         public bool OmitProviderAssignmentId { get; init; }
+
+        public void Replace(AzureProviderOperation operation) => _operation = operation;
 
         public async Task<AzureProviderOperationCreateResult> CreateOrGetWithResultAsync(
             AzureProviderOperationRequest request,
@@ -1229,6 +1350,12 @@ public sealed class AzureProviderExecutorTests
                 now,
                 null) with
             {
+                ReleaseManifestReference = normalized.ReleaseManifestReference,
+                ReleaseManifestSignatureReference = normalized.ReleaseManifestSignatureReference,
+                SecretReferences = normalized.SecretReferences,
+                ProviderScopeFingerprint = normalized.ProviderScopeFingerprint,
+                SqlWorkflowPackageVersion = normalized.SqlWorkflowPackageVersion,
+                SqlQuartzPackageVersion = normalized.SqlQuartzPackageVersion,
                 OrganizationId = normalized.OrganizationId,
                 InstanceId = normalized.InstanceId,
                 LifecycleAction = normalized.LifecycleAction,
@@ -1263,6 +1390,8 @@ public sealed class AzureProviderExecutorTests
 
         private Task<AzureProviderOperation?> ClaimCore(string workerId, string leaseToken, TimeSpan leaseDuration, DateTimeOffset now, long? expectedVersion, bool recovery)
         {
+            if (recovery)
+                RecoveryClaimCount++;
             if (_operation is not null && RejectClaimWithStatus is { } observedStatus)
             {
                 _operation = _operation with { Status = observedStatus, Version = _operation.Version + 1, UpdatedAt = now };
@@ -1316,6 +1445,7 @@ public sealed class AzureProviderExecutorTests
                 Endpoint = checkpoint.Endpoint,
                 Health = checkpoint.Health,
                 Diagnostics = checkpoint.Diagnostics,
+                AttemptedStep = checkpoint.AttemptedStep,
                 UpdatedAt = now
             };
             return Task.FromResult<AzureProviderOperation?>(_operation);
@@ -1330,7 +1460,18 @@ public sealed class AzureProviderExecutorTests
                 incoming.WorkloadDeploymentId ?? existing.WorkloadDeploymentId,
                 incoming.WorkloadResourceId ?? existing.WorkloadResourceId,
                 incoming.WorkloadRevisionName ?? existing.WorkloadRevisionName,
-                incoming.StableTrafficRevisionName ?? existing.StableTrafficRevisionName);
+                incoming.StableTrafficRevisionName ?? existing.StableTrafficRevisionName,
+                incoming.WorkloadIdentityResourceId ?? existing.WorkloadIdentityResourceId,
+                incoming.WorkloadIdentityClientId ?? existing.WorkloadIdentityClientId,
+                incoming.WorkloadIdentityPrincipalId ?? existing.WorkloadIdentityPrincipalId,
+                incoming.KeyVaultResourceId ?? existing.KeyVaultResourceId,
+                incoming.KeyVaultUri ?? existing.KeyVaultUri,
+                incoming.SqlServerResourceId ?? existing.SqlServerResourceId,
+                incoming.SqlServerFqdn ?? existing.SqlServerFqdn,
+                incoming.ContainerAppsEnvironmentResourceId ?? existing.ContainerAppsEnvironmentResourceId,
+                incoming.RegistryResourceId ?? existing.RegistryResourceId,
+                incoming.AcrPullDeploymentId ?? existing.AcrPullDeploymentId,
+                incoming.AcrPullRoleAssignmentId ?? existing.AcrPullRoleAssignmentId);
 
         public Task<AzureProviderOperation?> FinalizeAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderOperationStatus status, string code, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default)
         {

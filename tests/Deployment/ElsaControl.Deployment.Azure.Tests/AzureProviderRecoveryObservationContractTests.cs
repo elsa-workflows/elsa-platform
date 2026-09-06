@@ -230,6 +230,18 @@ public sealed class AzureProviderRecoveryObservationContractTests
         Assert.Throws<InvalidOperationException>(invalidRequest.Validate);
     }
 
+    [Fact]
+    public void Recovery_request_rejects_provider_plan_field_mismatch_even_when_fingerprint_matches()
+    {
+        var request = CreateRecoveryRequest();
+        var invalidRequest = request with
+        {
+            Plan = request.Plan with { ImageDigest = new string('f', 64) }
+        };
+
+        Assert.Throws<InvalidOperationException>(invalidRequest.Validate);
+    }
+
     [Theory]
     [InlineData("group")]
     [InlineData("foundation")]
@@ -380,7 +392,9 @@ public sealed class AzureProviderRecoveryObservationContractTests
             "oci://valenceruntimeimages.azurecr.io/runtime-signature@sha256:" + new string('0', 64),
             "sha256:" + new string('0', 64),
             new Dictionary<string, string>(),
-            planFingerprint);
+            planFingerprint,
+            "3.8.0",
+            "3.8.0");
         var operation = new AzureProviderOperation(
             operationId,
             workspaceId,
@@ -397,7 +411,7 @@ public sealed class AzureProviderRecoveryObservationContractTests
             "Dedicated",
             "westeurope",
             plan.ImageRepository,
-            plan.ImageDigest,
+            "sha256:" + plan.ImageDigest,
             plan.ReleaseManifestDigest,
             plan.ReleaseManifestSignatureDigest,
             AzureProviderOperationStatus.RecoveryRequired,
@@ -415,6 +429,11 @@ public sealed class AzureProviderRecoveryObservationContractTests
             DateTimeOffset.Parse("2026-09-06T08:00:00Z"),
             DateTimeOffset.Parse("2026-09-06T08:00:00Z"),
             null,
+            ReleaseManifestReference: plan.ReleaseManifestReference,
+            ReleaseManifestSignatureReference: plan.ReleaseManifestSignatureReference,
+            SecretReferences: plan.SecretReferences,
+            SqlWorkflowPackageVersion: plan.SqlWorkflowPackageVersion,
+            SqlQuartzPackageVersion: plan.SqlQuartzPackageVersion,
             ProviderScopeFingerprint: scopeFingerprint,
             OrganizationId: organizationId,
             InstanceId: instanceId,

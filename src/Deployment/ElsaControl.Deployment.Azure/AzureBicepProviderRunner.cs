@@ -13,7 +13,7 @@ namespace ElsaControl.Deployment.Azure;
 /// successful response into bounded resource references. It never returns provider payloads,
 /// command output, or resolved secret values.
 /// </summary>
-public sealed class AzureBicepProviderRunner : IAzureProviderRunner
+public sealed class AzureBicepProviderRunner : IAzureProviderRunner, IAzureProviderRecoveryObserver
 {
     private const string AcrPullRoleDefinitionId = "7f951dda-4ed3-4680-a7ca-43fe172d538d";
     private const string KeyVaultSecretsUserRoleDefinitionId = "4633458b-17de-408a-b874-0445c86b69e6";
@@ -101,6 +101,213 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             return Uncertain(command, CurrentPhase(command.Step), "azure.runner.uncertain", "The Azure lifecycle step failed before its external result was confirmed.");
         }
     }
+
+    /// <summary>
+    /// Performs the provider-owned read-only observation used before an accepted recovery
+    /// claim. Each confirmed result proves one retained checkpoint only; later lifecycle steps
+    /// remain under the normal executor and its health/traffic gates.
+    /// </summary>
+    public async Task<AzureProviderRecoveryObservation> ObserveAsync(
+        AzureProviderRecoveryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        try
+        {
+            request.Validate();
+            if (request.Assignment is null || request.Operation.OrganizationId is not { } organizationId ||
+                request.Operation.InstanceId is not { } instanceId || request.Operation.LifecycleAction is null)
+                return RecoveryObservationInProgress(request);
+
+            var operation = request.Operation;
+            var observesAcrPull = AzureProviderRecoveryObservationSupport.IsAcrPullEligible(operation);
+            var observesFoundation = AzureProviderRecoveryObservationSupport.IsFoundationOnlyEligible(operation);
+            if (!observesAcrPull && !observesFoundation)
+                return RecoveryObservationUnsupported(request);
+
+            var assignment = request.Assignment;
+            if (!IsRecoveryAssignmentAuthorityValid(operation, assignment, request.Plan))
+                return RecoveryObservationAmbiguous(request);
+
+            var command = new AzureProviderRunnerCommand(
+                observesAcrPull ? AzureProviderRunnerStep.AcrPull : AzureProviderRunnerStep.Foundation,
+                request.Plan,
+                operation.Resources,
+                operation.Resources.StableTrafficRevisionName,
+                IsResume: true,
+                operation.AttemptNumber,
+                new AzureProviderExecutionContext(
+                    operation.WorkspaceId,
+                    organizationId,
+                    instanceId,
+                    operation.Id,
+                    operation.OperationIdentity,
+                    operation.IdempotencyKey,
+                    operation.TargetKey,
+                    assignment.Id.ToString("D"),
+                    operation.PlanFingerprint,
+                    operation.TemplateFingerprint,
+                    operation.ProviderScopeFingerprint),
+                assignment);
+            ValidateCommand(command);
+
+            return observesAcrPull
+                ? await ObserveAcrPullAsync(request, command, cancellationToken)
+                : await ObserveFoundationAsync(request, command, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return RecoveryObservationInProgress(request);
+        }
+    }
+
+    private async Task<AzureProviderRecoveryObservation> ObserveFoundationAsync(
+        AzureProviderRecoveryRequest request,
+        AzureProviderRunnerCommand command,
+        CancellationToken cancellationToken)
+    {
+        var operation = request.Operation;
+        var assignment = request.Assignment!;
+        if (!string.Equals(operation.Resources.ResourceGroupName, assignment.ResourceGroupName, StringComparison.Ordinal) ||
+            operation.Resources.FoundationDeploymentId is null)
+            return RecoveryObservationAmbiguous(request);
+        try
+        {
+            ValidateExactDeploymentId(operation.Resources.FoundationDeploymentId, _scope.SubscriptionId, assignment.ResourceGroupName);
+        }
+        catch (ArgumentException)
+        {
+            return RecoveryObservationAmbiguous(request);
+        }
+
+        var groupExists = await ExecuteAzAsync(command,
+            ["group", "exists", "--subscription", _scope.SubscriptionId, "--name", ResourceGroupName(command),
+                "--output", "tsv", "--only-show-errors"],
+            ParseBooleanAsync,
+            cancellationToken);
+        if (!groupExists.Succeeded || groupExists.Value is null || !groupExists.Value.Value)
+            return RecoveryObservationInProgress(request);
+
+        var tags = await ExecuteAzAsync(command,
+            ["group", "show", "--subscription", _scope.SubscriptionId, "--name", ResourceGroupName(command),
+                "--query", "tags", "--output", "json", "--only-show-errors"],
+            ParseTagsAsync,
+            cancellationToken);
+        if (!tags.Succeeded || tags.Value is null || !OwnsGroup(tags.Value.Value, request.Plan.WorkloadName))
+            return RecoveryObservationAmbiguous(request);
+
+        if (RequireFoundation(operation.Resources) is not null)
+            return RecoveryObservationInProgress(request);
+
+        var deploymentName = ResourceName(operation.Resources.FoundationDeploymentId);
+        if (deploymentName is null || !string.Equals(deploymentName, FoundationDeploymentName(command), StringComparison.Ordinal))
+            return RecoveryObservationAmbiguous(request);
+        var deployment = await ExecuteAzAsync(command,
+            ["deployment", "group", "show", "--subscription", _scope.SubscriptionId, "--resource-group", ResourceGroupName(command),
+                "--name", deploymentName, "--query", "properties.provisioningState", "--output", "tsv", "--only-show-errors"],
+            ParseStringAsync,
+            cancellationToken);
+        if (!deployment.Succeeded || !string.Equals(deployment.Value?.Value, "Succeeded", StringComparison.OrdinalIgnoreCase))
+            return RecoveryObservationInProgress(request);
+
+        return new(
+            AzureProviderRecoveryObservationKind.Confirmed,
+            AzureProviderRunnerStep.Foundation,
+            operation.Resources,
+            AzureProviderHealth.Unknown,
+            null,
+            "azure.recovery.foundation-observed",
+            "The retained Azure foundation completion was observed without mutation.");
+    }
+
+    private async Task<AzureProviderRecoveryObservation> ObserveAcrPullAsync(
+        AzureProviderRecoveryRequest request,
+        AzureProviderRunnerCommand command,
+        CancellationToken cancellationToken)
+    {
+        var operation = request.Operation;
+        var resources = operation.Resources;
+        var assignment = request.Assignment!;
+        if (!string.Equals(resources.ResourceGroupName, assignment.ResourceGroupName, StringComparison.Ordinal) ||
+            RequireFoundation(resources) is not null || resources.RegistryResourceId is null ||
+            resources.AcrPullDeploymentId is null || resources.WorkloadIdentityPrincipalId is null ||
+            resources.WorkloadIdentityResourceId is null)
+            return RecoveryObservationAmbiguous(request);
+
+        try
+        {
+            ValidateExactResourceId(resources.RegistryResourceId, _scope.RegistrySubscriptionId,
+                _scope.RegistryResourceGroupName, "Microsoft.ContainerRegistry", "registries", _scope.RegistryName);
+            ValidateExactDeploymentId(resources.AcrPullDeploymentId, _scope.RegistrySubscriptionId, _scope.RegistryResourceGroupName);
+            ValidateExactAcrDeploymentId(resources.AcrPullDeploymentId, command, resources.WorkloadIdentityPrincipalId);
+            var expectedAssignmentId = ExpectedAcrPullRoleAssignmentId(resources.RegistryResourceId, resources.WorkloadIdentityResourceId);
+            if (resources.AcrPullRoleAssignmentId is not null &&
+                !string.Equals(resources.AcrPullRoleAssignmentId, expectedAssignmentId, StringComparison.OrdinalIgnoreCase))
+                return RecoveryObservationAmbiguous(request);
+        }
+        catch (ArgumentException)
+        {
+            return RecoveryObservationAmbiguous(request);
+        }
+
+        var expectedRoleAssignmentId = ExpectedAcrPullRoleAssignmentId(resources.RegistryResourceId, resources.WorkloadIdentityResourceId);
+        var role = await DiscoverAcrRoleAssignmentAsync(
+            command,
+            resources.RegistryResourceId,
+            resources.WorkloadIdentityPrincipalId,
+            expectedRoleAssignmentId,
+            cancellationToken);
+        if (role.Status is AcrRoleDiscoveryStatus.Uncertain or AcrRoleDiscoveryStatus.Absent)
+            return RecoveryObservationInProgress(request);
+        if (role.Status != AcrRoleDiscoveryStatus.Exact || role.AssignmentId is null)
+            return RecoveryObservationAmbiguous(request);
+
+        try
+        {
+            ValidateExactRoleAssignmentId(role.AssignmentId, resources.RegistryResourceId);
+        }
+        catch (ArgumentException)
+        {
+            return RecoveryObservationAmbiguous(request);
+        }
+
+        var deploymentName = ResourceName(resources.AcrPullDeploymentId);
+        if (deploymentName is null)
+            return RecoveryObservationAmbiguous(request);
+        var deployment = await ExecuteAzAsync(command,
+            ["deployment", "group", "show", "--subscription", _scope.RegistrySubscriptionId,
+                "--resource-group", _scope.RegistryResourceGroupName, "--name", deploymentName,
+                "--query", "properties.provisioningState", "--output", "tsv", "--only-show-errors"],
+            ParseStringAsync,
+            cancellationToken);
+        if (!deployment.Succeeded || !string.Equals(deployment.Value?.Value, "Succeeded", StringComparison.OrdinalIgnoreCase))
+            return RecoveryObservationInProgress(request);
+
+        return new(
+            AzureProviderRecoveryObservationKind.Confirmed,
+            AzureProviderRunnerStep.AcrPull,
+            resources with { AcrPullRoleAssignmentId = role.AssignmentId },
+            AzureProviderHealth.Unknown,
+            null,
+            "azure.recovery.acr-pull-observed",
+            "The retained Azure registry access checkpoint was observed without mutation.");
+    }
+
+    private static AzureProviderRecoveryObservation RecoveryObservationInProgress(AzureProviderRecoveryRequest request) =>
+        new(AzureProviderRecoveryObservationKind.InProgress, null, request.Operation.Resources, AzureProviderHealth.Unknown,
+            null, "azure.recovery.observation-in-progress", "The retained Azure postcondition is not yet proven.");
+
+    private static AzureProviderRecoveryObservation RecoveryObservationAmbiguous(AzureProviderRecoveryRequest request) =>
+        new(AzureProviderRecoveryObservationKind.Ambiguous, null, request.Operation.Resources, AzureProviderHealth.Unknown,
+            null, "azure.recovery.observation-ambiguous", "The retained Azure ownership boundary is ambiguous.");
+
+    private static AzureProviderRecoveryObservation RecoveryObservationUnsupported(AzureProviderRecoveryRequest request) =>
+        new(AzureProviderRecoveryObservationKind.Ambiguous, null, request.Operation.Resources, AzureProviderHealth.Unknown,
+            null, "azure.recovery.step-unsupported", "The retained Azure recovery step is not supported by this provider observer.");
 
     private async Task<AzureProviderRunnerResult> RunFoundationAsync(
         AzureProviderRunnerCommand command,
@@ -760,6 +967,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
                     command,
                     registryId,
                     workloadIdentityPrincipalId,
+                    expectedAssignmentId: null,
                     cancellationToken);
                 if (discovered.Status == AcrRoleDiscoveryStatus.Uncertain)
                 {
@@ -1133,18 +1341,35 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
         AzureProviderRunnerCommand command,
         string registryId,
         string principalId,
+        string? expectedAssignmentId,
         CancellationToken cancellationToken)
     {
         var list = await ListRegistryRoleAssignmentsAsync(command, registryId, principalId, cancellationToken);
         if (!list.Succeeded || list.Value is null)
             return new(AcrRoleDiscoveryStatus.Uncertain, null);
 
-        var exact = list.Value.Value.Where(assignment =>
+        var scoped = list.Value.Value.Where(assignment =>
             string.Equals(assignment.Scope, registryId, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(assignment.PrincipalId, principalId, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(RoleDefinitionId(assignment.RoleDefinitionId), AcrPullRoleDefinitionId, StringComparison.OrdinalIgnoreCase)).ToArray();
+            string.Equals(assignment.PrincipalId, principalId, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (expectedAssignmentId is not null)
+        {
+            var expectedRole = ExpectedAcrPullRoleDefinitionId(registryId);
+            if (scoped.Length == 0)
+                return new(AcrRoleDiscoveryStatus.Absent, null);
+            if (scoped.Any(x => !string.Equals(x.RoleDefinitionId, expectedRole, StringComparison.OrdinalIgnoreCase)))
+                return new(AcrRoleDiscoveryStatus.Ambiguous, null);
+            if (scoped.Length != 1)
+                return new(AcrRoleDiscoveryStatus.Ambiguous, null);
+        }
+
+        var exact = expectedAssignmentId is null
+            ? scoped.Where(assignment =>
+                string.Equals(RoleDefinitionId(assignment.RoleDefinitionId), AcrPullRoleDefinitionId, StringComparison.OrdinalIgnoreCase)).ToArray()
+            : scoped.Where(assignment =>
+                string.Equals(assignment.RoleDefinitionId, ExpectedAcrPullRoleDefinitionId(registryId), StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(assignment.Id, expectedAssignmentId, StringComparison.OrdinalIgnoreCase)).ToArray();
         if (exact.Length == 0)
-            return new(AcrRoleDiscoveryStatus.Absent, null);
+            return new(expectedAssignmentId is null ? AcrRoleDiscoveryStatus.Absent : AcrRoleDiscoveryStatus.Ambiguous, null);
         if (exact.Length != 1 || string.IsNullOrWhiteSpace(exact[0].Id))
             return new(AcrRoleDiscoveryStatus.Ambiguous, null);
         try
@@ -1625,6 +1850,70 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
             ? guid.ToString("D", CultureInfo.InvariantCulture)
             : throw new ArgumentException($"The Azure output {name} is not a canonical identity.");
 
+    private bool IsRecoveryAssignmentAuthorityValid(
+        AzureProviderOperation operation,
+        AzureProviderResourceAssignment assignment,
+        AzureWorkloadPlan plan)
+    {
+        var correlatedUnknownRecovery =
+            operation.Status == AzureProviderOperationStatus.RecoveryRequired &&
+            assignment.State == AzureProviderAssignmentState.Unknown &&
+            assignment.LastOperationId == operation.Id &&
+            operation.CheckpointSequence > 0 &&
+            operation.AttemptedStep is not null &&
+            operation.Resources == assignment.Resources;
+        if (operation.ProviderAssignmentId != assignment.Id ||
+            operation.WorkspaceId != assignment.WorkspaceId ||
+            operation.OrganizationId != assignment.OrganizationId ||
+            operation.InstanceId != assignment.InstanceId ||
+            !string.Equals(operation.TargetKey, assignment.WorkloadName, StringComparison.Ordinal) ||
+            !string.Equals(plan.WorkloadName, assignment.WorkloadName, StringComparison.Ordinal) ||
+            !string.Equals(plan.Location, assignment.Location, StringComparison.OrdinalIgnoreCase) ||
+            assignment.State == AzureProviderAssignmentState.Deleted ||
+            assignment.State == AzureProviderAssignmentState.Unknown && !correlatedUnknownRecovery ||
+            !string.Equals(operation.ProviderScopeFingerprint, assignment.ProviderScopeFingerprint, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(operation.ProviderScopeFingerprint, _options.ComputeProviderScopeFingerprint(_scope), StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var operationResources = operation.Resources;
+        var assignmentResources = assignment.Resources;
+        return string.Equals(operationResources.ResourceGroupName, assignment.ResourceGroupName, StringComparison.Ordinal) &&
+               string.Equals(operationResources.WorkloadIdentityResourceId, assignmentResources.WorkloadIdentityResourceId, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(operationResources.WorkloadIdentityClientId, assignmentResources.WorkloadIdentityClientId, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(operationResources.WorkloadIdentityPrincipalId, assignmentResources.WorkloadIdentityPrincipalId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ExpectedAcrPullRoleDefinitionId(string registryId)
+    {
+        var slash = registryId.IndexOf("/resourceGroups/", StringComparison.OrdinalIgnoreCase);
+        if (slash < 0)
+            throw new ArgumentException("The registry resource identity is invalid.", nameof(registryId));
+        var subscription = registryId["/subscriptions/".Length..slash];
+        return $"/subscriptions/{subscription}/providers/Microsoft.Authorization/roleDefinitions/{AcrPullRoleDefinitionId}";
+    }
+
+    private static string ExpectedAcrPullRoleAssignmentId(string registryId, string workloadIdentityId)
+    {
+        var namespaceId = Guid.Parse("11fb06fb-712d-4ddd-98c7-e71bbd588830");
+        var name = string.Join('-', registryId, workloadIdentityId, AcrPullRoleDefinitionId);
+        var namespaceBytes = namespaceId.ToByteArray();
+        SwapGuidByteOrder(namespaceBytes);
+        var hash = SHA1.HashData([.. namespaceBytes, .. Encoding.UTF8.GetBytes(name)]);
+        hash[6] = (byte)((hash[6] & 0x0F) | 0x50);
+        hash[8] = (byte)((hash[8] & 0x3F) | 0x80);
+        var guidBytes = hash[..16];
+        SwapGuidByteOrder(guidBytes);
+        return $"{registryId}/providers/Microsoft.Authorization/roleAssignments/{new Guid(guidBytes):D}";
+    }
+
+    private static void SwapGuidByteOrder(byte[] bytes)
+    {
+        (bytes[0], bytes[3]) = (bytes[3], bytes[0]);
+        (bytes[1], bytes[2]) = (bytes[2], bytes[1]);
+        (bytes[4], bytes[5]) = (bytes[5], bytes[4]);
+        (bytes[6], bytes[7]) = (bytes[7], bytes[6]);
+    }
+
     private static void ValidateExactRoleAssignmentId(string id, string? registryId)
     {
         if (registryId is null || !id.StartsWith(registryId + "/providers/Microsoft.Authorization/roleAssignments/", StringComparison.OrdinalIgnoreCase) ||
@@ -1836,7 +2125,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner
 }
 
 /// <summary>Compatibility name for hosts that refer to the adapter as the Azure provider runner.</summary>
-public sealed class AzureProviderRunner : IAzureProviderRunner
+public sealed class AzureProviderRunner : IAzureProviderRunner, IAzureProviderRecoveryObserver
 {
     private readonly AzureBicepProviderRunner _inner;
 
@@ -1848,4 +2137,7 @@ public sealed class AzureProviderRunner : IAzureProviderRunner
 
     public Task<AzureProviderRunnerResult> RunAsync(AzureProviderRunnerCommand command, CancellationToken cancellationToken = default) =>
         _inner.RunAsync(command, cancellationToken);
+
+    public Task<AzureProviderRecoveryObservation> ObserveAsync(AzureProviderRecoveryRequest request, CancellationToken cancellationToken = default) =>
+        _inner.ObserveAsync(request, cancellationToken);
 }

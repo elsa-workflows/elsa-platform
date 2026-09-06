@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
+using ElsaControl.Deployment.Abstractions.Instances;
 using ElsaControl.Deployment.Azure;
 
 namespace ElsaControl.Deployment.Azure.Tests;
@@ -213,6 +214,77 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.Equal(_fixture.FoundationResources.KeyVaultResourceId, result.Resources.KeyVaultResourceId);
         Assert.Equal(_fixture.FoundationResources.WorkloadIdentityResourceId, result.Resources.WorkloadIdentityResourceId);
         Assert.NotNull(result.Resources.FoundationDeploymentId);
+    }
+
+    [Fact]
+    public async Task Recovery_observer_confirms_owned_foundation_without_mutation()
+    {
+        var process = new FakeCommandProcess();
+        process.Success(args => args.Contains("group") && args.Contains("exists"), "true");
+        process.Success(args => args.Contains("group") && args.Contains("show"), OwnedGroupTags);
+        process.Success(args => args.Contains("deployment") && args.Contains("show"), "Succeeded");
+        var foundation = _fixture.FoundationResources with
+        {
+            FoundationDeploymentId = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.Resources/deployments/elsa-proof-aaaaaaaaaaaa-foundation"
+        };
+
+        var observation = await _fixture.Runner(process)
+            .ObserveAsync(CreateRecoveryRequest(foundation, AzureProviderRunnerStep.Foundation));
+
+        Assert.Equal(AzureProviderRecoveryObservationKind.Confirmed, observation.Kind);
+        Assert.Equal(AzureProviderRunnerStep.Foundation, observation.CompletedStep);
+        Assert.Equal("azure.recovery.foundation-observed", observation.Code);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("create") || call.Contains("delete") || call.Contains("set"));
+    }
+
+    [Fact]
+    public async Task Recovery_observer_derives_and_confirms_the_exact_owned_acr_assignment()
+    {
+        var process = new FakeCommandProcess();
+        var canonicalRole = "/subscriptions/22222222-2222-2222-2222-222222222222/providers/Microsoft.Authorization/roleDefinitions/7f951dda-4ed3-4680-a7ca-43fe172d538d";
+        process.Success(args => args.Contains("role") && args.Contains("assignment") && args.Contains("list"),
+            "[{\"id\":\"" + _fixture.RegistryRoleAssignmentId + "\",\"scope\":\"" + _fixture.RegistryId +
+            "\",\"principalId\":\"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\",\"roleDefinitionId\":\"" + canonicalRole + "\"}]");
+        process.Success(args => args.Contains("deployment") && args.Contains("show"), "Succeeded");
+        var resources = _fixture.FoundationResources with
+        {
+            RegistryResourceId = _fixture.RegistryId,
+            AcrPullDeploymentId = _fixture.RegistryDeploymentId,
+            AcrPullRoleAssignmentId = null
+        };
+
+        var observation = await _fixture.Runner(process)
+            .ObserveAsync(CreateRecoveryRequest(resources, AzureProviderRunnerStep.AcrPull));
+
+        Assert.Equal(AzureProviderRecoveryObservationKind.Confirmed, observation.Kind);
+        Assert.Equal(AzureProviderRunnerStep.AcrPull, observation.CompletedStep);
+        Assert.Equal(_fixture.RegistryRoleAssignmentId, observation.Resources.AcrPullRoleAssignmentId);
+        Assert.DoesNotContain(process.Calls, call => call.Contains("create") || call.Contains("delete") || call.Contains("set"));
+    }
+
+    [Fact]
+    public async Task Recovery_observer_rejects_a_deterministic_acr_assignment_with_an_extra_scoped_match()
+    {
+        var process = new FakeCommandProcess();
+        var canonicalRole = "/subscriptions/22222222-2222-2222-2222-222222222222/providers/Microsoft.Authorization/roleDefinitions/7f951dda-4ed3-4680-a7ca-43fe172d538d";
+        var foreign = _fixture.RegistryId + "/providers/Microsoft.Authorization/roleAssignments/99999999-9999-9999-9999-999999999999";
+        process.Success(args => args.Contains("role") && args.Contains("assignment") && args.Contains("list"),
+            "[{\"id\":\"" + _fixture.RegistryRoleAssignmentId + "\",\"scope\":\"" + _fixture.RegistryId +
+            "\",\"principalId\":\"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\",\"roleDefinitionId\":\"" + canonicalRole + "\"},{\"id\":\"" + foreign +
+            "\",\"scope\":\"" + _fixture.RegistryId + "\",\"principalId\":\"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\",\"roleDefinitionId\":\"" + canonicalRole + "\"}]");
+        var resources = _fixture.FoundationResources with
+        {
+            RegistryResourceId = _fixture.RegistryId,
+            AcrPullDeploymentId = _fixture.RegistryDeploymentId,
+            AcrPullRoleAssignmentId = null
+        };
+
+        var observation = await _fixture.Runner(process)
+            .ObserveAsync(CreateRecoveryRequest(resources, AzureProviderRunnerStep.AcrPull));
+
+        Assert.Equal(AzureProviderRecoveryObservationKind.Ambiguous, observation.Kind);
+        Assert.Null(observation.CompletedStep);
+        Assert.Single(process.Calls);
     }
 
     [Fact]
@@ -1439,6 +1511,79 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         }
         """;
 
+    private AzureProviderRecoveryRequest CreateRecoveryRequest(
+        AzureProviderResourceReferences resources,
+        AzureProviderRunnerStep attemptedStep)
+    {
+        var context = _fixture.Context;
+        var operation = new AzureProviderOperation(
+            context.OperationId,
+            context.WorkspaceId,
+            _fixture.Plan.WorkloadName,
+            AzureProviderOperationAction.Reconcile,
+            context.IdempotencyKey,
+            new string('c', 64),
+            context.OperationIdentity,
+            _fixture.Plan.Fingerprint,
+            context.TemplateFingerprint,
+            _fixture.Plan.ElsaVersion,
+            _fixture.Plan.ReleaseLine,
+            _fixture.Plan.Topology,
+            _fixture.Plan.Isolation,
+            _fixture.Plan.Location,
+            _fixture.Plan.ImageRepository,
+            "sha256:" + _fixture.Plan.ImageDigest,
+            _fixture.Plan.ReleaseManifestDigest,
+            _fixture.Plan.ReleaseManifestSignatureDigest,
+            AzureProviderOperationStatus.RecoveryRequired,
+            AzureProviderOperationPhase.FoundationSubmitted,
+            2,
+            1,
+            1,
+            resources,
+            null,
+            AzureProviderHealth.Unknown,
+            [],
+            null,
+            null,
+            null,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow,
+            null,
+            _fixture.Plan.ReleaseManifestReference,
+            _fixture.Plan.ReleaseManifestSignatureReference,
+            _fixture.Plan.SecretReferences,
+            false,
+            context.ProviderScopeFingerprint,
+            _fixture.Plan.SqlWorkflowPackageVersion,
+            _fixture.Plan.SqlQuartzPackageVersion,
+            context.OrganizationId,
+            context.InstanceId,
+            ElsaInstanceOperationAction.Reconcile,
+            Guid.Parse(context.ProviderAssignmentId),
+            attemptedStep);
+        var assignmentId = Guid.Parse(context.ProviderAssignmentId);
+        var assignment = new AzureProviderResourceAssignment(
+            assignmentId,
+            context.WorkspaceId,
+            context.OrganizationId,
+            context.InstanceId,
+            context.ProviderScopeFingerprint!,
+            1,
+            _fixture.Scope.SubscriptionId,
+            _fixture.Scope.ResourceGroupName,
+            _fixture.Plan.WorkloadName,
+            new string('d', 64),
+            _fixture.Plan.Location,
+            AzureProviderAssignmentState.Active,
+            resources,
+            operation.Id,
+            1,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow);
+        return new(operation, _fixture.Plan, assignment);
+    }
+
     private sealed class RunnerFixture : IDisposable
     {
         private readonly string _root = Path.Combine(Path.GetTempPath(), $"elsa-runner-{Guid.NewGuid():N}");
@@ -1493,7 +1638,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
             ContainerAppsEnvironmentResourceId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.App/managedEnvironments/proof-aca");
         public string RegistryId => "/subscriptions/22222222-2222-2222-2222-222222222222/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/valenceruntimeimages";
         public string RegistryDeploymentId => "/subscriptions/22222222-2222-2222-2222-222222222222/resourceGroups/registry-rg/providers/Microsoft.Resources/deployments/elsa-proof-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes("11111111-1111-1111-1111-111111111111/proof-rg/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/22222222-2222-2222-2222-222222222222/registry-rg/valenceruntimeimages")))[..12] + "-acr";
-        public string RegistryRoleAssignmentId => RegistryId + "/providers/Microsoft.Authorization/roleAssignments/cccccccc-cccc-cccc-cccc-cccccccccccc";
+        public string RegistryRoleAssignmentId => RegistryId + "/providers/Microsoft.Authorization/roleAssignments/88843122-c847-55e8-9526-6429f5445c73";
         public string AppId => "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.App/containerApps/proof-app";
         public string WorkloadDeploymentId => "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.Resources/deployments/workload";
         public AzureProviderExecutionContext Context => new(
