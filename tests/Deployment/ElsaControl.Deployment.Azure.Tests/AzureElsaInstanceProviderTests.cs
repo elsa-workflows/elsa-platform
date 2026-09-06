@@ -578,6 +578,112 @@ public sealed class AzureElsaInstanceProviderTests
         Assert.Empty(service.DeleteSubmissions);
     }
 
+    [Theory]
+    [InlineData(true, false, 2, ElsaInstanceCleanupObservationKind.ConfirmedAbsent)]
+    [InlineData(false, false, 2, ElsaInstanceCleanupObservationKind.Unknown)]
+    [InlineData(true, true, 2, ElsaInstanceCleanupObservationKind.Unknown)]
+    [InlineData(true, false, 3, ElsaInstanceCleanupObservationKind.Ambiguous)]
+    public async Task Delete_recovery_reuses_exact_cleanup_classifier_for_a_completed_successor(
+        bool assignmentDeleted, bool retainedInventory, int lifecycleAttempt,
+        ElsaInstanceCleanupObservationKind expectedKind)
+    {
+        var workspaceId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var lifecycleOperationId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        var providerOperationId = Guid.Parse("55555555-5555-5555-5555-555555555555");
+        var assignmentId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+        var plan = TranslateForInstance("5.0", "5.0.0");
+        var resourceGroupName = AzureProviderResourceAssignmentNaming.ResourceGroupName("rg-elsa-proof", TestInstanceId);
+        var operation = CreateOperation(workspaceId, plan, providerOperationId) with
+        {
+            Action = AzureProviderOperationAction.Delete,
+            IdempotencyKey = AzureElsaInstanceProvider.IdempotencyKey(lifecycleOperationId) + ":delete",
+            Status = AzureProviderOperationStatus.Succeeded,
+            Phase = AzureProviderOperationPhase.CleanupVerified,
+            CheckpointSequence = 1,
+            AttemptNumber = 2,
+            Version = 3,
+            Resources = new AzureProviderResourceReferences(ResourceGroupName: resourceGroupName),
+            Endpoint = null,
+            OrganizationId = TestOrganizationId,
+            InstanceId = TestInstanceId,
+            LifecycleAction = ElsaInstanceOperationAction.Delete,
+            ProviderAssignmentId = assignmentId,
+            SqlWorkflowPackageVersion = plan.SqlWorkflowPackageVersion,
+            SqlQuartzPackageVersion = plan.SqlQuartzPackageVersion
+        };
+        var operationRequest = AzureProviderOperationService.CreateOperationRequest(operation);
+        operation = operation with
+        {
+            RequestHash = AzureProviderOperationValidation.ComputeRequestHash(operationRequest),
+            OperationIdentity = AzureProviderOperationValidation.ComputeOperationIdentity(operationRequest)
+        };
+        var authority = new AzureProviderDeleteRecoveryAuthority(
+            providerOperationId,
+            assignmentId,
+            2,
+            1,
+            1,
+            2,
+            1,
+            operation.OperationIdentity,
+            operation.RequestHash,
+            operation.TargetKey,
+            operation.ProviderScopeFingerprint!,
+            operation.PlanFingerprint,
+            operation.TemplateFingerprint);
+        authority.Validate();
+        var operationStore = new CapturingOperationStore(completedDelete: operation)
+        {
+            DeleteRecoveryAuthority = authority
+        };
+        var assignmentStore = new InMemoryAssignmentStore
+        {
+            AssignmentId = assignmentId,
+            LastOperationId = providerOperationId,
+            State = assignmentDeleted ? AzureProviderAssignmentState.Deleted : AzureProviderAssignmentState.Reserved,
+            Resources = new AzureProviderResourceReferences(ResourceGroupName: resourceGroupName,
+                WorkloadRevisionName: retainedInventory ? "retained-revision" : null)
+        };
+        await assignmentStore.CreateOrGetAsync(new(
+            workspaceId,
+            TestOrganizationId,
+            TestInstanceId,
+            new string('a', 64),
+            "11111111-1111-1111-1111-111111111111",
+            "rg-elsa-proof",
+            operation.TargetKey,
+            "westeurope"),
+            DateTimeOffset.UtcNow);
+        var executor = new AzureProviderExecutor(
+            operationStore,
+            new NeverCalledRunner());
+        var provider = new AzureElsaInstanceProvider(
+            new CapturingOperationService(operation),
+            operationStore,
+            assignmentStore,
+            options: EnabledOptions(),
+            executor: executor);
+
+        var result = await provider.RecoverDeleteAsync(new(
+            new(
+                workspaceId,
+                TestInstanceId,
+                lifecycleOperationId,
+                lifecycleAttempt,
+                null,
+                new ElsaPlacementAssignmentReference(assignmentId.ToString("D")),
+                null),
+            Guid.Parse("66666666-6666-6666-6666-666666666666"),
+            1,
+            "delete-worker",
+            new string('a', 64),
+            1));
+
+        Assert.True(expectedKind == result.Kind, result.DiagnosticCode);
+        if (expectedKind == ElsaInstanceCleanupObservationKind.ConfirmedAbsent)
+            Assert.Equal("deletion.provider-confirmed-absent", result.DiagnosticCode);
+    }
+
     private static AzureElsaInstanceProviderOptions EnabledOptions() =>
         new()
         {
@@ -913,9 +1019,10 @@ public sealed class AzureElsaInstanceProviderTests
             Task.FromResult<AzureProviderOperationStatusResponse?>(null);
     }
 
-    private sealed class CapturingOperationStore(AzureProviderOperation? operation = null, AzureProviderOperation? completedDelete = null) : IAzureProviderOperationStore
+    private sealed class CapturingOperationStore(AzureProviderOperation? operation = null, AzureProviderOperation? completedDelete = null) : IAzureProviderOperationStore, IAzureProviderDeleteRecoveryStore
     {
         public int ClaimRecoveryCalls { get; private set; }
+        public AzureProviderDeleteRecoveryAuthority? DeleteRecoveryAuthority { get; init; }
 
         public Task<AzureProviderOperation> CreateOrGetAsync(AzureProviderOperationRequest request, DateTimeOffset now, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public async Task<AzureProviderOperationCreateResult> CreateOrGetWithResultAsync(AzureProviderOperationRequest request, DateTimeOffset now, CancellationToken cancellationToken = default) =>
@@ -923,6 +1030,17 @@ public sealed class AzureElsaInstanceProviderTests
         public Task<AzureProviderOperation?> GetAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default) =>
             Task.FromResult(new[] { completedDelete, operation }.FirstOrDefault(candidate =>
                 candidate?.WorkspaceId == workspaceId && candidate.Id == operationId));
+        public Task<AzureProviderDeleteRecoveryAuthority?> GetDeleteRecoveryAuthorityAsync(
+            Guid workspaceId,
+            Guid recoveryRequestId,
+            Guid instanceId,
+            Guid lifecycleOperationId,
+            CancellationToken cancellationToken = default) => Task.FromResult(DeleteRecoveryAuthority);
+        public Task<AzureProviderOperation?> ClaimDeleteRecoveryAsync(
+            AzureProviderDeleteRecoveryClaimRequest request,
+            TimeSpan leaseDuration,
+            DateTimeOffset now,
+            CancellationToken cancellationToken = default) => Task.FromResult<AzureProviderOperation?>(null);
         public Task<IReadOnlyList<AzureProviderOperation>> ListRunnableAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<AzureProviderOperation>>([]);
         public Task<AzureProviderOperation?> GetLatestReconcileAsync(Guid workspaceId, string targetKey, string? providerScopeFingerprint, CancellationToken cancellationToken = default) => Task.FromResult(operation);
         public Task<AzureProviderOperation?> MarkUnrestorableAsync(Guid workspaceId, Guid operationId, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) => Task.FromResult<AzureProviderOperation?>(null);
@@ -937,6 +1055,14 @@ public sealed class AzureElsaInstanceProviderTests
         public Task<AzureProviderOperation?> FinalizeAsync(Guid workspaceId, Guid operationId, string leaseToken, AzureProviderOperationStatus status, string code, DateTimeOffset now, long? expectedVersion = null, CancellationToken cancellationToken = default) => Task.FromResult<AzureProviderOperation?>(null);
         public Task<int> RecoverStaleAsync(DateTimeOffset now, CancellationToken cancellationToken = default) => Task.FromResult(0);
         public Task<IReadOnlyList<AzureProviderOperationTransition>> ListTransitionsAsync(Guid workspaceId, Guid operationId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<AzureProviderOperationTransition>>([]);
+    }
+
+    private sealed class NeverCalledRunner : IAzureProviderRunner
+    {
+        public Task<AzureProviderRunnerResult> RunAsync(
+            AzureProviderRunnerCommand command,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("The replay path must not invoke the provider runner.");
     }
 
     private sealed class InMemoryAssignmentStore : IAzureProviderResourceAssignmentStore
