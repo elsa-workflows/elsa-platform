@@ -249,6 +249,10 @@ internal sealed class ElsaInstanceRecoveryRequestEntity
     public string IdempotencyScope { get; set; } = "";
     public string IdempotencyKey { get; set; } = "";
     public string RequestHash { get; set; } = "";
+    public string? RecoveryObservationReference { get; set; }
+    public string? RecoveryObservationDigest { get; set; }
+    public int? ObservedLifecycleAttemptNumber { get; set; }
+    public int? ObservedInstanceVersion { get; set; }
     public DateTimeOffset AcceptedAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }

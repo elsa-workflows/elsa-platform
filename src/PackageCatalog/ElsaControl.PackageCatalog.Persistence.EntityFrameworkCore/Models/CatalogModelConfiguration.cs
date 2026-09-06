@@ -836,6 +836,7 @@ internal sealed class AzureProviderOperationConfiguration : IEntityTypeConfigura
         builder.Property(x => x.Action).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.Phase).HasConversion<string>().HasMaxLength(64);
+        builder.Property(x => x.AttemptedStep).HasConversion<string>().HasMaxLength(64);
         builder.Property(x => x.Health).HasConversion<string>().HasMaxLength(32);
         builder.Property(x => x.TargetKey).HasMaxLength(128).IsRequired();
         builder.Property(x => x.OrganizationId);
@@ -970,6 +971,42 @@ internal sealed class AzureProviderOperationTransitionConfiguration : IEntityTyp
         builder.HasIndex(x => new { x.OperationId, x.Sequence }).IsUnique();
         builder.HasIndex(x => new { x.OperationId, x.OccurredAt });
     }
+}
+
+internal sealed class AzureProviderRecoveryObservationConfiguration : IEntityTypeConfiguration<AzureProviderRecoveryObservationEntity>
+{
+    public void Configure(EntityTypeBuilder<AzureProviderRecoveryObservationEntity> builder)
+    {
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.LifecycleAction).HasConversion<string>().HasMaxLength(64).IsRequired();
+        builder.Property(x => x.ProviderOperationIdentity).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.ProviderRequestHash).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.TargetKey).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.ProviderScopeFingerprint).HasMaxLength(64);
+        builder.Property(x => x.ResolvedPlanId).HasMaxLength(128).IsRequired();
+        builder.Property(x => x.ResolvedPlanUri).HasMaxLength(2048).IsRequired();
+        builder.Property(x => x.ResolvedPlanContentHash).HasMaxLength(71).IsRequired();
+        builder.Property(x => x.ProviderPlanFingerprint).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.ProviderTemplateFingerprint).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.CompletedStep).HasConversion<string>().HasMaxLength(64).IsRequired();
+        builder.Property(x => x.ObservedPhase).HasConversion<string>().HasMaxLength(64).IsRequired();
+        builder.Property(x => x.ObservedHealth).HasConversion<string>().HasMaxLength(32).IsRequired();
+        builder.Property(x => x.ResourceFingerprint).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.PostconditionFingerprint).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.NaturalKey).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.RecordDigest).HasMaxLength(71).IsRequired();
+        ConfigureDateTime(builder.Property(x => x.ObservedAt));
+        ConfigureDateTime(builder.Property(x => x.CreatedAt));
+        builder.HasIndex(x => new { x.WorkspaceId, x.NaturalKey }).IsUnique();
+        builder.HasIndex(x => new { x.WorkspaceId, x.LifecycleOperationId, x.ObservedAt });
+        builder.HasOne<Workspace>().WithMany().HasForeignKey(x => x.WorkspaceId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<AzureProviderOperationEntity>().WithMany().HasForeignKey(x => x.ProviderOperationId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<AzureProviderResourceAssignmentEntity>().WithMany().HasForeignKey(x => x.ProviderAssignmentId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<ElsaInstanceOperationEntity>().WithMany().HasForeignKey(x => x.LifecycleOperationId).OnDelete(DeleteBehavior.Restrict);
+    }
+
+    private static void ConfigureDateTime(PropertyBuilder<DateTimeOffset> property) =>
+        property.HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
 }
 
 internal sealed class DeploymentCommandWebhookNotificationConfiguration : IEntityTypeConfiguration<DeploymentCommandWebhookNotificationEntity>
@@ -1165,6 +1202,8 @@ internal sealed class ElsaInstanceRecoveryRequestConfiguration : IEntityTypeConf
         builder.Property(x => x.IdempotencyScope).HasMaxLength(256).IsRequired();
         builder.Property(x => x.IdempotencyKey).HasMaxLength(128).IsRequired();
         builder.Property(x => x.RequestHash).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.RecoveryObservationReference).HasMaxLength(2048);
+        builder.Property(x => x.RecoveryObservationDigest).HasMaxLength(71);
         builder.Property(x => x.AcceptedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.Property(x => x.CreatedAt).HasConversion(value => value.UtcTicks, value => new DateTimeOffset(value, TimeSpan.Zero));
         builder.HasIndex(x => new { x.WorkspaceId, x.IdempotencyScope, x.IdempotencyKey }).IsUnique();

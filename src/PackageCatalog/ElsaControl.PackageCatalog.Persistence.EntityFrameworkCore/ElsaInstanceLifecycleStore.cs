@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ElsaControl.Deployment.Abstractions.Instances;
+using ElsaControl.Deployment.Azure;
 using ElsaControl.Deployment.Core.Cockpit;
 using ElsaControl.Deployment.Core.Instances;
 using ElsaControl.Deployment.Core.Workspace;
@@ -25,7 +26,8 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
     CatalogDbContext dbContext,
     IElsaInstanceLifecycleResolutionInputSource resolutionInputSource,
     TimeProvider? timeProvider = null,
-    IElsaInstanceCommercialGate? commercialGate = null) :
+    IElsaInstanceCommercialGate? commercialGate = null,
+    IAzureProviderRecoveryObservationStore? recoveryObservationStore = null) :
     IElsaInstanceLifecycleStore,
     IElsaInstanceLifecycleWorkerStore,
     IElsaInstanceProviderSubmissionStore,
@@ -38,6 +40,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         resolutionInputSource ?? throw new ArgumentNullException(nameof(resolutionInputSource));
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly IElsaInstanceCommercialGate _commercialGate = commercialGate ?? new EfCoreElsaInstanceCommercialGate(dbContext);
+    private readonly IAzureProviderRecoveryObservationStore? _recoveryObservationStore = recoveryObservationStore;
     private static readonly TimeSpan WorkerLeaseDuration = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan DeletionDeferralDelay = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan[] IdempotencyReplayLookupDelays =
@@ -379,9 +382,6 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         ArgumentNullException.ThrowIfNull(operation);
         ArgumentNullException.ThrowIfNull(outbox);
         ValidateEnvelope(instance, operation, outbox);
-        if (operation.Action == ElsaInstanceOperationAction.Delete && context?.DeleteConfirmation is null)
-            throw new ElsaInstanceDeleteConfirmationException();
-
         try
         {
             await using var transaction = await dbContext.Database.BeginTransactionAsync(
@@ -397,6 +397,10 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 var existingOutbox = await dbContext.ElsaInstanceLifecycleOutbox
                     .SingleOrDefaultAsync(x => x.OperationId == existingOperation.Id, cancellationToken);
                 ValidateExistingOperation(existingOperation, instance, operation, outbox);
+                if (operation.Action == ElsaInstanceOperationAction.Delete && context?.DeleteConfirmation is null &&
+                    (operation.RecoveryIdempotencyKey is null || operation.RecoveryIdempotencyScope is null ||
+                     operation.RecoveryRequestHash is null))
+                    throw new ElsaInstanceDeleteConfirmationException();
                 if (operation.RecoveryIdempotencyKey is null && existingOperation.RecoveryIdempotencyKey is not null)
                     throw Conflict("Idempotency key was already used for a different request.",
                         ElsaInstanceLifecycleConflictReason.IdempotencyConflict);
@@ -411,6 +415,11 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                     outbox.CreatedAt,
                     cancellationToken);
             }
+
+            // A retained operation has already crossed the confirmation boundary;
+            // recovery resumes that exact operation rather than approving a new Delete.
+            if (operation.Action == ElsaInstanceOperationAction.Delete && context?.DeleteConfirmation is null)
+                throw new ElsaInstanceDeleteConfirmationException();
 
             // The service intentionally looks up by key before creating an ID, but
             // two first requests can race between that read and this transaction.
@@ -1864,6 +1873,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         var instanceIds = replayCandidates.Select(operation => operation.InstanceId!.Value).Distinct().ToArray();
         var runIds = replayCandidates.Select(operation => operation.DeploymentRunId!.Value).Distinct().ToArray();
         var planIds = replayCandidates.Select(operation => operation.ResolvedPlanId!).Distinct(StringComparer.Ordinal).ToArray();
+        var recoveryOperationIds = replayCandidates.Select(operation => operation.Id).Distinct().ToArray();
         var instances = instanceIds.Length == 0
             ? new Dictionary<Guid, ElsaInstanceEntity>()
             : await dbContext.ElsaInstances.AsNoTracking()
@@ -1880,6 +1890,15 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 .Where(plan => instanceIds.Contains(plan.InstanceId) && planIds.Contains(plan.PlanId))
                 .ToArrayAsync(cancellationToken))
                 .ToDictionary(plan => (plan.InstanceId, plan.PlanId));
+        var recoveries = recoveryOperationIds.Length == 0
+            ? new Dictionary<Guid, ElsaInstanceRecoveryRequestEntity>()
+            : (await dbContext.ElsaInstanceRecoveryRequests.AsNoTracking()
+                .Where(recovery => recoveryOperationIds.Contains(recovery.OperationId))
+                .OrderByDescending(recovery => recovery.AcceptedAt)
+                .ThenByDescending(recovery => recovery.CreatedAt)
+                .ToArrayAsync(cancellationToken))
+                .GroupBy(recovery => recovery.OperationId)
+                .ToDictionary(group => group.Key, group => group.First());
 
         var pending = new List<ElsaInstanceProviderPendingOperation>(operationEntities.Length);
         foreach (var operation in operationEntities)
@@ -1941,7 +1960,29 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                     (ElsaInstanceOperationAction)operation.Action,
                     instance.PlacementAssignmentId ?? operation.Id.ToString("D"));
                 candidate.Validate();
-                pending.Add(new(operation.WorkspaceId, operation.Id, candidate));
+                ElsaInstanceProviderRecoveryEnvelope? recovery = null;
+                if (operation.AttemptNumber > 1 &&
+                    recoveries.TryGetValue(operation.Id, out var recoveryEntity) &&
+                    recoveryEntity.RecoveryObservationReference is not null)
+                {
+                    recovery = new(
+                        recoveryEntity.Id,
+                        recoveryEntity.OrganizationId,
+                        recoveryEntity.WorkspaceId,
+                        recoveryEntity.InstanceId,
+                        recoveryEntity.OperationId,
+                        recoveryEntity.ObservedLifecycleAttemptNumber ?? 0,
+                        recoveryEntity.ObservedInstanceVersion ?? 0,
+                        recoveryEntity.AttemptNumber,
+                        instance.Version,
+                        recoveryEntity.IdempotencyScope,
+                        recoveryEntity.IdempotencyKey,
+                        recoveryEntity.RequestHash,
+                        recoveryEntity.RecoveryObservationReference ?? "",
+                        recoveryEntity.RecoveryObservationDigest ?? "");
+                    recovery.Validate();
+                }
+                pending.Add(new(operation.WorkspaceId, operation.Id, candidate, recovery));
             }
             catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
             {
@@ -2118,6 +2159,42 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         if ((!canTransition && !isRecoveryResume) || requestedOperation.AttemptNumber < existingOperation.AttemptNumber)
             throw Conflict("Lifecycle operation state transition is not valid.");
 
+        // Keep the observation's pre-Recover tuple before mutating the operation.
+        // The provider observation store revalidates this exact snapshot inside
+        // the acceptance transaction; comparing it after the attempt increment
+        // would either accept stale evidence or reject the legitimate resume.
+        var observedLifecycleAttemptNumber = existingOperation.AttemptNumber;
+        var observedInstanceVersion = existingInstance.Version;
+        var hasAzureRecoveryObservation = isRecoveryResume &&
+            existingOperation.Action != ElsaInstanceOperationAction.Delete &&
+            await RequiresAzureRecoveryObservationAsync(existingInstance, existingOperation, cancellationToken);
+        if (hasAzureRecoveryObservation)
+        {
+            if (_recoveryObservationStore is null)
+                throw Conflict("Provider reconciliation retry observation storage is unavailable.");
+            if (existingOperation.ReconciliationRetryEvidenceReference is null ||
+                existingOperation.ReconciliationRetryEvidenceDigest is null ||
+                !ElsaInstanceProviderRecoveryObservationReference.TryParse(
+                    existingOperation.ReconciliationRetryEvidenceReference,
+                    out _, out _))
+                throw Conflict("Provider reconciliation has not established an opaque retry observation.");
+
+            var observation = await _recoveryObservationStore.GetAndValidateRecordedAsync(
+                existingOperation.OrganizationId,
+                existingOperation.WorkspaceId,
+                existingInstance.Id,
+                existingOperation.Id,
+                observedLifecycleAttemptNumber,
+                existingOperation.ReconciliationRetryEvidenceReference,
+                existingOperation.ReconciliationRetryEvidenceDigest,
+                cancellationToken);
+            var observationVersionIsThePriorReconciliationRead = observation is not null &&
+                observation.ObservedInstanceVersion == observedInstanceVersion - 1 &&
+                existingOperation.ReconciledInstanceVersion == observedInstanceVersion;
+            if (!observationVersionIsThePriorReconciliationRead)
+                throw Conflict("Provider reconciliation retry observation is stale.");
+        }
+
         // Outbox rows are immutable and unique per operation. Recovery resumes the
         // existing durable work item instead of appending a second row for it.
         var priorObservedLifecycle = existingInstance.ObservedLifecycle;
@@ -2141,6 +2218,10 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 IdempotencyScope = requestedOperation.RecoveryIdempotencyScope!,
                 IdempotencyKey = requestedOperation.RecoveryIdempotencyKey!,
                 RequestHash = requestedOperation.RecoveryRequestHash!,
+                RecoveryObservationReference = hasAzureRecoveryObservation ? existingOperation.ReconciliationRetryEvidenceReference : null,
+                RecoveryObservationDigest = hasAzureRecoveryObservation ? existingOperation.ReconciliationRetryEvidenceDigest : null,
+                ObservedLifecycleAttemptNumber = hasAzureRecoveryObservation ? observedLifecycleAttemptNumber : null,
+                ObservedInstanceVersion = hasAzureRecoveryObservation ? observedInstanceVersion : null,
                 AcceptedAt = requestedAt.ToUniversalTime(),
                 CreatedAt = requestedAt.ToUniversalTime()
             };
@@ -2308,6 +2389,29 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
         var revision = ToEntity(instance.Intent, instance, authoredAt, latest?.RevisionNumber + 1 ?? 1);
         await dbContext.ElsaInstanceIntentRevisions.AddAsync(revision, cancellationToken);
         entity.DesiredStateRevisionId = revision.Id.ToString("D");
+    }
+
+    private async Task<bool> RequiresAzureRecoveryObservationAsync(
+        ElsaInstanceEntity instance,
+        ElsaInstanceOperationEntity operation,
+        CancellationToken cancellationToken)
+    {
+        if (ElsaInstanceProviderRecoveryObservationReference.TryParse(
+                operation.ReconciliationRetryEvidenceReference, out _, out _))
+            return true;
+
+        // Select from retained authority, not caller-controlled evidence syntax:
+        // changing an Azure observation to an HTTPS reference cannot downgrade validation.
+        var providerKey = $"elsa-instance-operation:{operation.Id:D}";
+        if (await dbContext.AzureProviderOperations.AsNoTracking().AnyAsync(
+                x => x.WorkspaceId == operation.WorkspaceId && x.IdempotencyKey == providerKey,
+                cancellationToken))
+            return true;
+
+        return Guid.TryParse(instance.PlacementAssignmentId, out var assignmentId) &&
+            await dbContext.AzureProviderResourceAssignments.AsNoTracking().AnyAsync(
+                x => x.Id == assignmentId && x.WorkspaceId == instance.WorkspaceId,
+                cancellationToken);
     }
 
     private async Task ValidateAndStageDeleteConfirmationAsync(

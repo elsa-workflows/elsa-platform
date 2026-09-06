@@ -184,6 +184,34 @@ escalate to the sealed recovery-point and restore-to-new contract in
 [#129](https://github.com/valence-works/elsa-control/issues/129) and
 [Managed Elsa Instance Recovery Contract](managed-instance-recovery.md).
 
+### Azure recovery observation acceptance
+
+The Azure persistence boundary retains immutable recovery observations, not raw
+provider responses. An observation binds the exact organization, workspace,
+instance, lifecycle operation/attempt, provider operation/attempt/version/checkpoint,
+assignment, and retained resolved plan. The assignment must still belong to that
+provider operation. Stored natural keys and record digests are recomputed on reads
+and replay; unchanged concurrent polls return one immutable receipt.
+
+For non-Delete Azure recovery, a URL describing retry evidence is insufficient.
+Acceptance requires the canonical opaque observation reference and its digest,
+backed by the retained ledger row. Azure authority is identified by the correlated
+provider operation or bound Azure assignment, not by assuming every provider-neutral
+placement token is an Azure GUID. Reconciliation advances the observed instance
+version once; recovery must bind that exact reconciled version and advances it again.
+Unrelated instance drift or changed provider authority invalidates the observation.
+
+Confirmed Delete recovery preserves its original operation and confirmation
+boundary; it does not require a non-Delete retry observation or fresh confirmation.
+An ordinary Delete acceptance/replay without the explicit recovery tuple still
+requires its confirmation context.
+
+These persistence rules do not activate an Azure observer or authorize blind replay.
+Provider recovery execution and live fault/recovery proof remain under
+[#271](https://github.com/valence-works/elsa-control/issues/271). An accepted observation
+must be validated against the retained recovery request before claiming the provider
+attempt; it is not a reusable authorization after provider state changes.
+
 ### Unhealthy endpoint
 
 For `managed.lifecycle.unhealthy-endpoint`, confirm whether the projection is

@@ -1293,7 +1293,7 @@ public sealed class ElsaInstanceLifecycleStoreTests
     }
 
     [Fact]
-    public async Task Ambiguous_provider_cleanup_remains_recovery_required_and_never_tombstones()
+    public async Task Ambiguous_provider_cleanup_preserves_tombstone_safety_and_can_recover_without_retry_observation()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -1306,6 +1306,8 @@ public sealed class ElsaInstanceLifecycleStoreTests
             db, workspace.Id, accepted.Instance.Id, current!.Version, "ambiguous-delete", Now.AddMinutes(2));
         var deletion = await new ElsaInstanceLifecycleService(CreateStore(db), new FixedTimeProvider(Now.AddMinutes(2)))
             .DeleteAsync(deleteRequest);
+        await Assert.ThrowsAsync<ElsaInstanceDeleteConfirmationException>(() =>
+            CreateStore(db).CommitAcceptedAsync(current, deletion.Instance, deletion.Operation, deletion.Outbox));
         var port = new QueueCleanupPort(new ElsaInstanceCleanupObservation(
             ElsaInstanceCleanupObservationKind.Ambiguous, deletion.Operation.Id,
             deletion.Operation.AttemptNumber, "deletion.provider.ambiguous"));
@@ -1323,6 +1325,17 @@ public sealed class ElsaInstanceLifecycleStoreTests
         Assert.Equal(ElsaInstanceOperationState.RecoveryRequired, storedOperation.State);
         Assert.Equal("deletion.provider.ambiguous", storedOperation.DeletionDiagnosticCode);
 
+        var recovered = await new ElsaInstanceLifecycleService(
+                CreateStore(db), new FixedTimeProvider(Now.AddMinutes(4)))
+            .RecoverAsync(new(workspace.Id, accepted.Instance.Id, storedInstance.Version, "recover-ambiguous-delete"));
+
+        Assert.Equal(deletion.Operation.Id, recovered.Operation.Id);
+        Assert.Equal(ElsaInstanceOperationState.Queued, recovered.Operation.State);
+        Assert.Equal(deletion.Operation.AttemptNumber + 1, recovered.Operation.AttemptNumber);
+        Assert.NotEqual(ElsaObservedLifecycle.Deleted, recovered.Instance.ObservedLifecycle);
+        var recovery = await db.ElsaInstanceRecoveryRequests.AsNoTracking().SingleAsync();
+        Assert.Null(recovery.RecoveryObservationReference);
+        Assert.Null(recovery.RecoveryObservationDigest);
     }
 
     [Fact]
