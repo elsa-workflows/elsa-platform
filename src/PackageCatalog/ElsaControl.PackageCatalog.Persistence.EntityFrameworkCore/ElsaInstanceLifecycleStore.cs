@@ -1916,7 +1916,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             if (operation.InstanceId is not { } instanceId || operation.DeploymentRunId is not { } runId ||
                 operation.ResolvedPlanId is null)
             {
-                pending.Add(new(operation.WorkspaceId, operation.Id));
+                pending.Add(new(operation.WorkspaceId, operation.Id) { HandoffInvalid = true });
                 continue;
             }
 
@@ -1933,7 +1933,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
                 plan is null || plan.WorkspaceId != operation.WorkspaceId ||
                 !TryRestoreResolvedPlan(plan, operation.ResolvedPlanId, out var resolvedPlan))
             {
-                pending.Add(new(operation.WorkspaceId, operation.Id));
+                pending.Add(new(operation.WorkspaceId, operation.Id) { HandoffInvalid = true });
                 continue;
             }
 
@@ -1991,7 +1991,7 @@ public sealed class EfCoreElsaInstanceLifecycleStore(
             }
             catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
             {
-                pending.Add(new(operation.WorkspaceId, operation.Id));
+                pending.Add(new(operation.WorkspaceId, operation.Id) { HandoffInvalid = true });
             }
         }
 

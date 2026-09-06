@@ -278,7 +278,7 @@ public sealed class AzureElsaInstanceProvider(
         var submission = request.Submission;
         if (submission.PlacementAssignmentId is not { } assignmentText ||
             !Guid.TryParseExact(assignmentText, "D", out var assignmentId))
-            return RecoveryRejected("azure.recovery.assignment-invalid", "The retained provider assignment is invalid.");
+            return RecoveryRejected("azure.recovery.assignment-invalid");
 
         // This durable lookup happens before any Azure observation. Every tuple is checked
         // against the lifecycle request so stale or cross-scope input cannot probe Azure.
@@ -288,7 +288,7 @@ public sealed class AzureElsaInstanceProvider(
             _options.ProviderScopeFingerprint,
             cancellationToken);
         if (operation is null)
-            return RecoveryRequired("azure.recovery.operation-unavailable", "The retained Azure operation is unavailable.");
+            return RecoveryRequired("azure.recovery.operation-unavailable");
         if (operation.WorkspaceId != submission.WorkspaceId ||
             !string.Equals(operation.TargetKey, WorkloadName(submission.InstanceId), StringComparison.OrdinalIgnoreCase) ||
             operation.Action != AzureProviderOperationAction.Reconcile ||
@@ -298,7 +298,7 @@ public sealed class AzureElsaInstanceProvider(
             operation.LifecycleAction != submission.OperationAction ||
             operation.ProviderAssignmentId != assignmentId ||
             !string.Equals(operation.ProviderScopeFingerprint, NormalizeScope(_options.ProviderScopeFingerprint), StringComparison.Ordinal))
-            return RecoveryRejected("azure.recovery.identity-mismatch", "The retained Azure operation does not match the recovery envelope.");
+            return RecoveryRejected("azure.recovery.identity-mismatch");
 
         // Recovery never resolves the current catalog intent. It may only use the exact
         // provider plan retained by this operation. Translate the already-resolved lifecycle
@@ -316,7 +316,7 @@ public sealed class AzureElsaInstanceProvider(
         }
         if (retainedPlan is null ||
             !string.Equals(retainedPlan.Fingerprint, operation.PlanFingerprint, StringComparison.Ordinal))
-            return RecoveryRejected("azure.recovery.plan-unavailable", "The retained Azure plan cannot be restored safely.");
+            return RecoveryRejected("azure.recovery.plan-unavailable");
 
         var translatedRequestedPlan = AzureWorkloadPlanTranslator.Translate(
             submission.Plan,
@@ -324,18 +324,18 @@ public sealed class AzureElsaInstanceProvider(
         if (!translatedRequestedPlan.IsAccepted ||
             translatedRequestedPlan.Plan is null ||
             !string.Equals(translatedRequestedPlan.Plan.Fingerprint, retainedPlan.Fingerprint, StringComparison.Ordinal))
-            return RecoveryRejected("azure.recovery.plan-mismatch", "The recovery plan does not match the retained Azure operation.");
+            return RecoveryRejected("azure.recovery.plan-mismatch");
 
         // Post-claim replay is read-only, but still requires proof that this exact
         // accepted lifecycle recovery authorized the current provider successor.
         var isReplay = operation.Status is AzureProviderOperationStatus.Running or AzureProviderOperationStatus.Succeeded;
         if (!isReplay && operation.Status != AzureProviderOperationStatus.RecoveryRequired)
-            return RecoveryRejected("azure.recovery.state-invalid", "The retained Azure operation is not awaiting explicit recovery.");
+            return RecoveryRejected("azure.recovery.state-invalid");
 
         if (_recoveryObservationStore is null)
             return isReplay
-                ? RecoveryRejected("azure.recovery.observation-unavailable", "The accepted recovery observation is unavailable.")
-                : RecoveryRequired("azure.recovery.observation-unavailable", "The accepted recovery observation is unavailable.");
+                ? RecoveryRejected("azure.recovery.observation-unavailable")
+                : RecoveryRequired("azure.recovery.observation-unavailable");
 
         var envelope = request.Envelope;
         AzureProviderRecoveryObservationRecord? recordedObservation;
@@ -371,8 +371,8 @@ public sealed class AzureElsaInstanceProvider(
         if (recordedObservation is null ||
             !IsRecordedObservationAuthoritative(recordedObservation, operation, assignmentId, submission, isReplay))
             return isReplay
-                ? RecoveryRejected("azure.recovery.observation-invalid", "The accepted recovery observation is no longer authoritative.")
-                : RecoveryRequired("azure.recovery.observation-invalid", "The accepted recovery observation is no longer authoritative.");
+                ? RecoveryRejected("azure.recovery.observation-invalid")
+                : RecoveryRequired("azure.recovery.observation-invalid");
 
         var assignment = await assignmentStore.GetAsync(submission.WorkspaceId, assignmentId, cancellationToken);
         if (assignment is null ||
@@ -383,13 +383,13 @@ public sealed class AzureElsaInstanceProvider(
             assignment.LastOperationId != operation.Id ||
             !string.Equals(assignment.ProviderScopeFingerprint, NormalizeScope(_options.ProviderScopeFingerprint), StringComparison.Ordinal) ||
             !string.Equals(assignment.WorkloadName, WorkloadName(submission.InstanceId), StringComparison.OrdinalIgnoreCase))
-            return RecoveryRejected("azure.recovery.assignment-mismatch", "The retained Azure assignment does not match the recovery envelope.");
+            return RecoveryRejected("azure.recovery.assignment-mismatch");
         if (isReplay)
             return operation.Status == AzureProviderOperationStatus.Succeeded
                 ? new(ElsaInstanceProviderRecoveryOutcome.Succeeded, "azure.operation.no-op")
                 : new(ElsaInstanceProviderRecoveryOutcome.InProgress, "azure.operation.in-progress");
         if (_recoveryObserver is null || _executor is null)
-            return RecoveryRequired("azure.recovery.unavailable", "The Azure recovery authority is not configured.");
+            return RecoveryRequired("azure.recovery.unavailable");
 
         // Re-observe after the accepted ledger check and immediately before the recovery CAS.
         // This is the only point at which provider state may authorize a claim.
@@ -406,10 +406,10 @@ public sealed class AzureElsaInstanceProvider(
         }
         catch (Exception)
         {
-            return RecoveryRequired("azure.recovery.observation-failed", "The retained Azure postcondition could not be confirmed safely.");
+            return RecoveryRequired("azure.recovery.observation-failed");
         }
         if (observed.Kind != AzureProviderRecoveryObservationKind.Confirmed)
-            return RecoveryRequired(observed.Code, observed.Message);
+            return RecoveryRequired(observed.Code);
 
         var result = await _executor.RecoverAsync(operation, retainedPlan, observed, cancellationToken);
         return result.Outcome switch
@@ -424,10 +424,10 @@ public sealed class AzureElsaInstanceProvider(
         };
     }
 
-    private static ElsaInstanceProviderRecoveryResult RecoveryRequired(string code, string summary) =>
+    private static ElsaInstanceProviderRecoveryResult RecoveryRequired(string code) =>
         new(ElsaInstanceProviderRecoveryOutcome.RecoveryRequired, code);
 
-    private static ElsaInstanceProviderRecoveryResult RecoveryRejected(string code, string summary) =>
+    private static ElsaInstanceProviderRecoveryResult RecoveryRejected(string code) =>
         new(ElsaInstanceProviderRecoveryOutcome.Rejected, code);
 
     private static bool IsRecordedObservationAuthoritative(

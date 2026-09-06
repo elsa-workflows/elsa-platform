@@ -22,4 +22,12 @@ public sealed record ElsaInstanceProviderPendingOperation(
     Guid WorkspaceId,
     Guid OperationId,
     ElsaInstanceProviderSubmission? Submission = null,
-    ElsaInstanceProviderRecoveryEnvelope? Recovery = null);
+    ElsaInstanceProviderRecoveryEnvelope? Recovery = null)
+{
+    /// <summary>
+    /// Required hand-off metadata could not be restored safely. Neither submission
+    /// nor ordinary provider observation is permitted until the metadata is repaired.
+    /// This differs from a valid observation-only item with no submission.
+    /// </summary>
+    public bool HandoffInvalid { get; init; }
+}

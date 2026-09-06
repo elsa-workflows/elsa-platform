@@ -488,6 +488,7 @@ public sealed class AzureProviderRecoveryObservationPersistenceTests
         var pending = Assert.Single(await lifecycleStore.ListPendingProviderOperationsAsync(10));
         Assert.NotNull(pending.Submission);
         Assert.NotNull(pending.Recovery);
+        Assert.False(pending.HandoffInvalid);
 
         // Simulate storage corruption outside the ordinary append-only boundary.
         // Partial recovery metadata must never downgrade into ordinary submission.
@@ -497,6 +498,7 @@ public sealed class AzureProviderRecoveryObservationPersistenceTests
         pending = Assert.Single(await lifecycleStore.ListPendingProviderOperationsAsync(10));
         Assert.Null(pending.Submission);
         Assert.Null(pending.Recovery);
+        Assert.True(pending.HandoffInvalid);
     }
 
     [Theory]
