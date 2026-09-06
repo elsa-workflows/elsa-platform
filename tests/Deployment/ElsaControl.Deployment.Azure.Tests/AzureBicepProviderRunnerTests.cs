@@ -334,7 +334,8 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
         Assert.Equal(AzureProviderRecoveryObservationKind.Confirmed, observation.Kind);
         Assert.Equal(AzureProviderRunnerStep.SqlBootstrapScript, observation.CompletedStep);
         Assert.Equal("azure.recovery.sql-bootstrap-observed", observation.Code);
-        var query = Assert.Single(process.Calls, call => call.Contains("-Q"));
+        var queryArguments = Assert.Single(process.Calls, call => call.Contains("-Q"));
+        var query = queryArguments[Array.IndexOf(queryArguments, "-Q") + 1];
         Assert.Contains("sys.database_principals", query);
         Assert.Contains("db_datareader", query);
         Assert.Contains("db_datawriter", query);

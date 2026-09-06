@@ -240,7 +240,9 @@ public sealed class AzureProviderExecutorTests
     [InlineData(AzureProviderRunnerStep.Foundation)]
     [InlineData(AzureProviderRunnerStep.AcrPull)]
     [InlineData(AzureProviderRunnerStep.SeedSecrets)]
-    [InlineData(AzureProviderRunnerStep.SqlBootstrap)]
+    [InlineData(AzureProviderRunnerStep.SqlFirewallCreate)]
+    [InlineData(AzureProviderRunnerStep.SqlBootstrapScript)]
+    [InlineData(AzureProviderRunnerStep.SqlFirewallCleanup)]
     [InlineData(AzureProviderRunnerStep.Workload)]
     [InlineData(AzureProviderRunnerStep.Health)]
     [InlineData(AzureProviderRunnerStep.Promotion)]
@@ -452,12 +454,14 @@ public sealed class AzureProviderExecutorTests
             "azure.recovery.sql-bootstrap-observed",
             "The retained SQL bootstrap postcondition was observed.");
 
+        var previousCallCount = runner.Steps.Count;
         var resumed = await executor.RecoverAsync(pendingCleanup, plan, observed);
+        var resumedSteps = runner.Steps.Skip(previousCallCount).ToArray();
 
         Assert.Equal(AzureProviderExecutionOutcome.Succeeded, resumed.Outcome);
-        Assert.Equal(AzureProviderRunnerStep.SqlFirewallCleanup, runner.Steps[0]);
-        Assert.DoesNotContain(AzureProviderRunnerStep.SqlBootstrapScript, runner.Steps);
-        Assert.DoesNotContain(AzureProviderRunnerStep.SqlFirewallCreate, runner.Steps);
+        Assert.Equal(AzureProviderRunnerStep.SqlFirewallCleanup, resumedSteps[0]);
+        Assert.DoesNotContain(AzureProviderRunnerStep.SqlBootstrapScript, resumedSteps);
+        Assert.DoesNotContain(AzureProviderRunnerStep.SqlFirewallCreate, resumedSteps);
     }
 
     [Theory]

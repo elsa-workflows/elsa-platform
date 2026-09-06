@@ -257,6 +257,11 @@ public static class AzureProviderRecoveryObservationSupport
         AzureProviderRunnerStep completedStep,
         AzureProviderOperationPhase observedPhase)
     {
+        if (completedStep is not (AzureProviderRunnerStep.Foundation or AzureProviderRunnerStep.AcrPull or
+            AzureProviderRunnerStep.SqlFirewallCreate or AzureProviderRunnerStep.SqlBootstrapScript or
+            AzureProviderRunnerStep.SqlFirewallCleanup))
+            return false;
+
         AzureProviderOperationPhase expectedPhase;
         try
         {
