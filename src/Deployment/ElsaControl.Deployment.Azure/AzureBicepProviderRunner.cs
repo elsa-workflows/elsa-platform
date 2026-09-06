@@ -1250,7 +1250,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner, IAzureProvi
         if (!AreWellFormedFirewallRules(rules))
             return false;
 
-        var ownedRules = rules.Where(rule => string.Equals(rule.Name, TemporaryFirewallRuleName, StringComparison.Ordinal)).ToArray();
+        var ownedRules = rules.Where(rule => string.Equals(rule.Name, TemporaryFirewallRuleName, StringComparison.OrdinalIgnoreCase)).ToArray();
         if (ownedRules.Length == 0)
             return true;
         if (ownedRules.Length != 1 ||
@@ -1271,7 +1271,7 @@ public sealed class AzureBicepProviderRunner : IAzureProviderRunner, IAzureProvi
                 ParseFirewallRulesAsync,
                 cancellationToken);
             if (list.Succeeded && list.Value is not null && AreWellFormedFirewallRules(list.Value.Value) &&
-                !list.Value.Value.Any(x => string.Equals(x.Name, TemporaryFirewallRuleName, StringComparison.Ordinal)))
+                !list.Value.Value.Any(x => string.Equals(x.Name, TemporaryFirewallRuleName, StringComparison.OrdinalIgnoreCase)))
                 return true;
             if (attempt + 1 < _options.ObservationAttempts)
                 await Task.Delay(_options.ObservationDelay, cancellationToken);

@@ -943,6 +943,7 @@ public sealed class AzureBicepProviderRunnerTests : IDisposable
     [InlineData("[{\"name\":\"elsa-bootstrap\",\"startIpAddress\":\"203.0.113.11\",\"endIpAddress\":\"203.0.113.10\"}]")]
     [InlineData("[{\"name\":\"elsa-bootstrap\",\"startIpAddress\":\"203.0.113.10\",\"endIpAddress\":\"203.0.113.10\"},{\"name\":\"elsa-bootstrap\",\"startIpAddress\":\"203.0.113.10\",\"endIpAddress\":\"203.0.113.10\"}]")]
     [InlineData("[{\"name\":\"elsa-bootstrap\"}]")]
+    [InlineData("[{\"name\":\"ELSA-BOOTSTRAP\",\"startIpAddress\":\"203.0.113.11\",\"endIpAddress\":\"203.0.113.10\"}]")]
     [InlineData("[null]")]
     [InlineData("[{\"name\":\"\",\"startIpAddress\":\"203.0.113.10\",\"endIpAddress\":\"203.0.113.10\"}]")]
     [InlineData("[{\"name\":\"other\",\"startIpAddress\":\"invalid\",\"endIpAddress\":\"203.0.113.10\"}]")]
