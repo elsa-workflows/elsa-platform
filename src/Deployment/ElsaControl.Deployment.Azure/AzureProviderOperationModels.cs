@@ -38,7 +38,11 @@ public enum AzureProviderOperationPhase
     /// <summary>Fresh recovery observed registry access complete.</summary>
     AcrPullObserved = 10,
     /// <summary>Fresh recovery observed secret seeding complete.</summary>
-    SeedSecretsObserved = 11
+    SeedSecretsObserved = 11,
+    /// <summary>Fresh recovery observed the SQL firewall create postcondition.</summary>
+    SqlFirewallReady = 12,
+    /// <summary>Fresh recovery observed the SQL bootstrap script postcondition.</summary>
+    SqlBootstrapReady = 13
 }
 
 public static class AzureProviderOperationPhaseOrdering
@@ -53,6 +57,8 @@ public static class AzureProviderOperationPhaseOrdering
         AzureProviderOperationPhase.FoundationObserved => 11,
         AzureProviderOperationPhase.AcrPullObserved => 12,
         AzureProviderOperationPhase.SeedSecretsObserved => 13,
+        AzureProviderOperationPhase.SqlFirewallReady => 14,
+        AzureProviderOperationPhase.SqlBootstrapReady => 15,
         AzureProviderOperationPhase.FoundationReady => 20,
         AzureProviderOperationPhase.WorkloadSubmitted => 30,
         AzureProviderOperationPhase.WorkloadReady => 40,

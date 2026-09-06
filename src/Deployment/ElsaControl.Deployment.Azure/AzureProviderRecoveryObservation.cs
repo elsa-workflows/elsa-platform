@@ -192,7 +192,7 @@ public sealed record AzureProviderRecoveryObservationRecord(
 /// proves foundation and the preceding ACR Pull checkpoint; later steps remain valid extension
 /// points for observers that can prove their own postconditions.
 /// </summary>
-internal static class AzureProviderRecoveryObservationSupport
+public static class AzureProviderRecoveryObservationSupport
 {
     public static bool IsSupportedCompletedStep(AzureProviderRunnerStep step) => step switch
     {
@@ -200,6 +200,9 @@ internal static class AzureProviderRecoveryObservationSupport
         AzureProviderRunnerStep.AcrPull or
         AzureProviderRunnerStep.SeedSecrets or
         AzureProviderRunnerStep.SqlBootstrap or
+        AzureProviderRunnerStep.SqlFirewallCreate or
+        AzureProviderRunnerStep.SqlBootstrapScript or
+        AzureProviderRunnerStep.SqlFirewallCleanup or
         AzureProviderRunnerStep.Workload or
         AzureProviderRunnerStep.Health or
         AzureProviderRunnerStep.Promotion => true,
@@ -221,6 +224,129 @@ internal static class AzureProviderRecoveryObservationSupport
         operation.Resources.WorkloadResourceId is null &&
         operation.Resources.WorkloadRevisionName is null &&
         operation.Resources.StableTrafficRevisionName is null;
+
+    /// <summary>
+    /// Maps an observed completed step to the only durable phase it can authorize. This is
+    /// shared by pre-claim consumers so a provider-specific observer cannot invent a lifecycle
+    /// phase or silently skip one of the SQL checkpoints.
+    /// </summary>
+    public static AzureProviderOperationPhase RecoveryPhase(AzureProviderRunnerStep completedStep) => completedStep switch
+    {
+        AzureProviderRunnerStep.Foundation => AzureProviderOperationPhase.FoundationObserved,
+        AzureProviderRunnerStep.AcrPull => AzureProviderOperationPhase.AcrPullObserved,
+        AzureProviderRunnerStep.SeedSecrets => AzureProviderOperationPhase.SeedSecretsObserved,
+        AzureProviderRunnerStep.SqlBootstrap => AzureProviderOperationPhase.FoundationReady,
+        AzureProviderRunnerStep.SqlFirewallCreate => AzureProviderOperationPhase.SqlFirewallReady,
+        AzureProviderRunnerStep.SqlBootstrapScript => AzureProviderOperationPhase.SqlBootstrapReady,
+        AzureProviderRunnerStep.SqlFirewallCleanup => AzureProviderOperationPhase.FoundationReady,
+        AzureProviderRunnerStep.Workload => AzureProviderOperationPhase.WorkloadReady,
+        AzureProviderRunnerStep.Health => AzureProviderOperationPhase.HealthVerified,
+        AzureProviderRunnerStep.Promotion => AzureProviderOperationPhase.TrafficPromoted,
+        _ => throw new ArgumentException("The observed recovery step cannot be resumed.", nameof(completedStep))
+    };
+
+    /// <summary>
+    /// Checks the immutable marker/phase boundary before a recovery observation is accepted.
+    /// A legacy null marker means the original Foundation step only. The one deliberate
+    /// mismatch is a SQL cleanup retry after the bootstrap script has already been observed;
+    /// it advances no phase and therefore cannot cause the script to run again.
+    /// </summary>
+    public static bool IsCompatibleBoundary(
+        AzureProviderRunnerStep? attemptedStep,
+        AzureProviderOperationPhase currentPhase,
+        AzureProviderRunnerStep completedStep,
+        AzureProviderOperationPhase observedPhase)
+    {
+        AzureProviderOperationPhase expectedPhase;
+        try
+        {
+            expectedPhase = RecoveryPhase(completedStep);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+
+        try
+        {
+            if (observedPhase != expectedPhase ||
+                AzureProviderOperationPhaseOrdering.Compare(observedPhase, currentPhase) < 0)
+                return false;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return false;
+        }
+
+        if (attemptedStep == AzureProviderRunnerStep.SqlBootstrap ||
+            completedStep == AzureProviderRunnerStep.SqlBootstrap)
+            return false;
+
+        if (attemptedStep is AzureProviderRunnerStep.SqlFirewallCreate or
+                AzureProviderRunnerStep.SqlBootstrapScript or
+                AzureProviderRunnerStep.SqlFirewallCleanup)
+        {
+            var validSourcePhase = attemptedStep switch
+            {
+                AzureProviderRunnerStep.SqlFirewallCreate =>
+                    currentPhase is AzureProviderOperationPhase.FoundationSubmitted or AzureProviderOperationPhase.SeedSecretsObserved,
+                AzureProviderRunnerStep.SqlBootstrapScript => currentPhase == AzureProviderOperationPhase.SqlFirewallReady,
+                AzureProviderRunnerStep.SqlFirewallCleanup => currentPhase == AzureProviderOperationPhase.SqlBootstrapReady,
+                _ => false
+            };
+            if (!validSourcePhase)
+                return false;
+        }
+
+        return attemptedStep is null
+            ? completedStep == AzureProviderRunnerStep.Foundation
+            : attemptedStep == completedStep ||
+              attemptedStep == AzureProviderRunnerStep.SqlFirewallCleanup &&
+              completedStep == AzureProviderRunnerStep.SqlBootstrapScript &&
+              currentPhase == AzureProviderOperationPhase.SqlBootstrapReady;
+    }
+
+    private static bool HasFoundationAndRegistry(AzureProviderOperation operation) =>
+        operation.Resources.ResourceGroupName is not null &&
+        operation.Resources.FoundationDeploymentId is not null &&
+        operation.Resources.WorkloadIdentityResourceId is not null &&
+        operation.Resources.WorkloadIdentityClientId is not null &&
+        operation.Resources.WorkloadIdentityPrincipalId is not null &&
+        operation.Resources.KeyVaultResourceId is not null &&
+        operation.Resources.KeyVaultUri is not null &&
+        operation.Resources.SqlServerResourceId is not null &&
+        operation.Resources.SqlServerFqdn is not null &&
+        operation.Resources.ContainerAppsEnvironmentResourceId is not null &&
+        operation.Resources.RegistryResourceId is not null &&
+        operation.Resources.AcrPullDeploymentId is not null &&
+        operation.Resources.AcrPullRoleAssignmentId is not null &&
+        operation.Resources.WorkloadDeploymentId is null &&
+        operation.Resources.WorkloadResourceId is null &&
+        operation.Resources.WorkloadRevisionName is null &&
+        operation.Resources.StableTrafficRevisionName is null;
+
+    /// <summary>SQL firewall creation may be recovered only from the pre-SQL foundation phase.</summary>
+    public static bool IsSqlFirewallCreateEligible(AzureProviderOperation operation) =>
+        (operation.Phase is AzureProviderOperationPhase.FoundationSubmitted or AzureProviderOperationPhase.SeedSecretsObserved) &&
+        operation.AttemptedStep == AzureProviderRunnerStep.SqlFirewallCreate &&
+        HasFoundationAndRegistry(operation);
+
+    /// <summary>
+    /// SQL script evidence is valid after firewall creation. The second shape is the narrow
+    /// cleanup-only replay where the script is already proven and cleanup remains attempted.
+    /// </summary>
+    public static bool IsSqlBootstrapScriptEligible(AzureProviderOperation operation) =>
+        (operation.Phase == AzureProviderOperationPhase.SqlFirewallReady &&
+         operation.AttemptedStep == AzureProviderRunnerStep.SqlBootstrapScript ||
+         operation.Phase == AzureProviderOperationPhase.SqlBootstrapReady &&
+         operation.AttemptedStep == AzureProviderRunnerStep.SqlFirewallCleanup) &&
+        HasFoundationAndRegistry(operation);
+
+    /// <summary>SQL firewall cleanup is valid only after an independently proven script.</summary>
+    public static bool IsSqlFirewallCleanupEligible(AzureProviderOperation operation) =>
+        operation.Phase == AzureProviderOperationPhase.SqlBootstrapReady &&
+        operation.AttemptedStep == AzureProviderRunnerStep.SqlFirewallCleanup &&
+        HasFoundationAndRegistry(operation);
 
     /// <summary>
     /// ACR Pull is an independently observable checkpoint after foundation. It is eligible only

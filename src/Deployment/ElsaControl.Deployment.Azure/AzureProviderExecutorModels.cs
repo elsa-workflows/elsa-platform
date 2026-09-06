@@ -14,7 +14,13 @@ public enum AzureProviderRunnerStep
     Health,
     Promotion,
     RestoreStableTraffic,
-    Cleanup
+    Cleanup,
+    /// <summary>Creates the short-lived SQL firewall rule before bootstrap.</summary>
+    SqlFirewallCreate,
+    /// <summary>Runs the SQL bootstrap script after the firewall is proven present.</summary>
+    SqlBootstrapScript,
+    /// <summary>Removes the short-lived SQL firewall rule after bootstrap.</summary>
+    SqlFirewallCleanup
 }
 
 public enum AzureProviderRunnerOutcome
