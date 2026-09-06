@@ -192,6 +192,50 @@ public sealed class AzureProviderRecoveryObservationContractTests
     }
 
     [Fact]
+    public void Recovery_request_rejects_a_noncanonical_plan_fingerprint()
+    {
+        var request = CreateRecoveryRequest();
+        var invalidRequest = request with
+        {
+            Plan = request.Plan with { Fingerprint = request.Plan.Fingerprint.ToUpperInvariant() }
+        };
+
+        Assert.Throws<InvalidOperationException>(invalidRequest.Validate);
+    }
+
+    [Fact]
+    public void Recovery_request_rejects_uppercase_operation_and_plan_fingerprints()
+    {
+        var request = CreateRecoveryRequest();
+        var uppercaseFingerprint = request.Plan.Fingerprint.ToUpperInvariant();
+        var invalidRequest = request with
+        {
+            Operation = request.Operation with { PlanFingerprint = uppercaseFingerprint },
+            Plan = request.Plan with { Fingerprint = uppercaseFingerprint }
+        };
+
+        Assert.Throws<InvalidOperationException>(invalidRequest.Validate);
+    }
+
+    [Theory]
+    [InlineData("group")]
+    [InlineData("foundation")]
+    [InlineData("vault")]
+    public void Resource_fingerprint_rejects_unsafe_references_before_hashing(string field)
+    {
+        var resources = field switch
+        {
+            "group" => new AzureProviderResourceReferences(ResourceGroupName: "proof-rg\nother"),
+            "foundation" => new AzureProviderResourceReferences(
+                FoundationDeploymentId: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/proof-rg/providers/Microsoft.Resources/deployments/foundation?unexpected=true"),
+            "vault" => new AzureProviderResourceReferences(KeyVaultUri: "https://proof.vault.azure.net/?unexpected=true"),
+            _ => throw new InvalidOperationException()
+        };
+
+        Assert.Throws<ArgumentException>(() => AzureProviderRecoveryObservationRecord.ComputeResourceFingerprint(resources));
+    }
+
+    [Fact]
     public void Observation_record_validation_rejects_unknown_phase_or_completed_step()
     {
         var observation = CreateObservation();

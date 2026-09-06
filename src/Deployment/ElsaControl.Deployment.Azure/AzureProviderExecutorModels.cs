@@ -168,8 +168,17 @@ public sealed record AzureProviderRecoveryRequest(
         if (Operation.OrganizationId is null || Operation.InstanceId is null ||
             Operation.LifecycleAction is null || Operation.ProviderAssignmentId is null ||
             !string.Equals(Operation.TargetKey, Plan.WorkloadName, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(Operation.PlanFingerprint, Plan.Fingerprint, StringComparison.OrdinalIgnoreCase))
+            !string.Equals(Operation.PlanFingerprint, Plan.Fingerprint, StringComparison.Ordinal))
             throw new InvalidOperationException("The Azure recovery operation is not bound to its retained plan.");
+        try
+        {
+            AzureProviderRecoveryObservationRecord.RequireFingerprint(
+                Operation.PlanFingerprint, nameof(Operation.PlanFingerprint));
+        }
+        catch (ArgumentException)
+        {
+            throw new InvalidOperationException("The Azure recovery operation is not bound to its retained plan.");
+        }
         if (Assignment is { } assignment &&
             (assignment.Id != Operation.ProviderAssignmentId ||
              assignment.OrganizationId != Operation.OrganizationId ||

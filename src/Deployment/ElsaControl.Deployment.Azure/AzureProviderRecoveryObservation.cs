@@ -109,6 +109,7 @@ public sealed record AzureProviderRecoveryObservationRecord(
     public static string ComputeResourceFingerprint(AzureProviderResourceReferences resources)
     {
         ArgumentNullException.ThrowIfNull(resources);
+        AzureProviderOperationValidation.ValidateReferences(resources);
         var canonical = string.Join('\n',
             resources.ResourceGroupName,
             resources.FoundationDeploymentId,
@@ -180,7 +181,7 @@ public sealed record AzureProviderRecoveryObservationRecord(
         return value;
     }
 
-    private static void RequireFingerprint(string? value, string name)
+    internal static void RequireFingerprint(string? value, string name)
     {
         if (value is null || value.Length != 64 || value.AsSpan().ContainsAnyExcept("0123456789abcdef"))
             throw new ArgumentException($"{name} must be a SHA-256 fingerprint.", name);
