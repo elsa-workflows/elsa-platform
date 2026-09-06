@@ -75,6 +75,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     internal DbSet<Models.AzureProviderResourceAssignmentEntity> AzureProviderResourceAssignments => Set<Models.AzureProviderResourceAssignmentEntity>();
     internal DbSet<Models.AzureProviderOperationEntity> AzureProviderOperations => Set<Models.AzureProviderOperationEntity>();
     internal DbSet<Models.AzureProviderOperationTransitionEntity> AzureProviderOperationTransitions => Set<Models.AzureProviderOperationTransitionEntity>();
+    internal DbSet<Models.AzureProviderRecoveryObservationEntity> AzureProviderRecoveryObservations => Set<Models.AzureProviderRecoveryObservationEntity>();
     internal DbSet<Models.DeploymentCommandWebhookNotificationEntity> DeploymentCommandWebhookNotifications => Set<Models.DeploymentCommandWebhookNotificationEntity>();
     internal DbSet<Models.ObservabilityBindingEntity> ObservabilityBindings => Set<Models.ObservabilityBindingEntity>();
     internal DbSet<Models.DriftReportItemEntity> DriftReportItems => Set<Models.DriftReportItemEntity>();
@@ -159,6 +160,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.ApplyConfiguration(new Models.AzureProviderResourceAssignmentConfiguration());
         modelBuilder.ApplyConfiguration(new Models.AzureProviderOperationConfiguration());
         modelBuilder.ApplyConfiguration(new Models.AzureProviderOperationTransitionConfiguration());
+        modelBuilder.ApplyConfiguration(new Models.AzureProviderRecoveryObservationConfiguration());
         modelBuilder.ApplyConfiguration(new Models.DeploymentCommandWebhookNotificationConfiguration());
         modelBuilder.ApplyConfiguration(new Models.ObservabilityBindingConfiguration());
         modelBuilder.ApplyConfiguration(new Models.DriftReportItemConfiguration());
@@ -223,6 +225,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
     {
         EnsureWorkspacePermissionAuditIsAppendOnly();
         EnsureAzureOperationTransitionsAreAppendOnly();
+        EnsureAzureProviderRecoveryObservationsAreAppendOnly();
         EnsureElsaInstanceAuditIsAppendOnly();
         EnsureElsaInstanceDurableRowsAreNotDeleted();
         EnsureElsaInstanceIntentRevisionsAreAppendOnly();
@@ -236,6 +239,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         EnsureBillingSubscriptionsAreConsistent();
         EnsureGovernedReleaseCatalogIsImmutable();
         ValidateManagedElsaHandoffRows();
+        ValidateAzureProviderRecoveryObservations();
         ValidateElsaInstancePersistence();
         EnsureOrganizationsForNewWorkspaces();
         ValidateBillingPersistence();
@@ -605,6 +609,28 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             throw new InvalidOperationException("Elsa instance recovery requests are append-only.");
     }
 
+    private void EnsureAzureProviderRecoveryObservationsAreAppendOnly()
+    {
+        if (ChangeTracker.Entries<Models.AzureProviderRecoveryObservationEntity>()
+            .Any(x => x.State is EntityState.Modified or EntityState.Deleted))
+            throw new InvalidOperationException("Azure provider recovery observations are append-only.");
+    }
+
+    private void ValidateAzureProviderRecoveryObservations()
+    {
+        foreach (var entry in ChangeTracker.Entries<Models.AzureProviderRecoveryObservationEntity>()
+                     .Where(x => x.State == EntityState.Added))
+        {
+            var value = entry.Entity;
+            var observation = value.ToRecord();
+            observation.Validate();
+            if (value.Id == Guid.Empty ||
+                !string.Equals(value.NaturalKey, observation.ComputeNaturalKey(), StringComparison.Ordinal) ||
+                !string.Equals(value.RecordDigest, observation.ComputeRecordDigest(value.Id), StringComparison.Ordinal))
+                throw new InvalidOperationException("Azure provider recovery observation digest is invalid.");
+        }
+    }
+
     private void EnsureManagedElsaHandoffRowsAreAppendOnly()
     {
         if (ChangeTracker.Entries<Models.ManagedElsaHandoffReplayEntity>()
@@ -877,6 +903,24 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             recovery.IdempotencyScope = RequireSafeReference(recovery.IdempotencyScope, nameof(recovery.IdempotencyScope), 256);
             recovery.IdempotencyKey = RequireSafeToken(recovery.IdempotencyKey, nameof(recovery.IdempotencyKey), 128);
             recovery.RequestHash = RequireCanonicalHash(recovery.RequestHash, nameof(recovery.RequestHash));
+            var recoveryObservationMetadataCount = new object?[]
+            {
+                recovery.RecoveryObservationReference,
+                recovery.RecoveryObservationDigest,
+                recovery.ObservedLifecycleAttemptNumber,
+                recovery.ObservedInstanceVersion
+            }.Count(x => x is not null);
+            if (recoveryObservationMetadataCount is not (0 or 4))
+                throw new InvalidOperationException("Recovery observation metadata must be complete.");
+            if (recoveryObservationMetadataCount == 4)
+            {
+                var evidence = new ElsaControl.Deployment.Core.Instances.ElsaInstanceProviderRetryEvidence(
+                    recovery.RecoveryObservationReference!, recovery.RecoveryObservationDigest!);
+                recovery.RecoveryObservationReference = evidence.Reference;
+                recovery.RecoveryObservationDigest = evidence.Digest;
+                if (recovery.ObservedLifecycleAttemptNumber < 1 || recovery.ObservedInstanceVersion < 1)
+                    throw new InvalidOperationException("Recovery observation versions are invalid.");
+            }
             recovery.AcceptedAt = recovery.AcceptedAt.ToUniversalTime();
             recovery.CreatedAt = recovery.CreatedAt.ToUniversalTime();
             if (recovery.AcceptedAt == default || recovery.CreatedAt == default || recovery.CreatedAt < recovery.AcceptedAt)
