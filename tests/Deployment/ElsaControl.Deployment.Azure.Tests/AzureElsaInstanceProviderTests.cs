@@ -192,8 +192,7 @@ public sealed class AzureElsaInstanceProviderTests
 
         var result = await fixture.Provider.RecoverAsync(fixture.Request);
 
-        Assert.NotEqual(ElsaInstanceProviderRecoveryOutcome.InProgress, result.Outcome);
-        Assert.NotEqual(ElsaInstanceProviderRecoveryOutcome.Succeeded, result.Outcome);
+        Assert.Equal(ElsaInstanceProviderRecoveryOutcome.Rejected, result.Outcome);
         Assert.Equal(1, fixture.ObservationStore.ReplayCalls);
         Assert.Equal(0, fixture.ObservationStore.StrictCalls);
         Assert.Equal(0, fixture.Observer.Calls);
@@ -210,8 +209,7 @@ public sealed class AzureElsaInstanceProviderTests
 
         var result = await fixture.Provider.RecoverAsync(fixture.Request);
 
-        Assert.NotEqual(ElsaInstanceProviderRecoveryOutcome.InProgress, result.Outcome);
-        Assert.NotEqual(ElsaInstanceProviderRecoveryOutcome.Succeeded, result.Outcome);
+        Assert.Equal(ElsaInstanceProviderRecoveryOutcome.Rejected, result.Outcome);
         Assert.Equal(1, fixture.ObservationStore.ReplayCalls);
         Assert.Equal(0, fixture.ObservationStore.StrictCalls);
         Assert.Equal(0, fixture.Observer.Calls);
@@ -230,7 +228,7 @@ public sealed class AzureElsaInstanceProviderTests
 
         var result = await fixture.Provider.RecoverAsync(fixture.Request);
 
-        Assert.Equal(expectedOutcome, result.Outcome);
+        Assert.True(expectedOutcome == result.Outcome, $"Expected {expectedOutcome}; got {result.Outcome}: {result.Code}");
         Assert.Equal(expectedCode, result.Code);
         Assert.Equal(1, fixture.ObservationStore.ReplayCalls);
         Assert.Equal(0, fixture.ObservationStore.StrictCalls);
@@ -611,6 +609,8 @@ public sealed class AzureElsaInstanceProviderTests
             InstanceId = TestInstanceId,
             LifecycleAction = ElsaInstanceOperationAction.Reconcile,
             ProviderAssignmentId = assignmentId,
+            SqlWorkflowPackageVersion = plan.SqlWorkflowPackageVersion,
+            SqlQuartzPackageVersion = plan.SqlQuartzPackageVersion,
             AttemptedStep = AzureProviderRunnerStep.Foundation
         };
         var operationRequest = AzureProviderOperationService.CreateOperationRequest(operation);
