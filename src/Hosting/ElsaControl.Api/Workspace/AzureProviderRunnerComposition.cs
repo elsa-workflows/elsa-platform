@@ -87,11 +87,15 @@ internal static class AzureProviderRunnerComposition
             new ManagedIdentityAzureSecretResolver(
                 provider.GetRequiredService<IAzureSecretAuthorizationStore>(),
                 provider.GetRequiredService<IAzureKeyVaultSecretReader>()));
-        services.AddScoped<IAzureProviderRunner>(provider =>
+        services.AddScoped<AzureBicepProviderRunner>(provider =>
             new AzureBicepProviderRunner(
                 options,
                 scope,
                 provider.GetRequiredService<IAzureSecretResolver>()));
+        services.AddScoped<IAzureProviderRunner>(provider =>
+            provider.GetRequiredService<AzureBicepProviderRunner>());
+        services.AddScoped<IAzureProviderRecoveryObserver>(provider =>
+            provider.GetRequiredService<AzureBicepProviderRunner>());
         return new(options, scope);
     }
 }

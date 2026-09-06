@@ -24,6 +24,56 @@ public sealed class ElsaInstanceProviderReconciliationHostedServiceTests
     private static readonly Guid OperationId = Guid.Parse("22222222-2222-2222-2222-222222222222");
 
     [Fact]
+    public async Task Normal_replay_preserves_the_returned_assignment_binding()
+    {
+        var provider = new RecordingSubmissionPort();
+        var store = new SubmissionStore();
+        await using var services = CreateServices(provider, new RecordingReconciliationService(),
+            [Pending(true)], submissionStore: store);
+        await CreateHostedService(services).ProcessPendingAsync(CancellationToken.None);
+        Assert.Equal("d0000000-0000-0000-0000-000000000001", Assert.Single(store.Commits).PlacementAssignmentId);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task Mismatched_pending_identity_cannot_dispatch_or_reconcile(bool recovery, bool workspaceMismatch)
+    {
+        var submission = RecoverySubmission();
+        var pending = new ElsaInstanceProviderPendingOperation(
+            workspaceMismatch ? Guid.NewGuid() : WorkspaceId,
+            workspaceMismatch ? OperationId : Guid.NewGuid(),
+            submission, recovery ? RecoveryEnvelope(submission) : null);
+        var provider = new RecordingSubmissionPort();
+        var recoveryProvider = new RecordingRecoveryPort();
+        var reconciler = new RecordingReconciliationService();
+        await using var services = CreateServices(provider, reconciler, [pending], recoveryProvider);
+        await CreateHostedService(services).ProcessPendingAsync(CancellationToken.None);
+        Assert.Equal(0, provider.Calls);
+        Assert.Equal(0, recoveryProvider.Calls);
+        Assert.Equal(0, reconciler.Calls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Invalid_or_delete_normal_submission_cannot_dispatch(bool delete)
+    {
+        var submission = delete
+            ? RecoverySubmission(ElsaInstanceOperationAction.Delete)
+            : RecoverySubmission() with { InstanceId = Guid.Empty };
+        var provider = new RecordingSubmissionPort();
+        var reconciler = new RecordingReconciliationService();
+        await using var services = CreateServices(provider, reconciler,
+            [new ElsaInstanceProviderPendingOperation(WorkspaceId, OperationId, submission)]);
+        await CreateHostedService(services).ProcessPendingAsync(CancellationToken.None);
+        Assert.Equal(0, provider.Calls);
+        Assert.Equal(0, reconciler.Calls);
+    }
+
+    [Fact]
     public async Task Provider_cancellation_is_propagated_from_the_per_operation_boundary()
     {
         using var cancellation = new CancellationTokenSource();
@@ -738,14 +788,7 @@ public sealed class ElsaInstanceProviderReconciliationHostedServiceTests
             WorkspaceId,
             OperationId,
             withSubmission
-                ? new ElsaInstanceProviderSubmission(
-                    WorkspaceId,
-                    Guid.Parse("33333333-3333-3333-3333-333333333333"),
-                    OperationId,
-                    1,
-                    ElsaControl.Deployment.Abstractions.Instances.ElsaDesiredLifecycle.Running,
-                    null!,
-                    null!)
+                ? RecoverySubmission() with { AttemptNumber = 1 }
                 : null);
 
     private sealed class PendingStore(IReadOnlyList<ElsaInstanceProviderPendingOperation> pending)
@@ -781,7 +824,7 @@ public sealed class ElsaInstanceProviderReconciliationHostedServiceTests
             Calls++;
             if (failure is not null)
                 return Task.FromException<ElsaInstanceProviderSubmissionResult>(failure);
-            return Task.FromResult(new ElsaInstanceProviderSubmissionResult("provider-operation-1", false));
+            return Task.FromResult(new ElsaInstanceProviderSubmissionResult("provider-operation-1", false, "d0000000-0000-0000-0000-000000000001"));
         }
     }
 
@@ -987,5 +1030,10 @@ public sealed class ElsaInstanceProviderReconciliationHostedServiceTests
             AzureProviderRecoveryObservationBinding binding,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException("The hosted integration fixture does not consume post-acceptance proofs.");
+
+        public Task<AzureProviderRecoveryObservationRecord?> GetAndValidateForAcceptedRecoveryReplayAsync(
+            AzureProviderRecoveryObservationBinding binding,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("The hosted integration fixture does not consume post-claim proofs.");
     }
 }

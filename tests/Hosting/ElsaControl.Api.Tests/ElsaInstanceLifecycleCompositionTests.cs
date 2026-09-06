@@ -62,6 +62,8 @@ public sealed class ElsaInstanceLifecycleCompositionTests : IDisposable
             descriptor.ServiceType == typeof(IElsaInstanceProviderReconciliationPort));
         Assert.DoesNotContain(services, descriptor =>
             descriptor.ServiceType == typeof(IElsaInstanceProviderCleanupPort));
+        Assert.DoesNotContain(services, descriptor =>
+            descriptor.ServiceType == typeof(IElsaInstanceProviderRecoveryPort));
     }
 
     [Fact]
@@ -81,6 +83,8 @@ public sealed class ElsaInstanceLifecycleCompositionTests : IDisposable
             descriptor.ServiceType == typeof(IElsaInstanceProviderReconciliationPort));
         Assert.Contains(services, descriptor =>
             descriptor.ServiceType == typeof(IElsaInstanceProviderCleanupPort));
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IElsaInstanceProviderRecoveryPort));
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<AzureElsaInstanceProviderOptions>();
         Assert.Equal(authority.TemplateFingerprint, options.TemplateFingerprint);

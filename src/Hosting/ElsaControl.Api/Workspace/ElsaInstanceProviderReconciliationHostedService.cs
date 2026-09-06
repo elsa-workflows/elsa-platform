@@ -94,6 +94,23 @@ public sealed class ElsaInstanceProviderReconciliationHostedService(
         IElsaInstanceEntitlementHoldStore? entitlementHoldStore,
         CancellationToken stoppingToken)
     {
+        if (operation.Submission is { } pendingSubmission)
+        {
+            try
+            {
+                if (pendingSubmission.WorkspaceId != operation.WorkspaceId ||
+                    pendingSubmission.OperationId != operation.OperationId ||
+                    pendingSubmission.OperationAction == ElsaInstanceOperationAction.Delete ||
+                    pendingSubmission.Plan is null || pendingSubmission.DeploymentTarget is null)
+                    return;
+                pendingSubmission.Validate();
+            }
+            catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+            {
+                return;
+            }
+        }
+
         if (operation.Recovery is { } recovery)
         {
             if (operation.Submission is not { } recoverySubmission || recoveryProvider is null)
@@ -210,7 +227,8 @@ public sealed class ElsaInstanceProviderReconciliationHostedService(
                     submission.OperationId,
                     submission.AttemptNumber,
                     submitted.CorrelationId,
-                    DateTimeOffset.UtcNow), stoppingToken);
+                    DateTimeOffset.UtcNow,
+                    submitted.PlacementAssignmentId), stoppingToken);
             }
             catch (OperationCanceledException)
             {
