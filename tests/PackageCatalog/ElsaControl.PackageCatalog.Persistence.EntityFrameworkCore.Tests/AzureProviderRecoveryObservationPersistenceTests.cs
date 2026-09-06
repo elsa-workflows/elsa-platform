@@ -18,6 +18,53 @@ namespace ElsaControl.PackageCatalog.Persistence.EntityFrameworkCore.Tests;
 
 public sealed class AzureProviderRecoveryObservationPersistenceTests
 {
+    [Theory]
+    [InlineData(AzureProviderRunnerStep.SqlFirewallCreate, AzureProviderOperationPhase.SeedSecretsObserved, AzureProviderRunnerStep.SqlFirewallCreate, AzureProviderOperationPhase.SqlFirewallReady, true)]
+    [InlineData(AzureProviderRunnerStep.SqlBootstrapScript, AzureProviderOperationPhase.SqlFirewallReady, AzureProviderRunnerStep.SqlBootstrapScript, AzureProviderOperationPhase.SqlBootstrapReady, true)]
+    [InlineData(AzureProviderRunnerStep.SqlFirewallCleanup, AzureProviderOperationPhase.SqlBootstrapReady, AzureProviderRunnerStep.SqlFirewallCleanup, AzureProviderOperationPhase.FoundationReady, true)]
+    [InlineData(AzureProviderRunnerStep.SqlFirewallCleanup, AzureProviderOperationPhase.SqlBootstrapReady, AzureProviderRunnerStep.SqlBootstrapScript, AzureProviderOperationPhase.SqlBootstrapReady, true)]
+    [InlineData(AzureProviderRunnerStep.SqlBootstrapScript, AzureProviderOperationPhase.SqlFirewallReady, AzureProviderRunnerStep.SqlFirewallCleanup, AzureProviderOperationPhase.FoundationReady, false)]
+    [InlineData(AzureProviderRunnerStep.SqlFirewallCreate, AzureProviderOperationPhase.SeedSecretsObserved, AzureProviderRunnerStep.SqlBootstrapScript, AzureProviderOperationPhase.SqlBootstrapReady, false)]
+    public async Task Sql_recovery_ledger_accepts_only_the_exact_durable_stage_or_proven_cleanup_replay(
+        AzureProviderRunnerStep attemptedStep,
+        AzureProviderOperationPhase currentPhase,
+        AzureProviderRunnerStep completedStep,
+        AzureProviderOperationPhase observedPhase,
+        bool accepted)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateMigratedContext(connection);
+        await db.Database.MigrateAsync();
+        var fixture = await SeedProviderObservationAsync(db);
+        var operation = await db.AzureProviderOperations.SingleAsync(x => x.Id == fixture.Operation.Id);
+        operation.AttemptedStep = attemptedStep;
+        operation.Phase = currentPhase;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var observation = fixture.Observation with { CompletedStep = completedStep, ObservedPhase = observedPhase };
+        var store = (IAzureProviderRecoveryObservationStore)fixture.OperationStore;
+
+        if (!accepted)
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => store.CreateOrGetAsync(observation));
+            Assert.Empty(await db.AzureProviderRecoveryObservations.ToListAsync());
+            return;
+        }
+
+        var receipt = await store.CreateOrGetAsync(observation);
+        var replay = await store.CreateOrGetAsync(observation);
+        Assert.Equal(receipt.RecordId, replay.RecordId);
+        Assert.Equal(receipt.Digest, replay.Digest);
+        var retained = await store.GetAndValidateRecordedAsync(
+            observation.OrganizationId, observation.WorkspaceId, observation.InstanceId,
+            observation.LifecycleOperationId, observation.ObservedLifecycleAttemptNumber,
+            receipt.Reference, receipt.Digest);
+        Assert.NotNull(retained);
+        Assert.Equal(completedStep, retained.CompletedStep);
+        Assert.Equal(observedPhase, retained.ObservedPhase);
+    }
+
     [Fact]
     public async Task Checkpoints_follow_explicit_phase_order_and_reject_backwards_observations()
     {
@@ -36,6 +83,8 @@ public sealed class AzureProviderRecoveryObservationPersistenceTests
                      AzureProviderOperationPhase.FoundationObserved,
                      AzureProviderOperationPhase.AcrPullObserved,
                      AzureProviderOperationPhase.SeedSecretsObserved,
+                     AzureProviderOperationPhase.SqlFirewallReady,
+                     AzureProviderOperationPhase.SqlBootstrapReady,
                      AzureProviderOperationPhase.FoundationReady
                  })
         {
